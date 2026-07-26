@@ -5,6 +5,7 @@
 - Type: End-to-end behavior and flow document
 - Audience: Product, engineering, QA
 - Scope: In-process publish/subscribe behavior for the first platform Event Bus package.
+- Status: Approved 2026-07-26. Implemented as `@platform/event-bus`. All six flows (happy path, subscribe, dispatch, unsubscribe, failure surfacing, edge cases) covered by tests in [packages/event-bus/src/](../../../packages/event-bus/src/).
 - PRD: [PRD-event-bus.md](./PRD-event-bus.md)
 - TRD: [TRD-event-bus.md](./TRD-event-bus.md)
 

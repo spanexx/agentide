@@ -5,6 +5,7 @@
 - Type: Phased implementation plan
 - Audience: Backend, QA
 - Scope: Ship first `@platform/event-bus` workspace package with deterministic in-process publish/subscribe behavior.
+- Status: Approved 2026-07-26. **All four phases shipped** (Phase 0 package foundation → Phase 1 core publish/subscribe → Phase 2 async + failure surfacing → Phase 3 immutability + types + finish). Implementation lives in [packages/event-bus/](../../../packages/event-bus/); 29 behaviour tests pass; build, lint, typecheck green.
 - PRD: [PRD-event-bus.md](./PRD-event-bus.md)
 - TRD: [TRD-event-bus.md](./TRD-event-bus.md)
 - FLOW: [FLOW-event-bus.md](./FLOW-event-bus.md)

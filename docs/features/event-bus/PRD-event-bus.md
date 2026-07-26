@@ -5,6 +5,7 @@
 - Type: Product requirements document
 - Audience: Platform engineering, QA
 - Scope: In-process pub/sub event bus that all platform components use to communicate without direct dependencies.
+- Status: Approved 2026-07-26. Implemented as `@platform/event-bus` (see [packages/event-bus/](../../../packages/event-bus/) and [IMPL-event-bus.md § Phase Plan](./IMPL-event-bus.md#3-phase-plan) for the implementation record). All 17 acceptance criteria covered; 29 behaviour tests pass.
 
 ## Summary
 
