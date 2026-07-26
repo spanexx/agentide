@@ -28,7 +28,7 @@ describe("createEventBus — Phase 3 immutability + readonly contract", () => {
   it("publisher-side mutation after publish is blocked because payload is frozen", async () => {
     const bus = createEventBus();
     const seen: Array<{ url?: string }> = [];
-    bus.subscribe("page", (e) => seen.push({ ...(e.payload as object) }));
+    bus.subscribe("page", (e) => { seen.push({ ...(e.payload as object) }); });
     const payload: { url: string } = { url: "https://a" };
     await bus.publish("page", payload);
     // Stronger guarantee than AC-12 requires: the original object is itself
@@ -47,9 +47,9 @@ describe("createEventBus — Phase 3 immutability + readonly contract", () => {
 
   it("payload references handed to all handlers point to the same frozen object", async () => {
     const bus = createEventBus();
-    const refs: unknown[] = [];
-    bus.subscribe("p", (e) => refs.push(e.payload));
-    bus.subscribe("p", (e) => refs.push(e.payload));
+    const refs: object[] = [];
+    bus.subscribe("p", (e) => { refs.push(e.payload); });
+    bus.subscribe("p", (e) => { refs.push(e.payload); });
     await bus.publish("p", { a: 1 });
     expect(refs[0]).toBe(refs[1]); // same reference, so any freeze is shared
     expect(Object.isFrozen(refs[0])).toBe(true);

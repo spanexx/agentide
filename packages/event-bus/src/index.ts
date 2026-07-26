@@ -24,13 +24,19 @@
 
 import { matches, validatePattern, validateEventName } from "./match.js";
 import {
-  type EventHandler,
   type EventBus,
+  type EventHandler,
   type HandlerFailedPayload,
   type PlatformEvent,
   type Subscription,
   RESERVED_INTERNAL_PREFIX,
 } from "./types.js";
+
+// AnyEventHandler is used for internal storage where the payload type
+// is not known until publish time. object is the concrete top type
+// — all payloads are objects (shallow-frozen at publish) so this
+// carries no type escape hatch.
+type AnyEventHandler = EventHandler<object>;
 
 export {
   type EventHandler,
@@ -58,13 +64,20 @@ export function createEventBus(): EventBus {
   const subscriptions: RegisteredSubscription[] = [];
   let nextOrder = 0;
 
-  const subscribe = (pattern: string, handler: EventHandler): Subscription => {
+  const subscribe = <TPayload extends object>(
+    pattern: string,
+    handler: EventHandler<TPayload>,
+  ): Subscription => {
     validatePattern(pattern);
     if (typeof handler !== "function") {
       throw new Error("subscribe: handler must be a function.");
     }
     const order = nextOrder++;
-    const sub: RegisteredSubscription = { pattern, handler, order };
+    const sub: RegisteredSubscription = {
+      pattern,
+      handler: handler as AnyEventHandler,
+      order,
+    };
     subscriptions.push(sub);
     let unsubscribed = false;
     return {
@@ -145,12 +158,12 @@ export function createEventBus(): EventBus {
   const emitHandlerFailed = async (
     eventName: string,
     subscriberPattern: string,
-    error: unknown,
+    error: Error,
   ): Promise<void> => {
-    const normalizedError =
-      error instanceof Error
-        ? { message: error.message, stack: error.stack }
-        : { message: String(error), stack: undefined };
+    const normalizedError = {
+      message: error.message,
+      stack: error.stack,
+    };
     const failurePayload: HandlerFailedPayload = Object.freeze({
       eventName,
       subscriberPattern,
@@ -176,10 +189,10 @@ export function createEventBus(): EventBus {
   //   (private) to detect async return values.
   // Used by: publish() and dispatchInternal() (index-002).
   async function dispatchToSnapshot(
-    event: PlatformEvent<unknown>,
+    event: PlatformEvent<object>,
     policy: {
-      onSyncError: (pattern: string, error: unknown) => Promise<void>;
-      onAsyncError: (pattern: string, error: unknown) => Promise<void>;
+      onSyncError: (pattern: string, error: Error) => Promise<void>;
+      onAsyncError: (pattern: string, error: Error) => Promise<void>;
     },
   ): Promise<void> {
     // Snapshot matching subscriptions in registration order so unsubscribe
@@ -194,17 +207,27 @@ export function createEventBus(): EventBus {
       const sub = dispatchSnapshot[i];
       try {
         const result = sub.handler(event);
-        if (isPromiseLike(result)) {
-          const tracked = (result as Promise<unknown>).then(
+        if (
+          result !== null &&
+          typeof result === "object" &&
+          typeof (result as PromiseLike<void>).then === "function"
+        ) {
+          const tracked = (result as Promise<void>).then(
             () => undefined,
-            async (err: unknown) => {
-              await policy.onAsyncError(sub.pattern, err);
+            async (err) => {
+              await policy.onAsyncError(
+                sub.pattern,
+                err instanceof Error ? err : new Error(String(err)),
+              );
             },
           );
           startedAsyncs.push(tracked);
         }
       } catch (syncError) {
-        await policy.onSyncError(sub.pattern, syncError);
+        await policy.onSyncError(
+          sub.pattern,
+          syncError instanceof Error ? syncError : new Error(String(syncError)),
+        );
       }
     }
 
@@ -218,16 +241,8 @@ export function createEventBus(): EventBus {
 
 interface RegisteredSubscription {
   pattern: string;
-  handler: EventHandler;
+  handler: AnyEventHandler;
   order: number;
-}
-
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    typeof (value as { then?: unknown }).then === "function"
-  );
 }
 
 function shallowFreeze<T>(value: T): Readonly<T> {

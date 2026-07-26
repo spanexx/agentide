@@ -1,0 +1,113 @@
+Capability Registry - Grill Notes
+
+Status: Phase 0 grilling in progress
+Date: 2026-07-26
+Source: /home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/docs/Feature_Backlog.md
+
+What this feature is about
+
+- Build the platform's capability list.
+- It stores capability records for discovery.
+- It does not run capabilities.
+- Public read side in scope:
+  - capability.list
+  - capability.search
+  - capability.describe
+- Public write side is not in scope for this pack.
+
+Questions and answers locked so far
+
+1. Should this pack include only read features, or also the behind-the-scenes write path?
+Answer:
+- Include internal write plus public read.
+- The registry may accept register, update, and remove work behind the scenes.
+- Public surface stays discovery-only for now.
+
+Why:
+- Current docs already imply manifests are published at startup and the registry receives them.
+- Current docs do not imply public write capabilities.
+
+2. What is the real unique identity of one capability record?
+Answer:
+- Name plus version.
+- Example: customer.read v1 and customer.read v2 may both exist at the same time.
+
+Why:
+- Current docs say parallel versions are supported during migration.
+
+3. When one source sends a new full manifest, should old entries from that same source remain?
+Answer:
+- No.
+- Replace that source's whole set.
+- If an old capability is missing from the new manifest, remove it from that same source's set.
+
+Why:
+- This keeps startup, hot reload, and uninstall clean.
+
+4. Should the first version keep data only while the platform is running?
+Answer:
+- Yes.
+- First version is memory only.
+- On restart, apps and runtimes register again and rebuild the list.
+
+Why:
+- Current docs say registration happens at startup.
+- No current doc requires saved data across restarts.
+
+5. What should capability.list return?
+Answer:
+- A short list of capability cards.
+- Full details come from capability.describe.
+
+Why:
+- This keeps browse fast and gives capability.describe a clear job.
+
+6. What happens if two different sources claim the same capability name and version?
+Answer:
+- Reject the clash.
+- One name and version must point to one clear record.
+
+Why:
+- Silent overwrite would make discovery unclear and risky.
+
+7. What kind of `capability.*` events belong to this pack?
+Answer:
+- Only list-change events for now.
+- Use events like `capability.registered`, `capability.updated`, and `capability.removed`.
+- Do not make this pack own run-time events like `capability.started`,
+  `capability.completed`, or `capability.failed`.
+
+Why:
+- This pack manages the capability list.
+- It does not run capabilities.
+
+8. If more than one version exists and someone asks for details without naming a version,
+   what should happen?
+Answer:
+- Return the latest version.
+- Make the response clearly say which version was returned.
+
+Why:
+- It is the simplest first-use behavior.
+- It stays clear because the response says which version won.
+
+9. What should capability.search look through in the first version?
+Answer:
+- Name and description.
+
+Why:
+- This supports both exact technical names and plain-language searching without making
+  the first version too wide.
+
+Simple meaning of "catalog" in this app
+
+- The platform's current shared list of known capabilities.
+- Not chat history.
+- Not execution logs.
+- Not handler code.
+- Just the discovery record for what the system can do right now.
+
+Still open
+
+- More grilling questions likely remain before PRD starts.
+- Main remaining work is to confirm whether grilling is stable enough to start PRD.

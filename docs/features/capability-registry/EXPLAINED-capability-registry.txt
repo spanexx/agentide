@@ -1,0 +1,231 @@
+EXPLAINED: Capability Registry
+
+A plain-English guide for anyone who needs to understand what the
+Capability Registry is and what changes once it exists.
+
+For the technical spec, see the PRD, TRD, FLOW, and IMPL docs in this
+same folder.
+
+---
+
+Situation 1: Two apps start up and the system needs to know what they
+can do
+
+Imagine the platform Gateway is waking up. Two things are about to
+happen at the same time: an "orders" app is starting, and a "browser
+plugin" is loading.
+
+Before this feature exists, the Gateway would have to ask each app and
+plugin separately, parse each one’s answers differently, and somehow
+build one combined picture in its head. If a third piece comes along,
+the Gateway has to do this again, in its own way.
+
+What we are doing about it
+
+There is now one shared list — the Capability Registry — that every
+app and every plugin puts its capability cards into. The Gateway only
+needs to ask this one list, "what can the system do right now?" and
+gets a single, consistent answer.
+
+What this means for the platform
+
+The Gateway no longer has to know how each app talks. The CLI does not
+have to ask three different places to build a help screen. The
+dashboard does not need a special path for each connected source.
+
+What this does not mean
+
+This change does not make the system faster at running things. It only
+makes it faster and safer at *knowing* what it can run. Execution still
+belongs to whoever owns the capability — the app, the plugin, or
+platform core.
+
+---
+
+Situation 2: A plugin gets replaced, and the old capabilities have to
+go away
+
+A team has been using a "browser" plugin that offered `browser.navigate`
+and `browser.click`. They install a new version. The old version is
+gone.
+
+Before this feature exists, removing the plugin leaves behind ghost
+records. Discovery still says `browser.navigate` exists, but nothing
+actually handles it. Calls fail in confusing ways.
+
+What we are doing about it
+
+When a plugin hands the Registry its new full list, the Registry
+treats that as "replace what I had before." Anything from the same
+plugin that is not in the new list is removed automatically. The
+catalog stays clean — no ghosts, no manual cleanup.
+
+What this means for plugin authors
+
+Authors can think of registration as one full document at a time,
+not as a long list of individual add and remove calls. They send one
+manifest, the Registry keeps its part in step.
+
+What this does not mean
+
+This change does not uninstall the plugin itself. The Plugin Manager
+(which lives in a different pack) is the one that decides when a
+plugin goes away. The Registry only follows the manifest the plugin
+gives it.
+
+---
+
+Situation 3: Two different sources both claim the same name
+
+An app says it owns `customer.read v1`. A plugin from a different
+vendor also says it owns `customer.read v1`. Both are honest.
+
+Before this feature exists, the system would either silently pick one
+and overwrite the other, or store both and let the caller figure out
+which is which. Both options make the system unreliable.
+
+What we are doing about it
+
+The Registry refuses that clash. One `(name, version)` pair can only
+belong to one source. The second source is told "this is already
+taken" so it can bump the version, change the name, or accept that
+the existing record is the right one.
+
+What this means for operators
+
+Discovery is never ambiguous. If the catalog says `customer.read v1`
+exists, exactly one thing handles it. If two sources really need the
+same name, the version field is the way to keep them apart.
+
+What this does not mean
+
+This change does not decide who is "right" in the clash. It only says
+"two cannot both claim the same record." Whoever owns the conflict
+resolves it with the usual tools: bump version, rename, or coordinate.
+
+---
+
+Situation 4: A capability grows a new version while the old one is
+still useful
+
+An app offers `customer.read v1`. They ship a better `customer.read
+v2`, but some callers have not migrated yet. Both need to be in the
+catalog at the same time.
+
+Before this feature exists, the second registration usually replaces
+the first. Either callers break, or the app has to fake a different
+name like `customer.read_v2` to keep both alive, which breaks the
+naming rules.
+
+What we are doing about it
+
+The Registry stores both versions as separate records. `customer.read
+v1` and `customer.read v2` are different cards on the same shelf. The
+owner can leave both alive during the migration window, then remove
+`v1` by sending a new manifest that no longer includes it.
+
+What this means for callers
+
+Callers that ask "describe `customer.read`" without a version get the
+latest one and are told which version was returned. Callers that want
+a specific version can ask for it directly.
+
+What this does not mean
+
+The Registry does not pick "latest" using semver rules. "Latest" in
+v1 means whatever the Registry most recently accepted for that name
+from that owner. A future version can replace this with a real
+semver-aware default.
+
+---
+
+Connection: a shared shelf in a workshop
+
+Think of the Registry as a workshop shelf. Every tool that comes in
+gets a card describing it: what it does, which version it is, what
+kind of tool it is, who lent it, and which jobs it is allowed to do.
+
+- Owners put cards on the shelf when they arrive, and replace their
+  whole row when they update. They never touch another owner's cards.
+- The shelf never tries to use a tool. It only knows what is on it.
+- When a card goes on, comes off, or changes, the shelf rings a bell.
+  Other workshop helpers (the dashboard, the gateway, the CLI) can
+  listen for the bell if they want to react.
+- If two different owners try to put a card with the same name and
+  version on the shelf, the shelf says "no, that slot is taken."
+
+---
+
+How you can tell it is working
+
+Observable checks someone without code access can run to confirm the
+feature works.
+
+- Start an app that registers a known capability, then ask the CLI
+  for a list. The capability shows up.
+- Restart that app with a manifest that does not include the
+  capability. Ask the CLI again. The capability is gone.
+- Run two apps that both register `customer.read v1`. The second one
+  is told the name and version are already taken.
+- Run an app that registers both `customer.read v1` and `v2`. Ask
+  the CLI to describe `customer.read`. The latest version is
+  returned and the version label is shown in the output.
+- Watch the dashboard while a plugin is reinstalled. The capability
+  list updates without a manual refresh.
+
+---
+
+What you should not expect from this change
+
+Explicit boundaries. Prevent misunderstanding.
+
+- The Registry does not run any capability. It only knows that they
+  exist.
+- The Registry does not check whether a caller is allowed to use a
+  capability. That is the Gateway's job in a later pack.
+- The Registry does not keep data after a restart. On startup, owners
+  re-publish their manifests and the catalog is rebuilt.
+- The Registry does not expose agent-callable `capability.list`,
+  `capability.search`, or `capability.describe` features yet. A
+  separate pack, `platform-capabilities`, wraps the read functions
+  for that.
+- The Registry does not store execution history or "what happened"
+  events like `capability.started` or `capability.failed`. Those
+  belong to whoever runs the capability.
+- The Registry does not choose "latest" using semver rules in v1.
+  It uses registration order. Real semver-aware defaulting is a
+  future refinement.
+
+---
+
+The technical names for the curious
+
+Each entry maps a plain-English idea to the system name a reader of
+the code will see.
+
+- The shared list / workshop shelf: the Capability Registry, shipped
+  as the `@platform/capability-registry` package.
+- A card on the shelf / a discovered capability: a Capability record
+  in the registry, identified by the pair `(name, version)`.
+- One full manifest from one owner: a register call from a single
+  owner, replacing that owner's previous records in one transaction.
+- The bell that rings on list change: list-change events on the
+  platform Event Bus, named `capability.registered`,
+  `capability.updated`, and `capability.removed`, all under the
+  `capability.*` namespace.
+- Two sources claiming the same name: an `(name, version)` clash
+  between different owners, rejected with a clear error so the
+  caller can decide what to do.
+- Browsing: the `list()` read function, returning short cards.
+- Searching: the `search(query)` read function, matching name and
+  description.
+- Explaining one thing in detail: the `describe(name, version?)` read
+  function, returning the full record.
+- The Gateway wrapping these read functions for AI agents later: the
+  `platform-capabilities` pack in the feature backlog, not part of
+  this pack.
+- The Event Bus this pack relies on: the already-shipped
+  `@platform/event-bus` package.
+- "Latest" without a specified version: the most recently registered
+  record for that name from that owner, chosen by registration order
+  rather than semver rules.

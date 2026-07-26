@@ -20,11 +20,13 @@
 
 // CID:types-001 - EventHandler
 // Purpose: type for any sync or async handler passed to subscribe().
+//   Return type is `void | Promise<void>` because we never inspect handler
+//   return values — we only await promise settlement.
 // Uses: PlatformEvent<TPayload>.
 // Used by: EventBus.subscribe signatures, dispatchToSnapshot handler invocations.
-export type EventHandler<TPayload = unknown> = (
+export type EventHandler<TPayload> = (
   event: PlatformEvent<TPayload>,
-) => unknown;
+) => void | Promise<void>;
 
 // CID:types-002 - PlatformEvent
 // Purpose: immutable shape handed to every handler; `name`, `payload`,
@@ -33,7 +35,7 @@ export type EventHandler<TPayload = unknown> = (
 //   payload before handing it out (PRD AC-12, AC-13).
 // Uses: none.
 // Used by: EventHandler, createEventBus (publish path), emitHandlerFailed.
-export interface PlatformEvent<TPayload = unknown> {
+export interface PlatformEvent<TPayload> {
   readonly name: string;
   readonly payload: Readonly<TPayload>;
   readonly id: string;
@@ -71,8 +73,8 @@ export interface Subscription {
 // Used by: every platform component that publishes or subscribes; the
 //   entire test suite.
 export interface EventBus {
-  publish<TPayload>(name: string, payload: TPayload): Promise<void>;
-  subscribe(pattern: string, handler: EventHandler): Subscription;
+  publish<TPayload extends object>(name: string, payload: TPayload): Promise<void>;
+  subscribe<TPayload extends object>(pattern: string, handler: EventHandler<TPayload>): Subscription;
 }
 
 /**

@@ -10,7 +10,7 @@ describe("createEventBus — Phase 1 core publish/subscribe", () => {
 
   it("delivers an exact-name subscription", async () => {
     const bus = createEventBus();
-    const received: PlatformEvent<unknown>[] = [];
+    const received: PlatformEvent<object>[] = [];
     bus.subscribe("session.created", (e) => {
       received.push(e);
     });
@@ -25,17 +25,17 @@ describe("createEventBus — Phase 1 core publish/subscribe", () => {
   it("delivers a prefix wildcard subscription", async () => {
     const bus = createEventBus();
     const received: string[] = [];
-    bus.subscribe("browser.*", (e) => received.push(e.name));
+    bus.subscribe("browser.*", (e) => { received.push(e.name); });
     await bus.publish("browser.started", {});
-    await bus.publish("browser.page.loaded", {}); // any depth under browser — matches
-    await bus.publish("session.created", {}); // unrelated — no match
+    await bus.publish("browser.page.loaded", {});
+    await bus.publish("session.created", {});
     expect(received).toEqual(["browser.started", "browser.page.loaded"]);
   });
 
   it("delivers a bare `*` catch-all subscription", async () => {
     const bus = createEventBus();
     const received: string[] = [];
-    bus.subscribe("*", (e) => received.push(e.name));
+    bus.subscribe("*", (e) => { received.push(e.name); });
     await bus.publish("browser.page.loaded", {});
     await bus.publish("capability.registered", {});
     await bus.publish("session.created", {});
@@ -49,9 +49,9 @@ describe("createEventBus — Phase 1 core publish/subscribe", () => {
   it("preserves registration order across repeated publishes", async () => {
     const bus = createEventBus();
     const order: string[] = [];
-    bus.subscribe("a", () => order.push("first"));
-    bus.subscribe("a", () => order.push("second"));
-    bus.subscribe("a", () => order.push("third"));
+    bus.subscribe("a", () => { order.push("first"); });
+    bus.subscribe("a", () => { order.push("second"); });
+    bus.subscribe("a", () => { order.push("third"); });
     await bus.publish("a", {});
     await bus.publish("a", {});
     expect(order).toEqual([
@@ -103,8 +103,8 @@ describe("createEventBus — Phase 1 core publish/subscribe", () => {
     const b = createEventBus();
     const seenByA: string[] = [];
     const seenByB: string[] = [];
-    a.subscribe("topic.*", (e) => seenByA.push(e.name));
-    b.subscribe("topic.*", (e) => seenByB.push(e.name));
+    a.subscribe("topic.*", (e) => { seenByA.push(e.name); });
+    b.subscribe("topic.*", (e) => { seenByB.push(e.name); });
     await a.publish("topic.alpha", {});
     expect(seenByA).toEqual(["topic.alpha"]);
     expect(seenByB).toEqual([]);
