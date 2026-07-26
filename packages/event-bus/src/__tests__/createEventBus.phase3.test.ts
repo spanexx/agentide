@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import * as eventBusModule from "./index.js";
-import { createEventBus, type PublishedEvent } from "./index.js";
+import * as eventBusModule from "../index.js";
+import { createEventBus, type PlatformEvent } from "../index.js";
 
 describe("createEventBus — Phase 3 immutability + readonly contract", () => {
   it("payload is shallowly frozen before dispatch — handler cannot mutate seen values", async () => {
@@ -28,7 +28,7 @@ describe("createEventBus — Phase 3 immutability + readonly contract", () => {
   it("publisher-side mutation after publish is blocked because payload is frozen", async () => {
     const bus = createEventBus();
     const seen: Array<{ url?: string }> = [];
-    bus.subscribe("page", (e) => seen.push({ ...(e.payload as object) }));
+    bus.subscribe("page", (e) => { seen.push({ ...(e.payload as object) }); });
     const payload: { url: string } = { url: "https://a" };
     await bus.publish("page", payload);
     // Stronger guarantee than AC-12 requires: the original object is itself
@@ -47,9 +47,9 @@ describe("createEventBus — Phase 3 immutability + readonly contract", () => {
 
   it("payload references handed to all handlers point to the same frozen object", async () => {
     const bus = createEventBus();
-    const refs: unknown[] = [];
-    bus.subscribe("p", (e) => refs.push(e.payload));
-    bus.subscribe("p", (e) => refs.push(e.payload));
+    const refs: object[] = [];
+    bus.subscribe("p", (e) => { refs.push(e.payload); });
+    bus.subscribe("p", (e) => { refs.push(e.payload); });
     await bus.publish("p", { a: 1 });
     expect(refs[0]).toBe(refs[1]); // same reference, so any freeze is shared
     expect(Object.isFrozen(refs[0])).toBe(true);
@@ -57,15 +57,17 @@ describe("createEventBus — Phase 3 immutability + readonly contract", () => {
 
   it("readonly types compile correctly (compile-time contract)", () => {
     // This is a compile-time check. If `Readonly<>` were dropped from
-    // `PublishedEvent.payload`, callers could write `event.payload.x = 1`
+    // `PlatformEvent.payload`, callers could write `event.payload.x = 1`
     // without a type error. We assert the structural shape via a typed
     // helper that the compiler would reject if the readonly marker were
     // missing.
     type SamplePayload = Readonly<{ id: string; count: number }>;
-    type SampleEvent = PublishedEvent<SamplePayload>;
+    type SampleEvent = PlatformEvent<SamplePayload>;
     const sample: SampleEvent = {
       name: "x",
       payload: { id: "abc", count: 1 },
+      id: "u0",
+      publishedAt: 1,
     };
     // The two lines below would fail to compile if readonly is missing.
     // We can't truly assert a negative from runtime, but the structural

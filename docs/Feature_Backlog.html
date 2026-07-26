@@ -221,7 +221,7 @@
 <div class="notes" id="notes">
   <div class="notes-inner">
     <strong>Tier 1 strict chain</strong> · No parallel — Session Manager &amp; Plugin Manager lean on Event Bus + Capability Registry first.<br>
-    <strong>Current progress</strong> · <code>event-bus</code> shipped 2026-07-26 as <code>@platform/event-bus</code> (29 tests, build/lint/typecheck clean). Unblocks <code>capability-registry</code>.<br>
+    <strong>Current progress</strong> · <code>event-bus</code> shipped 2026-07-26 (29 tests). <code>capability-registry</code> shipped 2026-07-26 as <code>@platform/capability-registry</code> (18 tests, build/lint/typecheck/banned-types clean). Unblocks <code>session-manager</code> and <code>plugin-manager</code>.<br>
     <strong>Tiers 2–5 parallel opportunity</strong> · <code>sdk-node</code> + <code>mcp-adapter</code> don't block each other after <code>gateway-core</code> lands.<br>
     <strong>Tier 6 gated</strong> · Items 17–21 need ownership-track decision before starting.<br>
     <strong>Checkpoints</strong> · Re-read this list after Tier 1 and Tier 3.

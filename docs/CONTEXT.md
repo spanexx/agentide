@@ -37,7 +37,7 @@ change?"* The ideal answer is nothing.
 | **Plugin Manager** | Installs/updates/removes plugins from a Plugin Manifest |
 | **Plugin Manifest** | Declarative plugin identity + version + capabilities it registers |
 | **Capability Manifest** | An application's declarative capability list, published at startup |
-| **Event / Event Bus** | Immutable fact + the pub/sub delivery mechanism between components. Custom (not EventEmitter). Sync dispatch in subscription order. Async handlers via `Promise.allSettled`. One handler failure never blocks others. Dot-delimited wildcards: `*` = one segment, `**` = any depth. `Object.freeze()` shallow immutability at publish. Unsubscribe supported. Failures surfaced as `event.handler_failed` — never silent. `event.*` is reserved for bus-internal events. |
+| **Event / Event Bus** | Immutable fact + the pub/sub delivery mechanism between components. Custom (not EventEmitter). Sync dispatch in subscription order. Async handlers via `Promise.allSettled`. One handler failure never blocks others. Dot-delimited prefix wildcard: `*` as final segment matches any remaining depth (e.g. `browser.*` matches `browser.page.loaded`); bare `*` matches every event. `Object.freeze()` shallow immutability at publish. Subscribe returns `Subscription` with `.unsubscribe()`. Failures surfaced as `event.handler_failed` with `{ eventName, subscriberPattern, error: { message, stack? } }` — never silent. `event.*` is reserved for bus-internal events. |
 | **Resource** | Anything owned by a session (browser tab, temp file, DB transaction) — cleaned up with the session |
 | **Tenant** | Isolated org/customer in a hosted deployment — **not yet fully designed**, see Open Items |
 
@@ -117,6 +117,13 @@ Append here as each `feature-pipeline` run settles something. Format: `<date> �
   tests, flat-config ESLint. Reference stack for the whole platform core + first Backend SDK.
 - 2026-07-26 — philosophy adoption — [PHILOSOPHY.md](/home/spanexx/Shared/Learn/Agent-Bridge-SDK/PHILOSOPHY.md)
   adopted as governing engineering philosophy. All future decisions measured against replaceability test.
-- 2026-07-26 — event-bus — Wildcards locked as `*` = one segment and `**` = any depth.
+- 2026-07-26 — event-bus (v1) — Wildcards: `*` = one segment, `**` = any depth.
   `event.handler_failed` carries original event + handler index + error. Mixed sync/async
   handlers are invoked in subscription order, and `event.*` remains bus-internal only.
+- 2026-07-26 — event-bus (v2 upgrade) — Wildcards switched to prefix model: `*` as final
+  segment matches any remaining depth; bare `*` matches everything. `**` removed. Event type
+  renamed to `PlatformEvent` with added `id` (UUID) + `publishedAt`. Subscribe returns
+  `Subscription` object with `.unsubscribe()` instead of bare function. Failure payload
+  changed to `{ eventName, subscriberPattern, error: { message, stack? } }`. Error objects
+  normalized before surfacing. Malformed wildcard patterns (e.g. `br*wser.*`) rejected at
+  subscribe time. All 29 existing tests updated and passing.

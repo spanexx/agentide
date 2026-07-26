@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   createEventBus,
   RESERVED_INTERNAL_PREFIX,
-  type HandlerFailurePayload,
-} from "./index.js";
+  type HandlerFailedPayload,
+} from "../index.js";
 
 describe("createEventBus — Phase 2 async + failure surfacing", () => {
   it("invokes mixed sync and async handlers in registration order", async () => {
@@ -86,11 +86,11 @@ describe("createEventBus — Phase 2 async + failure surfacing", () => {
     await expect(bus.publish("e", {})).resolves.toBeUndefined();
   });
 
-  it("emits exactly one event.handler_failed per failing handler with original event, index, and error", async () => {
+  it("emits exactly one event.handler_failed per failing handler with eventName, subscriberPattern, and normalized error", async () => {
     const bus = createEventBus();
-    const failures: HandlerFailurePayload<unknown>[] = [];
+    const failures: HandlerFailedPayload[] = [];
     bus.subscribe("event.handler_failed", (e) => {
-      failures.push(e.payload as HandlerFailurePayload<unknown>);
+      failures.push(e.payload as HandlerFailedPayload);
     });
     const err1 = new Error("first-failure");
     const err2 = new Error("second-failure");
@@ -105,14 +105,12 @@ describe("createEventBus — Phase 2 async + failure surfacing", () => {
     });
     await bus.publish("topic", { id: "abc" });
     expect(failures).toHaveLength(2);
-    // Order: failures surface in handler index order.
-    expect(failures[0].handlerIndex).toBe(0);
-    expect(failures[0].error).toBe(err1);
-    expect(failures[0].event.name).toBe("topic");
-    expect(failures[0].event.payload).toEqual({ id: "abc" });
-    expect(failures[1].handlerIndex).toBe(1);
-    expect(failures[1].error).toBe(err2);
-    expect(failures[1].event.name).toBe("topic");
+    expect(failures[0].eventName).toBe("topic");
+    expect(failures[0].subscriberPattern).toBe("topic");
+    expect(failures[0].error.message).toBe("first-failure");
+    expect(failures[1].eventName).toBe("topic");
+    expect(failures[1].subscriberPattern).toBe("topic");
+    expect(failures[1].error.message).toBe("second-failure");
   });
 
   it("publish() resolves successfully even when event.handler_failed subscriber itself throws", async () => {
