@@ -1,0 +1,6 @@
+{
+  // Add a reference here for each package under packages/ as it's implemented,
+  // e.g. { "path": "packages/event-bus" }. Empty until the first feature lands.
+  "files": [],
+  "references": []
+}
