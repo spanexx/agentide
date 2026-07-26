@@ -5,6 +5,7 @@
 - Type: Product requirements document
 - Audience: Platform engineering, QA
 - Scope: In-process pub/sub event bus that all platform components use to communicate without direct dependencies.
+- Status: Approved 2026-07-26. Implemented as `@platform/event-bus` (see [packages/event-bus/](../../../packages/event-bus/) and [IMPL-event-bus.md § Phase Plan](./IMPL-event-bus.md#3-phase-plan) for the implementation record). All 17 acceptance criteria covered; 29 behaviour tests pass.
 
 ## Summary
 
@@ -143,44 +144,44 @@ unsubscribe handle and invoking it when the relevant scope ends.
 
 ## Acceptance Criteria
 
-- [ ] Publishing an event with a given name reaches every handler whose
+- [x] Publishing an event with a given name reaches every handler whose
       subscription pattern matches that name.
-- [ ] A subscription on `*` receives events of the form
+- [x] A subscription on `*` receives events of the form
       `<prefix>.<single-segment>` and not deeper paths.
-- [ ] A subscription on `**` receives every event name at any depth,
+- [x] A subscription on `**` receives every event name at any depth,
       including all events in the system.
-- [ ] Subscriptions are delivered in the order they were registered, and
+- [x] Subscriptions are delivered in the order they were registered, and
       that order is observable and stable across publishes.
-- [ ] Handlers are invoked in registration order even when sync and async
+- [x] Handlers are invoked in registration order even when sync and async
       handlers are mixed; asynchronous completion order is not guaranteed.
-- [ ] An asynchronous handler causes the publish call to return a
+- [x] An asynchronous handler causes the publish call to return a
       promise that resolves only after every handler (sync or async)
       has settled.
-- [ ] A handler that throws does not stop subsequent handlers in the
+- [x] A handler that throws does not stop subsequent handlers in the
       same dispatch.
-- [ ] A handler that returns a rejected promise does not stop subsequent
+- [x] A handler that returns a rejected promise does not stop subsequent
       handlers in the same dispatch.
-- [ ] A handler that throws or rejects does not cause the publish call
+- [x] A handler that throws or rejects does not cause the publish call
       itself to reject.
-- [ ] When at least one handler is asynchronous, the publish call
+- [x] When at least one handler is asynchronous, the publish call
       returns a promise that resolves successfully even if some handlers
       reject.
-- [ ] The bus emits exactly one `event.handler_failed` event per failing
+- [x] The bus emits exactly one `event.handler_failed` event per failing
       handler with the original event, the failing handler index, and
       the error.
-- [ ] Published event payloads are shallowly frozen before dispatch; a
+- [x] Published event payloads are shallowly frozen before dispatch; a
       mutation attempt on a frozen payload either throws (strict mode)
       or is a silent no-op (sloppy mode), but never succeeds in
       changing the value seen by other handlers.
-- [ ] Event payload types declared in TypeScript carry `readonly`
+- [x] Event payload types declared in TypeScript carry `readonly`
       modifiers on their properties by convention.
-- [ ] Calling the unsubscribe handle removes the subscription so that
+- [x] Calling the unsubscribe handle removes the subscription so that
       subsequent publishes do not deliver to the removed handler.
-- [ ] Calling unsubscribe from inside a handler does not affect the
+- [x] Calling unsubscribe from inside a handler does not affect the
       remaining handlers of the in-flight dispatch.
-- [ ] Only the Event Bus itself may publish `event.*` events; other
+- [x] Only the Event Bus itself may publish `event.*` events; other
       components must publish under their own namespaces.
-- [ ] The bus has no observable global state outside its own instance;
+- [x] The bus has no observable global state outside its own instance;
       two independent bus instances do not see each other's events.
 
 ## Rollout and Risk

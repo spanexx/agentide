@@ -5,6 +5,7 @@
 - Type: Phased implementation plan
 - Audience: Backend, QA
 - Scope: Ship first `@platform/event-bus` workspace package with deterministic in-process publish/subscribe behavior.
+- Status: Approved 2026-07-26. **All four phases shipped** (Phase 0 package foundation → Phase 1 core publish/subscribe → Phase 2 async + failure surfacing → Phase 3 immutability + types + finish). Implementation lives in [packages/event-bus/](../../../packages/event-bus/); 29 behaviour tests pass; build, lint, typecheck green.
 - PRD: [PRD-event-bus.md](./PRD-event-bus.md)
 - TRD: [TRD-event-bus.md](./TRD-event-bus.md)
 - FLOW: [FLOW-event-bus.md](./FLOW-event-bus.md)
@@ -52,16 +53,16 @@ must exist before behavior slices can land safely.
 
 #### Backend tasks
 
-- [ ] Create `packages/event-bus/package.json` with package name
+- [x] Create `packages/event-bus/package.json` with package name
       `@platform/event-bus`, build entry points, and workspace-local scripts as
       needed.
-- [ ] Create package `tsconfig.json` aligned with root composite build model.
-- [ ] Add root `tsconfig.json` project reference to `packages/event-bus`.
-- [ ] Create initial source entry file and test file locations.
+- [x] Create package `tsconfig.json` aligned with root composite build model.
+- [x] Add root `tsconfig.json` project reference to `packages/event-bus`.
+- [x] Create initial source entry file and test file locations.
 
 #### Frontend tasks
 
-- [ ] None. This package has no frontend work.
+- [x] None. This package has no frontend work.
 
 #### Validation condition
 
@@ -84,25 +85,25 @@ unsubscribe, and isolated bus instances.
 
 #### Backend tasks
 
-- [ ] Implement `createEventBus` and public `EventBus` interface.
-- [ ] Implement subscription storage that preserves registration order.
-- [ ] Implement exact-name matching plus wildcard rules for `*` and `**`.
-- [ ] Implement unsubscribe handle removal for future publishes.
-- [ ] Ensure unsubscribe during in-flight dispatch does not mutate current
+- [x] Implement `createEventBus` and public `EventBus` interface.
+- [x] Implement subscription storage that preserves registration order.
+- [x] Implement exact-name matching plus wildcard rules for `*` and `**`.
+- [x] Implement unsubscribe handle removal for future publishes.
+- [x] Ensure unsubscribe during in-flight dispatch does not mutate current
       dispatch snapshot.
-- [ ] Ensure each Event Bus instance keeps isolated subscription state.
+- [x] Ensure each Event Bus instance keeps isolated subscription state.
 
 #### Frontend tasks
 
-- [ ] None.
+- [x] None.
 
 #### Tests required
 
-- [ ] Verify exact subscriptions, `*`, and `**` match only intended names.
-- [ ] Verify repeated publishes preserve subscription order.
-- [ ] Verify unsubscribe stops later deliveries.
-- [ ] Verify unsubscribe during handler does not change current dispatch.
-- [ ] Verify separate Event Bus instances never see each other's events.
+- [x] Verify exact subscriptions, `*`, and `**` match only intended names.
+- [x] Verify repeated publishes preserve subscription order.
+- [x] Verify unsubscribe stops later deliveries.
+- [x] Verify unsubscribe during handler does not change current dispatch.
+- [x] Verify separate Event Bus instances never see each other's events.
 
 #### Validation condition
 
@@ -121,30 +122,30 @@ unsubscribe, and isolated bus instances.
 
 #### Backend tasks
 
-- [ ] Extend dispatch path to accept sync and async handlers in one ordered
+- [x] Extend dispatch path to accept sync and async handlers in one ordered
       pass.
-- [ ] Make `publish()` resolve only after all invoked async handlers settle.
-- [ ] Catch thrown and rejected handler failures without rejecting original
+- [x] Make `publish()` resolve only after all invoked async handlers settle.
+- [x] Catch thrown and rejected handler failures without rejecting original
       `publish()`.
-- [ ] Emit one internal `event.handler_failed` event per failing handler with
+- [x] Emit one internal `event.handler_failed` event per failing handler with
       original event, handler index, and error.
-- [ ] Block external publish attempts into `event.*` while still allowing
+- [x] Block external publish attempts into `event.*` while still allowing
       Event Bus internal failure emission.
 
 #### Frontend tasks
 
-- [ ] None.
+- [x] None.
 
 #### Tests required
 
-- [ ] Verify mixed sync/async handlers are invoked in registration order.
-- [ ] Verify `publish()` waits for delayed async handlers to settle.
-- [ ] Verify throwing handler does not stop later handlers.
-- [ ] Verify rejected async handler does not stop later handlers.
-- [ ] Verify original `publish()` resolves successfully even when handlers
+- [x] Verify mixed sync/async handlers are invoked in registration order.
+- [x] Verify `publish()` waits for delayed async handlers to settle.
+- [x] Verify throwing handler does not stop later handlers.
+- [x] Verify rejected async handler does not stop later handlers.
+- [x] Verify original `publish()` resolves successfully even when handlers
       fail.
-- [ ] Verify exactly one `event.handler_failed` event per failing handler.
-- [ ] Verify external caller cannot publish `event.*`.
+- [x] Verify exactly one `event.handler_failed` event per failing handler.
+- [x] Verify external caller cannot publish `event.*`.
 
 #### Validation condition
 
@@ -163,23 +164,23 @@ package ready for downstream consumers.
 
 #### Backend tasks
 
-- [ ] Shallow-freeze payload before dispatch.
-- [ ] Define exported TypeScript types so payload properties are `readonly` by
+- [x] Shallow-freeze payload before dispatch.
+- [x] Define exported TypeScript types so payload properties are `readonly` by
       convention.
-- [ ] Finalize package exports and public type surface.
-- [ ] Add concise package README or top-level package comment only if needed
+- [x] Finalize package exports and public type surface.
+- [x] Add concise package README or top-level package comment only if needed
       for consumer clarity.
 
 #### Frontend tasks
 
-- [ ] None.
+- [x] None.
 
 #### Tests required
 
-- [ ] Verify attempted payload mutation does not change values seen by later
+- [x] Verify attempted payload mutation does not change values seen by later
       handlers.
-- [ ] Verify exported types support readonly payload declarations.
-- [ ] Verify full package can be imported and used through public entry point
+- [x] Verify exported types support readonly payload declarations.
+- [x] Verify full package can be imported and used through public entry point
       only.
 
 #### Validation condition

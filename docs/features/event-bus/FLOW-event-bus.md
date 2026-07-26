@@ -5,6 +5,7 @@
 - Type: End-to-end behavior and flow document
 - Audience: Product, engineering, QA
 - Scope: In-process publish/subscribe behavior for the first platform Event Bus package.
+- Status: Approved 2026-07-26. Implemented as `@platform/event-bus`. All six flows (happy path, subscribe, dispatch, unsubscribe, failure surfacing, edge cases) covered by tests in [packages/event-bus/src/](../../../packages/event-bus/src/).
 - PRD: [PRD-event-bus.md](./PRD-event-bus.md)
 - TRD: [TRD-event-bus.md](./TRD-event-bus.md)
 
@@ -250,57 +251,57 @@ criteria in listed order.
 
 ### Setup
 
-- [ ] Create one Event Bus instance with three subscribers: exact match,
+- [x] Create one Event Bus instance with three subscribers: exact match,
       `browser.*`, and `**`.
-- [ ] Create a second separate Event Bus instance with one subscriber to prove
+- [x] Create a second separate Event Bus instance with one subscriber to prove
       instance isolation.
-- [ ] Prepare one sync handler, one async handler, one throwing handler, and
+- [x] Prepare one sync handler, one async handler, one throwing handler, and
       one rejecting async handler.
 
 ### Happy path
 
-- [ ] Publish `browser.page.loaded` and confirm every matching handler runs
+- [x] Publish `browser.page.loaded` and confirm every matching handler runs
       exactly once. [AC-1]
-- [ ] Publish `browser.started` and confirm `browser.*` matches it but not
+- [x] Publish `browser.started` and confirm `browser.*` matches it but not
       `browser.page.loaded`. [AC-2]
-- [ ] Publish several event names at different depths and confirm `**`
+- [x] Publish several event names at different depths and confirm `**`
       receives all of them. [AC-3]
-- [ ] Register handlers in known order and confirm delivery order stays same
+- [x] Register handlers in known order and confirm delivery order stays same
       across repeated publishes. [AC-4]
-- [ ] Mix sync and async subscribers, then confirm invocation order follows
+- [x] Mix sync and async subscribers, then confirm invocation order follows
       registration order even if completion order differs. [AC-5]
-- [ ] Add one async handler with visible delay and confirm `publish()`
+- [x] Add one async handler with visible delay and confirm `publish()`
       completes only after it settles. [AC-6]
-- [ ] Attempt payload mutation in publisher or subscriber and confirm later
+- [x] Attempt payload mutation in publisher or subscriber and confirm later
       handlers still see original shallow values. [AC-12]
-- [ ] Review public TypeScript event payload declarations and confirm payload
+- [x] Review public TypeScript event payload declarations and confirm payload
       properties are marked `readonly` by convention. [AC-13]
 
 ### Error handling
 
-- [ ] Make first handler throw and confirm later handlers still run. [AC-7]
-- [ ] Make async handler reject and confirm later handlers still run. [AC-8]
-- [ ] Confirm thrown or rejected handlers do not cause original `publish()`
+- [x] Make first handler throw and confirm later handlers still run. [AC-7]
+- [x] Make async handler reject and confirm later handlers still run. [AC-8]
+- [x] Confirm thrown or rejected handlers do not cause original `publish()`
       to reject. [AC-9]
-- [ ] Confirm mixed async failures still end with successfully-resolved
+- [x] Confirm mixed async failures still end with successfully-resolved
       `publish()` after all handlers settle. [AC-10]
-- [ ] Confirm exactly one `event.handler_failed` event is emitted per failing
+- [x] Confirm exactly one `event.handler_failed` event is emitted per failing
       handler and payload includes original event, handler index, and error.
       [AC-11]
-- [ ] Attempt external publish into `event.*` and confirm Event Bus blocks it.
+- [x] Attempt external publish into `event.*` and confirm Event Bus blocks it.
       [AC-16]
 
 ### Edge cases
 
-- [ ] Call unsubscribe handle, publish again, and confirm removed subscriber no
+- [x] Call unsubscribe handle, publish again, and confirm removed subscriber no
       longer receives delivery. [AC-14]
-- [ ] Unsubscribe from inside a running handler and confirm remaining handlers
+- [x] Unsubscribe from inside a running handler and confirm remaining handlers
       in that same dispatch still run. [AC-15]
-- [ ] Publish into bus A and confirm subscribers on bus B receive nothing.
+- [x] Publish into bus A and confirm subscribers on bus B receive nothing.
       [AC-17]
 
 ### Cleanup / teardown
 
-- [ ] Call remaining unsubscribe handles and discard both bus instances.
-- [ ] Clear any temporary logs or counters used to observe handler order and
+- [x] Call remaining unsubscribe handles and discard both bus instances.
+- [x] Clear any temporary logs or counters used to observe handler order and
       failure events.

@@ -5,6 +5,7 @@
 - Type: Technical requirements document
 - Audience: Backend, QA
 - Scope: First workspace package that provides in-process event publish/subscribe for platform components.
+- Status: Approved 2026-07-26. Implemented as `@platform/event-bus`. See [packages/event-bus/src/index.ts](../../../packages/event-bus/src/index.ts) for the implementation; design shape from § 2.1 matches the shipped `dispatchToSnapshot` helper.
 - PRD: [PRD-event-bus.md](./PRD-event-bus.md)
 
 ## 1. Current Baseline
