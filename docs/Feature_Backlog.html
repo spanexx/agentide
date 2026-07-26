@@ -180,6 +180,22 @@
   .notes-inner { padding:9px 24px; font-size:.74rem; color:var(--muted); line-height:1.7; }
   .notes-inner strong { color:var(--text); }
   .notes-inner code { color:var(--accent); }
+
+  .dptabs {
+    display:flex; gap:2px; margin-bottom:14px;
+    background:var(--card); border:1px solid var(--border);
+    border-radius:6px; padding:2px;
+  }
+  .dptab {
+    flex:1; text-align:center; padding:5px 10px; border-radius:5px;
+    font-size:.75rem; font-weight:500; cursor:pointer;
+    color:var(--muted); transition:all .12s;
+  }
+  .dptab:hover { color:var(--text); background:var(--card-hover); }
+  .dptab.active { background:var(--accent); color:#fff; }
+  .dp-explain-text {
+    color:var(--text); font-size:.82rem; line-height:1.7;
+  }
 </style>
 </head>
 <body>
@@ -228,6 +244,32 @@
   </div>
 </div>
 
+<!-- Backlog item files (named by slug — agents find by name, not number) -->
+<script src="../../scripts/backlog/registry.js"></script>
+<script src="../../scripts/backlog/event-bus.js"></script>
+<script src="../../scripts/backlog/capability-registry.js"></script>
+<script src="../../scripts/backlog/session-manager.js"></script>
+<script src="../../scripts/backlog/plugin-manager.js"></script>
+<script src="../../scripts/backlog/gateway-core.js"></script>
+<script src="../../scripts/backlog/platform-capabilities.js"></script>
+<script src="../../scripts/backlog/permission-tiering.js"></script>
+<script src="../../scripts/backlog/sdk-node.js"></script>
+<script src="../../scripts/backlog/mcp-adapter.js"></script>
+<script src="../../scripts/backlog/rest-adapter.js"></script>
+<script src="../../scripts/backlog/cli-adapter.js"></script>
+<script src="../../scripts/backlog/websocket-adapter.js"></script>
+<script src="../../scripts/backlog/sdk-browser.js"></script>
+<script src="../../scripts/backlog/browser-runtime.js"></script>
+<script src="../../scripts/backlog/dashboard-core.js"></script>
+<script src="../../scripts/backlog/devtools-extension.js"></script>
+<script src="../../scripts/backlog/vscode-extension.js"></script>
+<script src="../../scripts/backlog/plugin-marketplace-core.js"></script>
+<script src="../../scripts/backlog/docker-runtime.js"></script>
+<script src="../../scripts/backlog/git-runtime.js"></script>
+<script src="../../scripts/backlog/file-runtime.js"></script>
+<script src="../../scripts/backlog/k8s-runtime.js"></script>
+<script src="../../scripts/backlog/db-runtime.js"></script>
+<script src="../../scripts/backlog/additional-backend-sdks.js"></script>
 <script src="../../scripts/feature-backlog-data.js"></script>
 <script src="../../scripts/feature-backlog.js"></script>
 </body>
