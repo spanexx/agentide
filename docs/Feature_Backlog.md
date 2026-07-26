@@ -23,7 +23,7 @@ each genuinely blocks the next.
 
 | # | Topic slug | Scope | Depends on | Source doc |
 |---|---|---|---|---|
-| 1 | `event-bus` | Pub/sub delivery between components; no consumers required yet, just publish + subscribe + event immutability | None | Terminology → Event Bus; Core Concept → Event |
+| 1 | `event-bus` | Pub/sub delivery between components; no consumers required yet, just publish + subscribe + event immutability. **SHIPPED 2026-07-26** as `@platform/event-bus` — see [`packages/event-bus/`](../../packages/event-bus) and [`docs/features/event-bus/IMPL-event-bus.md`](features/event-bus/IMPL-event-bus.md). 29 behaviour tests pass; build/lint/typecheck clean. | None | Terminology → Event Bus; Core Concept → Event |
 | 2 | `capability-registry` | Store/query capability metadata (name, type, version, schema, permissions); `capability.list`/`search`/`describe` | `event-bus` (emits `capability.*` lifecycle events) | Capability System → Capability Structure/Lifecycle |
 | 3 | `session-manager` | Create/resume/cleanup sessions; session-owns-resources model; timeout handling | `event-bus` | Core Concept → Session; Terminology → Session Manager |
 | 4 | `plugin-manager` | Install/update/uninstall plugins from a Plugin Manifest; dependency validation; plugin lifecycle | `event-bus`, `capability-registry` (plugins register capabilities here) | Terminology → Plugin Manifest; Agentide → Section 5 |
