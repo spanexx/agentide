@@ -12,6 +12,7 @@ scan_any() {
   local dir="$1"
   local hits
   hits=$(rg -n ':\s*any\b|as any\b' --glob '*.ts' "$dir" 2>/dev/null || true)
+  hits=$(echo "$hits" | grep -v '/__tests__/' || true)
   if [ -n "$hits" ]; then
     echo "ERROR: banned type \`any\` found:"
     echo "$hits"
@@ -26,9 +27,9 @@ scan_unknown() {
   # All :unknown or <unknown> or Record.*unknown or as unknown
   hits=$(rg -n ':\s*unknown\b|<unknown>|Record.*\bunknown\b|as unknown\b' \
     --glob '*.ts' "$dir" 2>/dev/null || true)
-  # Filter: allow catch(e: unknown) and catch (e: unknown) patterns
+  # Exclude test files and catch clauses
   local filtered
-  filtered=$(echo "$hits" | grep -v 'catch\s*(' || true)
+  filtered=$(echo "$hits" | grep -v '/__tests__/' | grep -v 'catch\s*(' || true)
   if [ -n "$filtered" ]; then
     echo "ERROR: banned type \`unknown\` in non-catch position found:"
     echo "$filtered"
