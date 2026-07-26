@@ -1,0 +1,61 @@
+# Handoff — Session Manager Design Complete (#3 in Tier 1)
+
+## Situation
+
+- **Branch:** `feature/session-manager` — design docs locked, awaiting Phase 5b (implementation).
+- **Last commit:** `ae0181a` — "feat(backlog): add Explain tab with Markdown rendering, split data into per-slug files".
+- **Uncommitted changes:** `docs/Feature_Backlog.html` (CSS tweak: sticky dptabs), `scripts/backlog/session-manager.js` (updated to "designing" status with what/impl/notes fields), plus new doc files in `docs/features/session-manager/`.
+- **Git is dirty** — design docs and backlog updates need committing.
+
+## What was done this session
+
+Full feature pipeline for `@platform/session-manager` (Tier 1, pack #3):
+
+1. **Phase 0 (Grill):** 8 decisions locked — state machine (Active/Suspended/Archived), suspend/destroy policy (Gateway + Session Manager combined), resume (session ID only), timeout defaults (5 min idle, 30 min suspended TTL), resource tracking (direct registration + Event Bus cleanup), event surface (5 events), cleanup ordering (cleanup_resources before destroyed).
+2. **Phase 1 (PRD):** Written and approved — 9 product goals, 17 acceptance criteria.
+3. **Phase 1b (EXPLAINED):** Written and approved — 3 real-world scenarios (session creation, suspend/resume, abandoned/archive).
+4. **Phase 2 (TRD):** Written and approved — data models (SessionRecord, ResourceRecord, SessionManagerConfig), API contracts (create/resume/destroy/getStatus/attachResource/detachResource/listResources), event payloads, no external deps (only @platform/event-bus).
+5. **Phase 3 (FLOW):** Written and approved — 6 flows with Mermaid diagrams, full QA checklist.
+6. **Phase 4 (IMPL):** Written and approved — 6 phases (scaffold, store, timers, events, resource tracking, archive purge).
+7. **Phase 5a (Decision stability):** Passed — subagent cross-check confirmed all 6 docs consistent.
+8. **Backlog update:** session-manager entry updated — status "designing", owner spanexx, what/impl/notes fields written.
+9. **CSS fix:** `.dptabs` in `Feature_Backlog.html` made sticky (position:sticky; top:0; z-index:1) so Details/Explain tabs stay pinned on scroll.
+
+## What's next
+
+**Phase 5b: Implement.** Start with Phase 0 of the IMPL plan:
+- Package scaffold at `packages/session-manager/`
+- Types: SessionRecord, ResourceRecord, SessionManagerConfig, event payloads, error classes
+- Wire workspace dependency to `@platform/event-bus`
+- Then proceed through Phases 1–5 bottom-up
+
+The pre-commit hook will enforce: check-banned-types → typecheck → lint → build.
+
+## Relevant context
+
+- **Shipped packs:** `@platform/event-bus` (29 tests), `@platform/capability-registry` (18 tests).
+- **Doc pack:** `docs/features/session-manager/` — GRILL, PRD, EXPLAINED, TRD, FLOW, IMPL (all approved).
+- **Backlog:** `scripts/backlog/session-manager.js` (status: designing).
+- **Feature backlog HTML:** `docs/Feature_Backlog.html` — sticky tab fix applied.
+- **Glossary:** `docs/CONTEXT.md` — updated with Session Suspend, Session Resume, Session Archive terms.
+- **Pre-commit:** `scripts/check-banned-types.sh` + `npm run typecheck` + `npm run lint` + `npm run build`.
+- **Branch:** `feature/session-manager` (based on main).
+- **Sessions dir:** `/home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/sessions/`.
+
+## Excluded from this document
+
+- Grill decision details (GRILL-session-manager.txt — all 8 decisions documented there)
+- PRD goals and acceptance criteria (PRD-session-manager.md)
+- API contracts and data models (TRD-session-manager.md)
+- Sequence diagrams and QA checklist (FLOW-session-manager.md)
+- Implementation phase plan (IMPL-session-manager.md — 6 phases with task breakdown)
+- Plain-English explanation (EXPLAINED-session-manager.txt)
+- Cross-doc consistency report (run by subagent ses_06142d — all clean)
+
+## Suggested skills for next session
+
+- `tdd` — implement Phase 0–1 with test-first approach (types, store, create/resume/destroy)
+- `typecheck` — run before every commit (tsc + banned-type grep)
+- `git-flow` — commit, PR, merge when implementation is complete
+- `update-backlog` — change session-manager status to "implementing" then "shipped"
+- `execute-pack` — if the user wants to continue the backlog execution pattern

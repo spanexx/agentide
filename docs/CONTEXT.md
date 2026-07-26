@@ -29,8 +29,11 @@ change?"* The ideal answer is nothing.
 | **Gateway** | Entry point — auth, session creation, discovery, routing. Never executes |
 | **Control Plane** | Gateway + Session Manager + Capability Registry + Plugin Manager — coordinates, doesn't execute |
 | **Execution Plane** | All Runtimes (Browser, Backend, Docker, Git, etc.) — executes, doesn't coordinate |
-| **Session** | An execution context (not chat history) — owns its runtime resources, auto-cleaned on destroy |
-| **Session Manager** | Creates/resumes/destroys sessions |
+| **Session** | An execution context (not chat history) — owns its runtime resources, auto-cleaned on destroy. Lifecycle: Active (running) ⇄ Suspended (paused, resources retained) → Archived (soft-delete, metadata retained for TTL) |
+| **Session Manager** | Creates/resumes/destroy sessions. Tracks runtime resources per session. Part of the Control Plane |
+| **Session Suspend** | Moving a session from Active to Suspended — resources preserved, execution paused. Triggered by idle timeout or Gateway policy |
+| **Session Resume** | Moving a session from Suspended to Active — resources restored, execution continues. Called by Gateway via session ID only |
+| **Session Archive** | Soft-delete state after destroy — session metadata kept for configurable TTL, resources already cleaned up |
 | **Runtime** | An execution environment (Browser Runtime, Backend Runtime, etc.), owns its own resources |
 | **Adapter** | Pure protocol translator (MCP, CLI, REST, WebSocket) — no business logic, no state |
 | **Plugin** | Extends the platform without touching core — Runtime Plugin / Service Plugin / Developer Plugin |
@@ -127,3 +130,4 @@ Append here as each `feature-pipeline` run settles something. Format: `<date> �
   changed to `{ eventName, subscriberPattern, error: { message, stack? } }`. Error objects
   normalized before surfacing. Malformed wildcard patterns (e.g. `br*wser.*`) rejected at
   subscribe time. All 29 existing tests updated and passing.
+- 2026-07-26 — session-manager grilling — State machine: Active ⇄ Suspended → Archived (soft-delete). Suspend/destroy: Gateway + Session Manager combined policy (A + C). Resume: session ID only (Gateway is sole caller). Timeouts: 5 min idle → Suspend, 30 min TTL → Archive, both configurable per-session. Resource tracking: direct registration via Session Manager, cleanup triggered via Event Bus (`session.cleanup_resources`). Events: `session.created`, `session.suspended`, `session.resumed`, `session.destroyed`, `session.cleanup_resources`. Cleanup ordering: `cleanup_resources` fires before `destroyed`.
