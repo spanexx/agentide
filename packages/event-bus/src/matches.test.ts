@@ -15,20 +15,21 @@ describe("matches (wildcard grammar)", () => {
     expect(matches("browser.page.loaded", "browser.page")).toBe(false);
   });
 
-  it("`*` matches exactly one segment after the prefix", () => {
+  it("prefix wildcard `a.b.*` matches any depth under that prefix", () => {
     expect(matches("browser.*", "browser.started")).toBe(true);
-    expect(matches("browser.*", "browser.page.loaded")).toBe(false);
+    expect(matches("browser.*", "browser.page.loaded")).toBe(true);
+    expect(matches("browser.*", "browser.navigation.completed")).toBe(true);
   });
 
-  it("`**` matches any depth including the prefix-only event", () => {
-    expect(matches("**", "browser.started")).toBe(true);
-    expect(matches("**", "browser.page.loaded")).toBe(true);
-    expect(matches("**", "capability.registered")).toBe(true);
-    expect(matches("**", "anything.at.any.depth")).toBe(true);
+  it("prefix wildcard does not match unrelated names", () => {
+    expect(matches("browser.*", "session.created")).toBe(false);
+    expect(matches("browser.*", "capability.registered")).toBe(false);
   });
 
-  it("prefix plus `**` matches any deeper event", () => {
-    expect(matches("browser.**", "browser.started")).toBe(true);
-    expect(matches("browser.**", "browser.page.loaded")).toBe(true);
+  it("bare `*` matches every event name", () => {
+    expect(matches("*", "browser.started")).toBe(true);
+    expect(matches("*", "browser.page.loaded")).toBe(true);
+    expect(matches("*", "capability.registered")).toBe(true);
+    expect(matches("*", "anything.at.any.depth")).toBe(true);
   });
 });

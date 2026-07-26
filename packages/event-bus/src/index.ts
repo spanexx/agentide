@@ -10,8 +10,8 @@
  * Code Map: event-bus public surface + internal dispatch helpers
  * - createEventBus: factory that returns an isolated bus instance.
  * - EventBus: interface exposing publish + subscribe.
- * - PublishedEvent: immutable event shape handed to handlers.
- * - HandlerFailurePayload: payload of the bus-internal event.handler_failed.
+ * - PlatformEvent: immutable event shape handed to handlers (includes id + publishedAt).
+ * - HandlerFailedPayload: payload of the bus-internal event.handler_failed.
  * - EventHandler: type for sync-or-async handler functions.
  * - RESERVED_INTERNAL_PREFIX: constant "event." — bus-internal namespace.
  * - matches: exported wildcard matcher (pattern ↔ event name).
@@ -23,8 +23,8 @@
  * CID Index:
  * CID:index-001 -> createEventBus
  * CID:index-002 -> EventBus
- * CID:index-003 -> PublishedEvent
- * CID:index-004 -> HandlerFailurePayload
+ * CID:index-003 -> PlatformEvent
+ * CID:index-004 -> HandlerFailedPayload
  * CID:index-005 -> EventHandler
  * CID:index-006 -> RESERVED_INTERNAL_PREFIX
  * CID:index-007 -> matches
@@ -37,37 +37,44 @@
 
 // CID:index-005 - EventHandler
 // Purpose: type for any sync or async handler passed to subscribe().
-// Uses: PublishedEvent<TPayload> (must be defined first via type-only forward ref).
+// Uses: PlatformEvent<TPayload> (must be defined first via type-only forward ref).
 // Used by: EventBus.subscribe signatures, all handler invocations in
 //   dispatchToSnapshot (index-008).
 export type EventHandler<TPayload = unknown> = (
-  event: PublishedEvent<TPayload>,
+  event: PlatformEvent<TPayload>,
 ) => unknown;
 
-// CID:index-003 - PublishedEvent
-// Purpose: immutable shape handed to every handler; both `name` and
-//   `payload` are `readonly` so TypeScript callers cannot accidentally
-//   mutate and runtime dispatch shallow-freezes the payload before
-//   handing it out (PRD AC-12, AC-13).
+// CID:index-003 - PlatformEvent
+// Purpose: immutable shape handed to every handler; `name`, `payload`,
+//   `id`, and `publishedAt` are all `readonly` so TypeScript callers
+//   cannot accidentally mutate. Runtime dispatch shallow-freezes the
+//   payload before handing it out (PRD AC-12, AC-13).
 // Uses: shallowFreeze (private).
-// Used by: createEventBus (publish path), HandlerFailurePayload (embeds
-//   the original event in the failure payload), matches test surface.
-export interface PublishedEvent<TPayload = unknown> {
+// Used by: createEventBus (publish path), matches test surface.
+export interface PlatformEvent<TPayload = unknown> {
   readonly name: string;
   readonly payload: Readonly<TPayload>;
+  readonly id: string;
+  readonly publishedAt: number;
 }
 
-// CID:index-004 - HandlerFailurePayload
+// CID:index-004 - HandlerFailedPayload
 // Purpose: payload of the bus-internal `event.handler_failed` event so
-//   observability tooling can see which handler failed and why without
-//   the bus having to expose subscription ids in v1 (PRD AC-11).
-// Uses: PublishedEvent<TPayload> for the embedded original event.
+//   observability tooling can see which subscriber failed and why.
+//   Carries the original event name, the subscriber's pattern, and a
+//   normalized error (TRD §2.2 — eventName + subscriberPattern +
+//   { message, stack? }).
+// Uses: none.
 // Used by: emitHandlerFailed (index-010) when constructing the failure
 //   payload; subscribers on `event.handler_failed` consume it.
-export interface HandlerFailurePayload<TPayload = unknown> {
-  readonly event: PublishedEvent<TPayload>;
-  readonly handlerIndex: number;
-  readonly error: unknown;
+export interface HandlerFailedPayload {
+  readonly eventName: string;
+  readonly subscriberPattern: string;
+  readonly error: { message: string; stack?: string };
+}
+
+export interface Subscription {
+  unsubscribe(): void;
 }
 
 // CID:index-002 - EventBus
@@ -79,7 +86,7 @@ export interface HandlerFailurePayload<TPayload = unknown> {
 //   only contract surface for tests (createEventBus.phase{1,2,3}.test.ts).
 export interface EventBus {
   publish<TPayload>(name: string, payload: TPayload): Promise<void>;
-  subscribe(pattern: string, handler: EventHandler): () => void;
+  subscribe(pattern: string, handler: EventHandler): Subscription;
 }
 
 /**
@@ -116,25 +123,27 @@ export const RESERVED_INTERNAL_PREFIX = "event.";
 // Used by: every platform component that needs its own bus instance
 //   (Session Manager, Capability Registry, etc.); the entire test suite.
 export function createEventBus(): EventBus {
-  const subscriptions: Subscription[] = [];
+  const subscriptions: RegisteredSubscription[] = [];
   let nextOrder = 0;
 
-  const subscribe = (pattern: string, handler: EventHandler): (() => void) => {
+  const subscribe = (pattern: string, handler: EventHandler): Subscription => {
     validatePattern(pattern);
     if (typeof handler !== "function") {
       throw new Error("subscribe: handler must be a function.");
     }
     const order = nextOrder++;
-    const subscription: Subscription = { pattern, handler, order };
-    subscriptions.push(subscription);
+    const sub: RegisteredSubscription = { pattern, handler, order };
+    subscriptions.push(sub);
     let unsubscribed = false;
-    return () => {
-      if (unsubscribed) return;
-      unsubscribed = true;
-      const index = subscriptions.indexOf(subscription);
-      if (index !== -1) {
-        subscriptions.splice(index, 1);
-      }
+    return {
+      unsubscribe(): void {
+        if (unsubscribed) return;
+        unsubscribed = true;
+        const idx = subscriptions.indexOf(sub);
+        if (idx !== -1) {
+          subscriptions.splice(idx, 1);
+        }
+      },
     };
   };
 
@@ -153,9 +162,11 @@ export function createEventBus(): EventBus {
     payload: TPayload,
   ): Promise<void> => {
     validateEventName(name);
-    const event: PublishedEvent<TPayload> = Object.freeze({
+    const event: PlatformEvent<TPayload> = Object.freeze({
       name,
       payload: shallowFreeze(payload) as Readonly<TPayload>,
+      id: crypto.randomUUID(),
+      publishedAt: Date.now(),
     });
     // Internal dispatch swallows handler failures silently — we are already
     // inside a failure path, so re-surfacing would loop forever.
@@ -180,16 +191,18 @@ export function createEventBus(): EventBus {
       );
     }
 
-    const event: PublishedEvent<TPayload> = Object.freeze({
+    const event: PlatformEvent<TPayload> = Object.freeze({
       name,
       payload: shallowFreeze(payload) as Readonly<TPayload>,
+      id: crypto.randomUUID(),
+      publishedAt: Date.now(),
     });
 
     // Public dispatch surfaces every handler failure as `event.handler_failed`
     // but never lets a failing handler reject `publish()`.
     await dispatchToSnapshot(event, {
-      onSyncError: (i, err) => emitHandlerFailed(event, i, err),
-      onAsyncError: (i, err) => emitHandlerFailed(event, i, err),
+      onSyncError: (pattern, err) => emitHandlerFailed(event.name, pattern, err),
+      onAsyncError: (pattern, err) => emitHandlerFailed(event.name, pattern, err),
     });
   };
 
@@ -201,15 +214,19 @@ export function createEventBus(): EventBus {
   //   guard and reach the failure subscribers.
   // Used by: dispatchToSnapshot (index-008) via the onSyncError /
   //   onAsyncError callbacks supplied by publish() and dispatchInternal().
-  const emitHandlerFailed = async <TPayload>(
-    originalEvent: PublishedEvent<TPayload>,
-    handlerIndex: number,
+  const emitHandlerFailed = async (
+    eventName: string,
+    subscriberPattern: string,
     error: unknown,
   ): Promise<void> => {
-    const failurePayload: HandlerFailurePayload<TPayload> = Object.freeze({
-      event: originalEvent,
-      handlerIndex,
-      error,
+    const normalizedError =
+      error instanceof Error
+        ? { message: error.message, stack: error.stack }
+        : { message: String(error), stack: undefined };
+    const failurePayload: HandlerFailedPayload = Object.freeze({
+      eventName,
+      subscriberPattern,
+      error: normalizedError,
     });
     await dispatchInternal("event.handler_failed", failurePayload);
   };
@@ -232,10 +249,10 @@ export function createEventBus(): EventBus {
   //   (private) to detect async return values.
   // Used by: publish() and dispatchInternal() (index-009).
   async function dispatchToSnapshot(
-    event: PublishedEvent<unknown>,
+    event: PlatformEvent<unknown>,
     policy: {
-      onSyncError: (handlerIndex: number, error: unknown) => Promise<void>;
-      onAsyncError: (handlerIndex: number, error: unknown) => Promise<void>;
+      onSyncError: (pattern: string, error: unknown) => Promise<void>;
+      onAsyncError: (pattern: string, error: unknown) => Promise<void>;
     },
   ): Promise<void> {
     // Snapshot matching subscriptions in registration order so unsubscribe
@@ -256,14 +273,14 @@ export function createEventBus(): EventBus {
           const tracked = (result as Promise<unknown>).then(
             () => undefined,
             async (err: unknown) => {
-              await policy.onAsyncError(i, err);
+              await policy.onAsyncError(sub.pattern, err);
             },
           );
           startedAsyncs.push(tracked);
         }
       } catch (syncError) {
         // Sync handler threw. Route to the caller's policy and continue.
-        await policy.onSyncError(i, syncError);
+        await policy.onSyncError(sub.pattern, syncError);
       }
     }
 
@@ -277,7 +294,7 @@ export function createEventBus(): EventBus {
 
 // --- internal helpers ---
 
-interface Subscription {
+interface RegisteredSubscription {
   pattern: string;
   handler: EventHandler;
   order: number;
@@ -298,23 +315,22 @@ function validatePattern(pattern: string): void {
   const segments = pattern.split(".");
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
-    if (seg === "**") {
+    if (seg === "*") {
       if (i !== segments.length - 1) {
         throw new Error(
-          `"**" is only valid as the final segment of a pattern. Got "${pattern}".`,
+          `"*" is only valid as the final segment of a pattern. Got "${pattern}".`,
         );
       }
       continue;
     }
-    if (seg === "*") continue;
-    if (seg.length === 0) {
-      throw new Error(
-        `Invalid wildcard grammar in pattern "${pattern}" (empty segment).`,
-      );
-    }
     if (seg.includes("*")) {
       throw new Error(
         `Invalid wildcard grammar in pattern "${pattern}" (* must be its own segment).`,
+      );
+    }
+    if (seg.length === 0) {
+      throw new Error(
+        `Invalid wildcard grammar in pattern "${pattern}" (empty segment).`,
       );
     }
   }
@@ -331,9 +347,9 @@ function validateEventName(name: string): void {
 
 /**
  * Wildcard matching:
- *   - exact segment match otherwise
- *   - `*` matches exactly one segment
- *   - `**` as the final segment matches any remaining depth
+ *   - exact segment match if no wildcard
+ *   - `*` as the final segment matches any remaining depth
+ *   - bare `*` matches every event name
  */
 // CID:index-007 - matches
 // Purpose: public wildcard matcher — both the bus itself (via
@@ -346,23 +362,23 @@ function validateEventName(name: string): void {
 export function matches(pattern: string, name: string): boolean {
   const pSegs = pattern.split(".");
   const nSegs = name.split(".");
-  let pi = 0;
-  let ni = 0;
-  while (pi < pSegs.length && ni < nSegs.length) {
-    const p = pSegs[pi];
-    if (p === "**") {
-      return true;
+
+  // If last segment is `*`, treat as prefix wildcard
+  if (pSegs.length > 0 && pSegs[pSegs.length - 1] === "*") {
+    const prefix = pSegs.slice(0, -1);
+    if (prefix.length > nSegs.length) return false;
+    for (let i = 0; i < prefix.length; i++) {
+      if (prefix[i] !== nSegs[i]) return false;
     }
-    if (p === "*") {
-      pi++;
-      ni++;
-      continue;
-    }
-    if (p !== nSegs[ni]) return false;
-    pi++;
-    ni++;
+    return true;
   }
-  return pi === pSegs.length && ni === nSegs.length;
+
+  // Exact match
+  if (pSegs.length !== nSegs.length) return false;
+  for (let i = 0; i < pSegs.length; i++) {
+    if (pSegs[i] !== nSegs[i]) return false;
+  }
+  return true;
 }
 
 function shallowFreeze<T>(value: T): Readonly<T> {
