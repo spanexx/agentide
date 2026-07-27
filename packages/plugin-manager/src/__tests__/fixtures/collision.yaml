@@ -1,0 +1,5 @@
+runtime:
+  id: my-plugin
+version: "1.0"
+capabilities:
+  - customer.read
