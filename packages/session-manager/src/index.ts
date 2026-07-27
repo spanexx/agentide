@@ -22,22 +22,21 @@ import {
  *
  * CID Index:
  * CID:index-001 -> createSessionManager
- * CID:index-002 -> createId
- * CID:index-003 -> systemClock
  *
  * Quick lookup: rg -n "CID:index-" packages/session-manager/src/index.ts
  */
 
+const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
+const DEFAULT_SUSPENDED_TTL_MS = 1_800_000;
+const DEFAULT_ARCHIVE_TTL_MS = 604_800_000;
+
+const systemClock: Clock = {
+  now: () => Date.now(),
+  setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
 function createId(): string {
-  // CID:index-002 - createId
-  // Purpose: generate RFC 4122 v4 UUIDs in-process without a node:crypto
-  //   dependency. Sets the version (4) and variant (10xx) bits so callers
-  //   can treat the output as a standard UUID.
-  // discovery/issues: random bytes come from Math.random which is not
-  //   cryptographically strong; acceptable for session identifiers but not
-  //   for security tokens.
-  // Uses: Math.random.
-  // Used by: create().
   const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -45,34 +44,11 @@ function createId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
-const DEFAULT_SUSPENDED_TTL_MS = 1_800_000;
-const DEFAULT_ARCHIVE_TTL_MS = 604_800_000;
-
-const systemClock: Clock = {
-  // CID:index-003 - systemClock
-  // Purpose: default Clock that delegates to global setTimeout/clearTimeout
-  //   and Date.now. Used when no clock is injected via SessionManagerConfig.
-  // discovery/issues: ReturnType<typeof setTimeout> widens to number in
-  //   NodeNext lib so we coerce through unknown to keep the call site simple.
-  // Uses: global setTimeout/clearTimeout/Date.
-  // Used by: createSessionManager when no clock override is supplied.
-  now: () => Date.now(),
-  setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
-
+// CID:index-001 - createSessionManager
+// Purpose: factory — composes a session store, per-session timers, a ResourceTracker, and an EventPublisher
+// Uses: EventBus, EventPublisher, ResourceTracker, Clock, SessionManager
+// Used by: Gateway (sole caller); test suite
 export function createSessionManager(
-  // CID:index-001 - createSessionManager
-  // Purpose: factory that composes a session store, three timer slots per
-  //   session (idle, suspended TTL, archive purge), a ResourceTracker, and
-  //   an EventPublisher. All public methods are synchronous; only the
-  //   Event Bus publish is async and fire-and-forget.
-  // discovery/issues: the factory's closures share `cancel`, `startIdle`,
-  //   and the timers Map so each method is a thin wrapper over those
-  //   helpers — keeps lifecycle semantics in one place.
-  // Uses: EventBus, EventPublisher, ResourceTracker, Clock, SessionManager.
-  // Used by: Gateway (sole caller); test suite.
   eventBus: EventBus,
   config: SessionManagerConfig = {},
 ): SessionManager {
