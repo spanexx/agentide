@@ -75,7 +75,8 @@ export async function createPluginManager(
 
   return {
     install: (source: string) => install(ctx, source),
-    installFromRegistry: async (_id: string): Promise<InstallRecord> => {
+    installFromRegistry: async (id: string): Promise<InstallRecord> => {
+      void id; // parameter kept for API contract; unused until marketplace pack ships
       throw new PluginManagerError(
         ERROR_CODES.MARKETPLACE_UNAVAILABLE,
         "public Plugin Marketplace is not available yet",

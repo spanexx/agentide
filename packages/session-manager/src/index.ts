@@ -32,8 +32,9 @@ const DEFAULT_ARCHIVE_TTL_MS = 604_800_000;
 
 const systemClock: Clock = {
   now: () => Date.now(),
+  // @ts-expect-error - Node's setTimeout returns Timeout; Clock interface declares number
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  clearTimeout: (handle) => clearTimeout(handle),
 };
 
 function createId(): string {

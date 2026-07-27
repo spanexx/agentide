@@ -1,61 +1,96 @@
-# Handoff — Session Manager Design Complete (#3 in Tier 1)
+# Handoff — plugin-manager shipped
 
-## Situation
+**Date**: 2026-07-27
+**Branch**: `feature/plugin-manager`
+**Last commit**: `8a38b0c` (docs(backlog): mark plugin-manager as SHIPPED)
 
-- **Branch:** `feature/session-manager` — design docs locked, awaiting Phase 5b (implementation).
-- **Last commit:** `ae0181a` — "feat(backlog): add Explain tab with Markdown rendering, split data into per-slug files".
-- **Uncommitted changes:** `docs/Feature_Backlog.html` (CSS tweak: sticky dptabs), `scripts/backlog/session-manager.js` (updated to "designing" status with what/impl/notes fields), plus new doc files in `docs/features/session-manager/`.
-- **Git is dirty** — design docs and backlog updates need committing.
+## What shipped
 
-## What was done this session
+`@platform/plugin-manager` is fully implemented and tested. 107 behaviour tests pass across 8 test files; build/lint/typecheck/check-banned-types clean.
 
-Full feature pipeline for `@platform/session-manager` (Tier 1, pack #3):
+**Public surface** (async factory):
+```ts
+import { createPluginManager } from "@platform/plugin-manager";
 
-1. **Phase 0 (Grill):** 8 decisions locked — state machine (Active/Suspended/Archived), suspend/destroy policy (Gateway + Session Manager combined), resume (session ID only), timeout defaults (5 min idle, 30 min suspended TTL), resource tracking (direct registration + Event Bus cleanup), event surface (5 events), cleanup ordering (cleanup_resources before destroyed).
-2. **Phase 1 (PRD):** Written and approved — 9 product goals, 17 acceptance criteria.
-3. **Phase 1b (EXPLAINED):** Written and approved — 3 real-world scenarios (session creation, suspend/resume, abandoned/archive).
-4. **Phase 2 (TRD):** Written and approved — data models (SessionRecord, ResourceRecord, SessionManagerConfig), API contracts (create/resume/destroy/getStatus/attachResource/detachResource/listResources), event payloads, no external deps (only @platform/event-bus).
-5. **Phase 3 (FLOW):** Written and approved — 6 flows with Mermaid diagrams, full QA checklist.
-6. **Phase 4 (IMPL):** Written and approved — 6 phases (scaffold, store, timers, events, resource tracking, archive purge).
-7. **Phase 5a (Decision stability):** Passed — subagent cross-check confirmed all 6 docs consistent.
-8. **Backlog update:** session-manager entry updated — status "designing", owner spanexx, what/impl/notes fields written.
-9. **CSS fix:** `.dptabs` in `Feature_Backlog.html` made sticky (position:sticky; top:0; z-index:1) so Details/Explain tabs stay pinned on scroll.
+const pm = await createPluginManager(eventBus, capabilityRegistry, {
+  installRecordPath: "./data/installed-plugins.json", // default
+  cleanupTimeoutMs: 5000,                            // default
+  fs,        // optional FileSystem override (default: Node fs.promises)
+  yaml,      // optional YamlParser override (default: yaml@^2.6.0)
+  clock,     // optional Clock override (default: system clock)
+});
+// pm: { install, installFromRegistry, update, reload, disable, enable, uninstall, list, get }
+```
 
-## What's next
+The factory performs startup re-install on construction: reads `./data/installed-plugins.json`, re-registers every plugin's capabilities, sets `lastError` on failures (does NOT fire `plugin.installed` on startup).
 
-**Phase 5b: Implement.** Start with Phase 0 of the IMPL plan:
-- Package scaffold at `packages/session-manager/`
-- Types: SessionRecord, ResourceRecord, SessionManagerConfig, event payloads, error classes
-- Wire workspace dependency to `@platform/event-bus`
-- Then proceed through Phases 1–5 bottom-up
+**Files** (all under 350 lines):
+- `packages/plugin-manager/src/types.ts` — public contracts + `YamlValue` recursive type
+- `packages/plugin-manager/src/errors.ts` — `ERROR_CODES` (16 constants) + `PluginManagerError`
+- `packages/plugin-manager/src/manifest.ts` — `parseManifest` + `validateManifest` + helpers
+- `packages/plugin-manager/src/store.ts` — `InstallStore` (in-memory + atomic disk persistence)
+- `packages/plugin-manager/src/events.ts` — `EventPublisher` (7 `plugin.*` events)
+- `packages/plugin-manager/src/fs.ts` — `nodeFileSystem` (atomic write-temp-then-rename)
+- `packages/plugin-manager/src/yaml.ts` — `nodeYamlParser` (wraps `yaml@^2.6.0`)
+- `packages/plugin-manager/src/lifecycle-helpers.ts` — shared helpers + `applyManifest` + `PluginManagerContext`
+- `packages/plugin-manager/src/lifecycle.ts` — install/update/reload/disable/enable/uninstall/performStartupReinstall
+- `packages/plugin-manager/src/index.ts` — thin `createPluginManager` factory
 
-The pre-commit hook will enforce: check-banned-types → typecheck → lint → build.
+**Test files**: `types.test.ts`, `manifest.test.ts`, `store.test.ts`, `plugin-manager.test.ts`, `update-reload.test.ts`, `disable-enable.test.ts`, `uninstall.test.ts`, `integration.test.ts` — all vitest, real EventBus + CapabilityRegistry, in-memory fakes for FileSystem/Clock/YamlParser.
 
-## Relevant context
+**Fixtures**: `browser.yaml`, `browser-v2.yaml`, `logging.yaml`, `vscode-helper.yaml`, `collision.yaml`, `malformed.yaml`, `no-type.yaml`, `two-types.yaml`.
 
-- **Shipped packs:** `@platform/event-bus` (29 tests), `@platform/capability-registry` (18 tests).
-- **Doc pack:** `docs/features/session-manager/` — GRILL, PRD, EXPLAINED, TRD, FLOW, IMPL (all approved).
-- **Backlog:** `scripts/backlog/session-manager.js` (status: designing).
-- **Feature backlog HTML:** `docs/Feature_Backlog.html` — sticky tab fix applied.
-- **Glossary:** `docs/CONTEXT.md` — updated with Session Suspend, Session Resume, Session Archive terms.
-- **Pre-commit:** `scripts/check-banned-types.sh` + `npm run typecheck` + `npm run lint` + `npm run build`.
-- **Branch:** `feature/session-manager` (based on main).
-- **Sessions dir:** `/home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/sessions/`.
+## Doc-pack references (already shipped)
 
-## Excluded from this document
+- `docs/features/plugin-manager/PRD-plugin-manager.md` — product requirements
+- `docs/features/plugin-manager/TRD-plugin-manager.md` — technical design
+- `docs/features/plugin-manager/FLOW-plugin-manager.md` — request/data flow + QA checklist
+- `docs/features/plugin-manager/IMPL-plugin-manager.md` — phase plan (all 8 phases executed)
+- `docs/features/plugin-manager/GRILL-plugin-manager.txt` — 10 grilling decisions
 
-- Grill decision details (GRILL-session-manager.txt — all 8 decisions documented there)
-- PRD goals and acceptance criteria (PRD-session-manager.md)
-- API contracts and data models (TRD-session-manager.md)
-- Sequence diagrams and QA checklist (FLOW-session-manager.md)
-- Implementation phase plan (IMPL-session-manager.md — 6 phases with task breakdown)
-- Plain-English explanation (EXPLAINED-session-manager.txt)
-- Cross-doc consistency report (run by subagent ses_06142d — all clean)
+## Commits on this branch
 
-## Suggested skills for next session
+```
+8a38b0c docs(backlog): mark plugin-manager as SHIPPED
+b2f08c3 chore(workspace): wire @platform/plugin-manager into root tsconfig and lockfile
+3fc9061 feat(plugin-manager): ship control-plane plugin lifecycle manager
+ee186e3 docs(plugin-manager): ship complete doc pack — GRILL, PRD, TRD, FLOW, IMPL
+```
 
-- `tdd` — implement Phase 0–1 with test-first approach (types, store, create/resume/destroy)
-- `typecheck` — run before every commit (tsc + banned-type grep)
-- `git-flow` — commit, PR, merge when implementation is complete
-- `update-backlog` — change session-manager status to "implementing" then "shipped"
-- `execute-pack` — if the user wants to continue the backlog execution pattern
+## Inline notes / decisions made during implementation
+
+1. **`CapabilityRecord` requires `owner` field** even though the registry ignores it (overrides with the function parameter). The build helper sets it from the plugin's owner. Tests pre-registering capabilities must include `owner`.
+2. **`InstallRecord.lastError` extended** with `at: number` field beyond the `PluginError` shape (`PluginError & { at }`). Matches IMPL spec for reload-failure persistence.
+3. **`YamlValue` recursive type** used in place of `unknown` to satisfy the project's banned-types check. Defined in `types.ts` and reused across manifest/store/errors. `as YamlValue` casts in tests where YAML parsing returns `any`.
+4. **System clock** uses `@ts-expect-error` on `setTimeout`/`clearTimeout` because Node's `setTimeout` returns `Timeout` (object) while the `Clock` interface declares `number`. Two lines suppressed, no other type leakage.
+5. **Plugin type → CapabilityType mapping**: `runtime` → `runtime`; `service` → `platform`; `developer` → `platform`. Aligns with docs' permission tiering convention.
+6. **Cleanup timeout warning** logged via `console.warn` when the plugin doesn't confirm cleanup within `cleanupTimeoutMs`. Uninstall proceeds anyway. No logger seam (could be added later if a use case emerges).
+
+## What's deferred (per PRD/TRD Non-Goals)
+
+- Plugin Marketplace / registry-id install — `installFromRegistry()` is a stub throwing `PLUGIN_MARKETPLACE_UNAVAILABLE`. Body fills in when marketplace pack ships.
+- Plugin signing / sandboxing / cross-plugin deps / platform-version constraints — all out of scope for v1.
+- `plugin.error` event on the Event Bus — terminal-only errors in v1.
+- Plugin capability versioning — single canonical name per capability.
+- Plugin code execution model — Plugin Manager manages install + capability registration only; each plugin type (runtime/service/developer) needs its own code-loading contract (follow-up pack).
+
+## Next pack (per backlog)
+
+`gateway-core` (#5 in backlog): Auth, session creation, capability discovery, routing to a runtime — no execution logic. Depends on Tier 1 complete (now true). First real consumer of `@platform/plugin-manager` (will subscribe to `plugin.*` events).
+
+Parallel opportunity once gateway-core lands: `sdk-node` (#8) and `mcp-adapter` (#9) don't block each other.
+
+## Drifts / open items (carried forward)
+
+- **Drift D-1** (session-manager) — still open, unrelated to plugin-manager. Owner: session-manager.
+- **CONTEXT.md "Open Items"** — Tenant design, Plugin Marketplace operational details, per-runtime ownership track assignment. None resolved by this pack.
+
+## How to verify
+
+```bash
+cd agentide
+npm run precommit   # check-banned-types + typecheck + lint + build
+npm run test -- --run
+```
+
+All 174 tests should pass (107 plugin-manager + 67 from other packages).
