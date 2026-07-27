@@ -99,7 +99,8 @@ Regression check for every phase: `npm run test -- --run && npm run typecheck &&
 - [ ] `create()` returns session with `id`, status `active`, all timestamps set
 - [ ] `create()` with metadata overrides applies `idleTimeoutMs` and `suspendedTtlMs`
 - [ ] `create()` with missing ownerId throws `ValidationError`
-- [ ] `create()` with invalid `idleTimeoutMs` (< 1000) throws `ValidationError`
+- [ ] `create()` with invalid `idleTimeoutMs` (must be a positive finite number) throws `ValidationError`
+- [ ] `create()` with invalid `suspendedTtlMs` (must be a positive finite number) throws `ValidationError`
 - [ ] `resume()` on suspended session returns status `active`
 - [ ] `resume()` on non-existent session throws `SessionNotFoundError`
 - [ ] `resume()` on archived session throws `SessionArchivedError`

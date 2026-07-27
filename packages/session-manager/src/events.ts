@@ -19,6 +19,14 @@ import type {
 } from "./types.js";
 
 export class EventPublisher {
+  // CID:events-001 - EventPublisher
+  // Purpose: maps SessionRecord state changes to Event Bus payloads. Each
+  //   method is fire-and-forget (publish returns a Promise that the caller
+  //   discards) so state transitions never block on slow subscribers.
+  // discovery/issues: All payloads are plain objects so the Event Bus
+  //   shallow-freezes them on publish (event-bus v2).
+  // Uses: EventBus, payload interfaces from types.ts.
+  // Used by: createSessionManager (state transition call sites).
   constructor(private readonly eventBus: EventBus) {}
 
   created(record: SessionRecord): void {

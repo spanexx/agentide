@@ -137,4 +137,70 @@ describe("SessionManager", () => {
     const status: SessionStatus = "active";
     expect(status).toBe("active");
   });
+
+  it("rejects resource attach on missing sessions and permits suspended sessions", () => {
+    const clock = new TestClock();
+    const manager = createSessionManager(createEventBus(), { clock });
+    expect(() => manager.attachResource("missing", resource())).toThrow(SessionNotActiveError);
+    const session = manager.create({ ownerId: "app", adapterType: "mcp", metadata: { idleTimeoutMs: "1" } });
+    clock.advance(1);
+    expect(manager.getStatus(session.id)).toBe("suspended");
+    expect(() => manager.attachResource(session.id, resource())).not.toThrow();
+    expect(manager.listResources(session.id)).toEqual([resource()]);
+  });
+
+  it("rejects resource attach on archived sessions", () => {
+    const manager = createSessionManager(createEventBus());
+    const session = manager.create({ ownerId: "app", adapterType: "mcp" });
+    manager.destroy(session.id);
+    expect(() => manager.attachResource(session.id, resource())).toThrow(SessionNotActiveError);
+  });
+
+  it("detach is idempotent on missing resource but errors on missing session", () => {
+    const manager = createSessionManager(createEventBus());
+    const session = manager.create({ ownerId: "app", adapterType: "mcp" });
+    manager.detachResource(session.id, "never-attached");
+    expect(manager.listResources(session.id)).toEqual([]);
+    expect(() => manager.detachResource("missing", "any")).toThrow(SessionNotFoundError);
+  });
+
+  it("listResources returns empty array for archived sessions", () => {
+    const manager = createSessionManager(createEventBus());
+    const session = manager.create({ ownerId: "app", adapterType: "mcp" });
+    manager.attachResource(session.id, resource());
+    manager.destroy(session.id);
+    expect(manager.listResources(session.id)).toEqual([]);
+  });
+
+  it("destroy from suspended transitions to archived and carries explicit reason", () => {
+    const clock = new TestClock();
+    const bus = createEventBus();
+    const manager = createSessionManager(bus, { clock });
+    const reasons: string[] = [];
+    bus.subscribe("session.destroyed", (event) => {
+      const payload = event.payload as { reason: string };
+      reasons.push(payload.reason);
+    });
+    const session = manager.create({ ownerId: "app", adapterType: "mcp", metadata: { idleTimeoutMs: "5" } });
+    clock.advance(5);
+    expect(manager.getStatus(session.id)).toBe("suspended");
+    manager.destroy(session.id, "explicit");
+    expect(manager.getStatus(session.id)).toBe("archived");
+    expect(reasons).toEqual(["explicit"]);
+  });
+
+  it("failed resume publishes no events", () => {
+    const bus = createEventBus();
+    const events: string[] = [];
+    bus.subscribe("session.*", (event) => {
+      events.push(event.name);
+    });
+    const manager = createSessionManager(bus);
+    expect(() => manager.resume("missing")).toThrow(SessionNotFoundError);
+    const session = manager.create({ ownerId: "app", adapterType: "mcp" });
+    expect(() => manager.resume(session.id)).toThrow(SessionAlreadyActiveError);
+    manager.destroy(session.id);
+    expect(() => manager.resume(session.id)).toThrow(SessionArchivedError);
+    expect(events).toEqual(["session.created", "session.cleanup_resources", "session.destroyed"]);
+  });
 });

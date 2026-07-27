@@ -137,7 +137,7 @@ Resources are stored as a separate `Map<SessionId, ResourceRecord[]>` in the Res
 | `defaultIdleTimeoutMs` | `number` | No | 300000 | Global default idle timeout for new sessions |
 | `defaultSuspendedTtlMs` | `number` | No | 1800000 | Global default suspended TTL for new sessions |
 | `archiveTtlMs` | `number` | No | 604800000 (7 days) | How long archived records are kept before purge |
-| `timerResolutionMs` | `number` | No | 1000 | How often the timer manager checks for expired sessions |
+| `clock` | `Clock` | No | system clock | Optional `Clock` with `now`, `setTimeout`, `clearTimeout` for test-time virtual time |
 
 #### Event payloads
 
@@ -215,7 +215,8 @@ Creates a new session.
 **Errors:**
 - Missing or empty `ownerId`: throw `ValidationError`
 - Unknown `adapterType`: throw `ValidationError`
-- `metadata.idleTimeoutMs` < 1000: throw `ValidationError`
+- `metadata.idleTimeoutMs` < 1 (must be a positive finite number): throw `ValidationError`
+- `metadata.suspendedTtlMs` < 1 (must be a positive finite number): throw `ValidationError`
 
 **Side effects:** Publishes `session.created`. Starts idle timeout timer.
 

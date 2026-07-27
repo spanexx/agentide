@@ -345,7 +345,8 @@ A runtime creates and cleans up resources during a session.
 - [ ] `create()` with `metadata.idleTimeoutMs` overrides the default. [AC-2]
 - [ ] `create()` with `metadata.suspendedTtlMs` overrides the default. [AC-2]
 - [ ] `create()` without metadata uses defaults from `SessionManagerConfig`. [AC-2]
-- [ ] Invalid `idleTimeoutMs` (< 1000) throws `ValidationError`.
+- [ ] Invalid `idleTimeoutMs` (< 1, not finite) throws `ValidationError`.
+- [ ] Invalid `suspendedTtlMs` (< 1, not finite) throws `ValidationError`.
 
 ### Cleanup / teardown
 

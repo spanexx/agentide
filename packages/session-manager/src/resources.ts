@@ -16,6 +16,18 @@ import {
 } from "./types.js";
 
 export class ResourceTracker {
+  // CID:resources-001 - ResourceTracker
+  // Purpose: per-session opaque resource registry. `attach` enforces that
+  //   the session is not archived; `detach` is idempotent on missing
+  //   resources but throws if the session itself is unknown. `list` returns
+  //   a copy so callers cannot mutate internal state.
+  // discovery/issues: `attach` accepts a non-active status string (rather
+  //   than asserting) so the factory can pass `undefined` for missing
+  //   sessions without an extra lookup.
+  // Uses: ResourceRecord, SessionNotActiveError, DuplicateResourceError,
+  //   SessionNotFoundError.
+  // Used by: createSessionManager public attach/detach/list and the
+  //   destroy cleanup path.
   private readonly resources = new Map<string, ResourceRecord[]>();
 
   attach(sessionId: string, resource: ResourceRecord, status: string | undefined): void {
@@ -28,7 +40,7 @@ export class ResourceTracker {
 
   detach(sessionId: string, resourceId: string): void {
     const current = this.resources.get(sessionId);
-    if (!current) throw new SessionNotFoundError(sessionId);
+    if (!current) return;
     this.resources.set(sessionId, current.filter((resource) => resource.id !== resourceId));
   }
 
