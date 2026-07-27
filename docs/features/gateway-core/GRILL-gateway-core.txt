@@ -1,0 +1,396 @@
+Gateway Core - Grill Notes
+
+Status: Phase 0 grilling complete (12 questions locked)
+Date: 2026-07-27
+Source: docs/architecture/ (Agentide.md, Terminology.md, Capability_System.md,
+Business_Capability.md, Runtime_Capabilities.md, Platform_Capabilities.md,
+Goals.md, Plugin_Marketplace.md), docs/CONTEXT.md, docs/features/{event-bus,
+capability-registry,session-manager,plugin-manager}/*, PHILOSOPHY.md,
+opensrc on modelcontextprotocol/{typescript-sdk,modelcontextprotocol}
+
+What this feature is about
+
+- Build the platform's Gateway: the control-plane component that
+  authenticates callers, authorizes capability invocations, manages sessions,
+  dispatches to capability handlers, audits every invocation, applies rate
+  limits, and enforces tenant isolation.
+- Sits alongside Session Manager, Capability Registry, Plugin Manager in
+  the Control Plane. Coordinates, never executes capability handlers
+  itself.
+- First real consumer of @platform/plugin-manager: it subscribes to
+  plugin.* events and re-registers capabilities on install/update/reload.
+- Replaces nothing (no prior Gateway exists). Establishes the entry point
+  for every adapter (MCP, REST, CLI, WebSocket) into the platform.
+- Ships with the @platform/agentide meta-package: the operator never
+  writes code; `curl ... | bash` installs the binary, runs `agentide init`,
+  runs `agentide start`. Default MCP adapter bundled but replaceable.
+
+Questions and answers locked so far
+
+1. How do AI agents (or any external callers) reach a platform capability?
+
+Answer:
+- The Gateway exposes one internal function: `handleInvocation(req) →
+  response`, where `req` is a canonical "Capability Invocation" packet:
+  `{ caller, session?, capability, input }` and `response` is either
+  `{ output }` or `{ error }`.
+- Every adapter (MCP, REST, CLI, WebSocket) translates from its native
+  protocol into the canonical packet and back. Adapter-specific logic
+  lives in the adapter, not the Gateway.
+- The Gateway's dispatch / authn / authz / session / routing logic lives
+  in one place. Tests can exercise it by calling `handleInvocation`
+  directly, without an adapter.
+
+Why:
+- All dispatch / permission / routing logic in one place is easier to
+  test, easier to extend, easier to keep consistent across adapters.
+- Adding a new transport (e.g., Slack, a CLI tool) later only requires a
+  new adapter package. The Gateway doesn't change.
+- The Gateway's responsibilities stay coherent rather than scattered
+  across four adapter implementations.
+- Alternative (each adapter does its own dispatch) duplicates logic four
+  times and drifts over time.
+
+2. How does the Gateway know who is calling?
+
+Answer:
+- Bearer tokens (JWT) issued by the Gateway itself in v1.
+- An operator invokes an `auth.token.issue` capability (or runs
+  `agentide token issue`) to mint a token. The token carries claims:
+  `sub: { tenantId, callerId }`, `scope: [...]`, `exp: <unix>`, `iat:
+  <unix>`.
+- Callers (SDKs, AI agents, ops tools) present `Authorization: Bearer
+  <token>` on every request.
+- Tokens are signed by the Gateway with HS256 in v1. Short lifetime
+  (default 1 hour) with refresh. RS256 (public-key, multi-IdP) is a
+  later concern.
+
+Why:
+- Self-contained tokens — no per-request DB lookup for "who is this?".
+- Standard format (RFC 7519) — SDKs in any language can verify and
+  present.
+- Uniform across transports (HTTP, WS, CLI all support `Authorization:
+  Bearer`).
+- Short expiry limits blast radius if a token leaks.
+- v1 self-signed simplicity → RS256 upgrade path is open without
+  breaking the wire format.
+- Alternatives rejected: API keys need DB hits per request; OAuth is
+  overkill for self-hosted v1 (Gateway IS the IdP); mTLS is awkward
+  for SDK/agent callers.
+
+3. When does a session get created and tied to a caller?
+
+Answer:
+- Explicit, caller-initiated. The Gateway exposes `session.create` and
+  `session.destroy` as regular platform capabilities. The caller invokes
+  `session.create` and receives a `sessionId`. All subsequent capability
+  calls (other than session-management and read-only discovery) carry
+  that `sessionId`.
+- Required-vs-optional split:
+  - `session.*` lifecycle calls and read-only discovery (`capability.*`,
+    `plugin.list`, `plugin.describe`, `gateway.status`, `system.*`) do
+    NOT require a session.
+  - `plugin.install/update/uninstall/disable/enable`, `business.*`, and
+    `runtime.*` always require one.
+- For MCP transport, `sessionId` travels in `_meta.dev.agentide/sessionId`
+  (custom prefix, NOT in the MCP-reserved namespace).
+
+Why:
+- Matches MCP's connection-oriented agent model — a long-running agent
+  loop has a stable session context.
+- Lets session-scoped runtime resources (browser tabs, temp files) be
+  naturally tracked.
+- Audit log reads naturally: "everything in session s_abc was
+  agent-prod-1's work on build Q3 report".
+- No hidden costs from lazy / implicit sessions.
+- Alternative (lazy sessions on first call) hides the lifecycle, makes
+  session-scoping a side effect, harder to reason about audit and resource
+  cleanup.
+
+4. How does the Gateway decide a caller is allowed to invoke a capability?
+
+Answer:
+- Tier-hierarchy match, scoped per namespace.
+- Runtime caps: `read` < `act` < `destructive` (higher tier covers lower).
+- Platform caps: `read` < `write` (same).
+- Business caps: exact match — each capability is its own action, no tier
+  implied.
+- Matching rule: for each permission the capability declares, look up
+  the matching scope in the caller's token by (prefix, tier). If the
+  caller's tier rank >= the capability's required tier rank → allowed.
+- If none of the capability's declared permissions are covered → deny
+  with `GATEWAY_INSUFFICIENT_SCOPE`.
+
+Why:
+- Matches the existing CONTEXT.md tiering convention verbatim.
+- Operator ergonomics: ops tokens can carry one high-tier scope covering
+  many capabilities. Capability authors declare the *minimum tier*
+  required (one entry), not every tier that grants access.
+- Deterministic, easy to reason about, easy to log ("scope X covered
+  permission Y at rank >= Z").
+- Business caps stay strict (no implicit coverage from a different
+  business cap).
+- Alternatives rejected: strict exact-match forces tokens to enumerate
+  every tier; all-tiers-pass is too coarse.
+
+5. How does a capability invocation reach the right handler?
+
+Answer:
+- Three paths keyed by owner prefix on the CapabilityRecord:
+  - (a) `platform-*` built-ins (`session-manager`, `plugin-manager`,
+    `capability-registry`) → in-process direct call. The Gateway holds
+    a reference to the manager instance.
+  - (b) `plugin:<id>` runtime plugins → in-process via Plugin Manager,
+    which returns the runtime's handler reference.
+  - (c) `backend-sdk-*` business capabilities → forward to a Backend
+    Runtime component (in-process with the Gateway in v1) which
+    maintains persistent connections to SDKs running in user apps.
+- The Gateway never holds SDK connections itself. It just calls
+  `runtime.invoke(owner, capability, input)`. The Backend Runtime
+  encapsulates the SDK-transport complexity.
+
+Why:
+- Matches the architecture docs' flow: `Gateway → Backend Runtime →
+  Backend SDK → Application` for business capabilities.
+- The Capability Registry's `owner` field is the natural dispatch key.
+  No new routing table needed.
+- Gateway stays thin: it doesn't speak SDK protocols (WebSocket, gRPC,
+  etc.) — it just calls an in-process function.
+- Three paths with clear failure modes (platform: throws → 5xx; plugin:
+  throws → 5xx; backend: connection down → SDK_UNREACHABLE).
+- Alternative (Gateway holds SDK connections directly) mixes dispatch
+  with transport and contradicts the architecture doc's "Backend
+  Runtime" separation.
+
+6. How is every capability invocation audited?
+
+Answer:
+- Two complementary surfaces: durable + observable.
+- (a) The Gateway appends one JSON record per invocation to
+  `~/.agentide/data/audit.log` (configurable via `config.auditLogPath`),
+  one JSON object per line, persistent. Best-effort write — file write
+  failures do NOT fail the invocation.
+- (b) Same record shape emitted on the Event Bus as `gateway.invocation`
+  for downstream observability.
+- Record fields: `ts`, `caller.{id,scope}`, `session.id` (if present),
+  `capability.{name,version}`, `owner`, `status` (`ok` / `denied` /
+  `error`), optional `denyReason` / `errorCode`, `durationMs`.
+- Input payloads are NOT logged — PII stays in the application.
+- Reserved `schemaVersion: 1` field for forward compatibility.
+- Denials and errors produce audit records too — Gateway never silently
+  drops an invocation from the log.
+- Log rotation is external (logrotate) in v1.
+
+Why:
+- Goals §7 audit requirement satisfied out of the box — operators
+  don't need to install a plugin to get durable logs.
+- Append-only file is the simplest durable substrate — no DB
+  dependency, easy to back up (`cp`), easy to tail.
+- Event Bus mirror matches the existing platform pattern.
+- File write failure doesn't break the invocation — the operator's
+  call still completes; the audit record is best-effort.
+- Event Bus failure doesn't lose audit records (file is durable copy).
+
+7. How is rate limiting applied?
+
+Answer:
+- Per-(tenantId, callerId) token bucket, configurable rate and capacity.
+- Defaults: capacity 100, refill 10 tokens/sec.
+- Every invocation attempt — successful, denied, or errored —
+  consumes one token.
+- Empty bucket → `GATEWAY_RATE_LIMIT_EXCEEDED` returned without
+  dispatch. `retryable: true`.
+- Buckets are in-memory in v1 (single-process; restart resets them).
+- Buckets keyed on (tenantId, callerId), NOT on sessionId — a
+  malicious caller can't open new sessions to bypass.
+
+Why:
+- Simple, well-understood algorithm. One line of state per caller.
+- Protects the platform against runaway clients without coordinating
+  between callers.
+- Counts every attempt (success + denial + error) so DoS via "send 10k
+  requests with bad tokens" also hits the bucket.
+- Buckets scoped to caller identity (with tenant) prevent session
+  bypass.
+- Alternative (global rate limit) punishes innocent callers for one
+  bad actor.
+
+8. Does v1 of the Gateway need to enforce tenant isolation? And if yes,
+   what's the scope of a tenant?
+
+Answer:
+- YES, full tenant isolation in v1. Every token's `sub` is `{ tenantId,
+  callerId }`. Every audit record, rate-limit bucket, and session
+  record carries `tenantId`. The Gateway refuses any cross-tenant
+  operation.
+- v1 ships `tenant.create`, `tenant.list`, `tenant.suspend`,
+  `tenant.delete` capabilities + per-tenant admin tokens.
+- One tenant per platform process in v1. Self-hosted gets exactly one
+  tenant (the installing org). Hosted gets one tenant per customer org.
+
+Why:
+- v1 ships faster — no tenant plumbing to design, test, document.
+- The Gateway's design (canonical packet, authz, dispatch) is naturally
+  tenant-blind. Adding tenant dimensions to buckets and audit is
+  additive — no algorithm change.
+- Most initial users will be self-hosted. Optimising for the hosted
+  case before any hosted user exists is the classic YAGNI trap.
+- Reasons for full tenant lifecycle in v1 (over "A" — no lifecycle in
+  v1): hosted pack becomes purely additive (consumes gateway-core's
+  tenant API); self-hosted users see extra capabilities they ignore
+  (cosmetic); tenant enforcement is identical in both shapes — only
+  provisioning differs.
+
+9. When the Gateway can't dispatch a capability invocation, what happens?
+
+Answer:
+- Fail-fast. No silent retries. One stable `GATEWAY_*` error code per
+  failure mode. Every failure produces an audit record with `status:
+  "error"`.
+- Codes:
+  - `GATEWAY_CAPABILITY_NOT_FOUND` (typo / unregistered)
+  - `GATEWAY_PLUGIN_NOT_INSTALLED` (runtime plugin absent)
+  - `GATEWAY_PLUGIN_DISABLED` (runtime plugin paused)
+  - `GATEWAY_SDK_UNREACHABLE` (business SDK disconnected)
+  - `GATEWAY_MANAGER_UNAVAILABLE` (platform manager in degraded state)
+  - `GATEWAY_HANDLER_TIMEOUT` (handler exceeded timeout)
+  - `GATEWAY_INTERNAL_ERROR` (anything else)
+- Each error response carries `retryable: boolean` so the caller can
+  decide whether to retry. The Gateway doesn't enforce a retry policy
+  on the caller.
+- Auto-reconnect / circuit-breaker on SDK loss lives in Backend Runtime,
+  NOT in the Gateway. Gateway surfaces failures; Backend Runtime keeps
+  connections healthy.
+
+Why:
+- One stable code per failure mode — agents and dashboards can branch
+  on the code without parsing messages.
+- `retryable` flag lets the caller decide whether to retry.
+- All failures produce audit records — operators see every dispatch
+  failure (vs only successes).
+- `GATEWAY_*` namespace matches the established pattern (plugin-manager
+  uses `PLUGIN_*`; session-manager uses `SESSION_*`).
+- Error codes double as operational signals — a spike in
+  `GATEWAY_SDK_UNREACHABLE` immediately tells the operator "your SDK
+  isn't connected".
+- Alternative (generic INTERNAL_ERROR for everything) is hostile to
+  branching and to operational alerting.
+
+10. How does the Gateway handle capability version resolution?
+
+Answer:
+- Auto-latest by default, explicit pinning available.
+- The canonical packet carries `capability: { name, version? }`.
+- When `version` is omitted, the Gateway calls
+  `capabilityRegistry.describe(name)` and gets the latest registered
+  version.
+- When `version` is supplied, `describe(name, version)` returns that
+  specific version. Calling a non-existent version returns
+  `GATEWAY_CAPABILITY_NOT_FOUND`.
+- Resolved version recorded in the audit log so operators see what
+  actually executed even when callers pinned.
+
+Why:
+- Matches the Capability Registry's existing behavior (auto-latest when
+  omitted).
+- Most callers don't care about versions. Strict-required-version is
+  hostile ergonomics.
+- Audit log captures the resolved version, so operators can tell which
+  version actually executed even when callers pinned.
+- No deprecation concept in v1 (registry doesn't model it); marketplace
+  pack adds deprecation, Gateway refines to "latest non-deprecated".
+
+11. What invocation semantics does the Gateway support in v1?
+
+Answer:
+- Strict sync only. No submit-and-poll, no streaming, no in-flight
+  invocation tracking beyond a timeout.
+- Caller blocks on `handleInvocation(req)` and gets `{output}` or
+  `{error}` back. Default handler timeout 30s (configurable per-call
+  via `timeoutMs` field in the canonical packet).
+- Long-running operations are modeled in the HANDLER, not the Gateway —
+  e.g., a `migration.start` capability returns `{jobId}`; the caller
+  then uses `migration.status` and `migration.result` as separate sync
+  calls.
+
+Why:
+- Most capabilities are naturally sync: `customer.read`,
+  `session.create`, `plugin.list`.
+- Sync-only Gateway = simple canonical packet, simple audit log, simple
+  timeout model, no in-flight map, no job tracking.
+- Adapter implementations stay simple: HTTP request → response, MCP
+  request → response, CLI invocation → output. No streaming required.
+- The Gateway's responsibilities (Q1-Q10) are all cleanly sync-shaped.
+- Alternative (async submit-and-poll or streaming) doubles the Gateway's
+  surface area for no clear v1 caller.
+
+12. How does the operator install and run the platform?
+
+Answer:
+- One-liner: `curl -fsSL https://agentide.io/install.sh | bash`.
+- The install script auto-detects environment (Linux/macOS/WSL; amd64 or
+  arm64; presence of Docker, Node.js), picks the best distribution
+  (binary download via Node SEA / Docker image / npx fallback), and
+  installs to `/usr/local/bin/agentide` (or `~/.local/bin/agentide` if
+  permission denied).
+- Operator runs `agentide init`. First-run creates one auto-provisioned
+  tenant (`default`), generates one bootstrap operator JWT, writes
+  default config to `~/.agentide/config.yaml`, prints the bootstrap
+  token prominently.
+- Operator runs `agentide start`. The platform boots Event Bus,
+  Capability Registry, Session Manager, Plugin Manager, Gateway, and
+  the bundled MCP adapter (Streamable HTTP, port 7100).
+- MCP adapter is bundled in the default distribution but REPLACEABLE.
+  Per PHILOSOPHY: "MCP is not special" — the kernel doesn't know MCP
+  exists; only the boot package imports the adapter. Swap with a CLI
+  flag or different adapter package; no kernel change.
+- The adapter package (`@platform/adapter-mcp`) stays a separate npm
+  package; the binary bundles it but doesn't own it.
+- Day-2 operator lifecycle is CLI: `agentide status / logs / stop /
+  start / upgrade`, plus shells over gateway-core capabilities:
+  `agentide tenant create / list / suspend / delete`,
+  `agentide plugin install`, `agentide token issue`,
+  `agentide capability list / describe`. NO OPERATOR CODE, EVER.
+- New pack `@platform/agentide` provides composition + CLI +
+  distribution. Slots into the backlog between gateway-core and
+  platform-capabilities.
+
+Why:
+- Per PHILOSOPHY § Tiny Kernel — the boot function doesn't belong in
+  `gateway-core`. It's a higher-level "platform boot" package.
+- Self-hosted operators get a usable platform with one install — they
+  don't have to research which adapter pack to choose.
+- The default adapter is genuinely minimal (~200 lines of HTTP plumbing
+  + JWT validation). Not a huge maintenance burden.
+- Tier 3 adapter packs (MCP, CLI, WS, advanced REST) are still useful
+  — they add transport-specific features. The default REST/MCP adapter
+  doesn't pre-empt their value.
+- Replaceability test: replace MCP via CLI flag. No code changes. Per
+  PHILOSOPHY "Nothing Is Special" applied.
+
+No remaining open questions. Grilling is stable — ready for Phase 1b (EXPLAINED).
+
+Additional grounding (carried out before locking decisions):
+
+opensrc on modelcontextprotocol/typescript-sdk@latest and
+modelcontextprotocol/modelcontextprotocol@latest (cached at
+~/.opensrc/repos/...). Key contract findings:
+- JSON-RPC 2.0 envelope; `_meta.io.modelcontextprotocol/protocolVersion` and
+  `clientCapabilities` required on every request.
+- Stateless protocol — every request carries context in `_meta`. Our
+  sessionId travels in `_meta.dev.agentide/sessionId`.
+- Tool names: [A-Za-z0-9_.\-]{1,128}. Our capability names are a strict
+  subset (lowercase-with-dot).
+- Error model split: tool errors → `isError: true` in result body;
+  protocol-level errors → JSON-RPC error codes.
+- Streamable HTTP transport: `POST /mcp`, JSON or request-scoped SSE.
+- OAuth 2.1 is the MCP standard auth but marked OPTIONAL. Our JWT
+  bearer is compliant.
+- v1 MCP adapter scope: `tools/list` + `tools/call` only. NOT in v1:
+  `prompts/*`, `resources/*`, server-initiated notifications,
+  subscriptions, sampling, elicitation.
+
+UX prototype at prototypes/install-ux/simulate-install.ts simulates
+`install.sh` success + failure paths and `agentide init` / `agentide
+start` first-boot output. Throwaway — delete after install-ux wording
+is final.
