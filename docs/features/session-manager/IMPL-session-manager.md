@@ -45,7 +45,7 @@ Regression check for every phase: `npm run test -- --run && npm run typecheck &&
   - `SessionStatus = 'active' | 'suspended' | 'archived'`
   - `SessionRecord { id, status, ownerId, adapterType, createdAt, lastActivityAt, idleTimeoutMs, suspendedTtlMs, destroyedAt?, metadata? }`
   - `ResourceRecord { id, type, runtimeId, attachedAt }`
-  - `SessionManagerConfig { defaultIdleTimeoutMs, defaultSuspendedTtlMs, archiveTtlMs, timerResolutionMs }`
+  - `SessionManagerConfig { defaultIdleTimeoutMs, defaultSuspendedTtlMs, archiveTtlMs, clock }`
   - `CreateSessionParams { ownerId, adapterType, metadata? }`
   - `SessionNotFoundError`, `SessionArchivedError`, `SessionAlreadyActiveError`, `SessionNotActiveError`, `DuplicateResourceError`, `ValidationError` (custom error classes or branded strings)
   - `EventPayloads`: `SessionCreatedPayload`, `SessionSuspendedPayload`, `SessionResumedPayload`, `SessionDestroyedPayload`, `CleanupResourcesPayload`
@@ -131,7 +131,7 @@ Regression check for every phase: `npm run test -- --run && npm run typecheck &&
   - Exposes `startSuspendedTimer(sessionId, timeoutMs, onTimeout)` — single-shot timer
   - Exposes `cancelAll(sessionId)` — cancels both timers for a session
   - Exposes `touch(sessionId)` — resets idle timer (cancel + restart)
-  - Resolution: checks at `timerResolutionMs` interval (configurable, default 1000ms). Uses a single interval loop that iterates active sessions rather than one `setTimeout` per session.
+  - Resolution: per-session timers drive every transition; no shared polling loop. `Clock` injection lets tests advance virtual time deterministically.
 - [ ] Wire `TimerManager` into `createSessionManager` factory
 - [ ] On `create()`: start idle timer; on timeout -> set status to `suspended`, start suspended TTL timer
 - [ ] On `resume()`: cancel suspended TTL timer, restart idle timer

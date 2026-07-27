@@ -354,7 +354,7 @@ Remove the `@platform/session-manager` package from the workspace. No other comp
 ## 5. Open Questions
 
 - [ ] Should `create()` accept an explicit `sessionId` from the Gateway (allowing idempotent create), or always generate its own UUID? Current design: always generate. If Gateway needs idempotency, it stores the generated ID.
-- [ ] Should `timerResolutionMs` be configurable or fixed? Current design: configurable (TRD §2.2), but 1000ms is a safe default for v1.
+- [x] Should `timerResolutionMs` be configurable or fixed? Resolved: removed in favour of a `Clock` abstraction (`SessionManagerConfig.clock`) so tests can virtualise time without a polling loop.
 
 ## 6. Deferred Items
 
