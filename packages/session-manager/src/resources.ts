@@ -1,15 +1,19 @@
+/*
+ * Code Map: session resource tracking
+ * - ResourceTracker: owns per-session opaque resource registrations
+ *
+ * CID Index:
+ * CID:resources-001 -> ResourceTracker
+ *
+ * Quick lookup: rg -n "CID:resources-" packages/session-manager/src/resources.ts
+ */
+
 import {
   DuplicateResourceError,
   SessionNotActiveError,
   SessionNotFoundError,
   type ResourceRecord,
 } from "./types.js";
-
-/*
- * Code Map: session resource tracking
- * - ResourceTracker: owns per-session opaque resource registrations
- * CID Index: resources-001 ResourceTracker
- */
 
 export class ResourceTracker {
   private readonly resources = new Map<string, ResourceRecord[]>();

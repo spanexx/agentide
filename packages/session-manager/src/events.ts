@@ -1,10 +1,14 @@
-import type { EventBus } from "@platform/event-bus";
-
 /*
  * Code Map: lifecycle event publisher
  * - EventPublisher: maps session state changes to Event Bus payloads
- * CID Index: events-001 EventPublisher
+ *
+ * CID Index:
+ * CID:events-001 -> EventPublisher
+ *
+ * Quick lookup: rg -n "CID:events-" packages/session-manager/src/events.ts
  */
+
+import type { EventBus } from "@platform/event-bus";
 import type {
   CleanupResourcesPayload,
   SessionCreatedPayload,

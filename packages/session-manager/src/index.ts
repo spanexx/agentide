@@ -19,7 +19,13 @@ import {
 /*
  * Code Map: session-manager lifecycle factory
  * - createSessionManager: composes store, timers, resources, and events
- * CID Index: index-001 createSessionManager
+ *
+ * CID Index:
+ * CID:index-001 -> createSessionManager
+ * CID:index-002 -> createId
+ * CID:index-003 -> systemClock
+ *
+ * Quick lookup: rg -n "CID:index-" packages/session-manager/src/index.ts
  */
 
 function createId(): string {

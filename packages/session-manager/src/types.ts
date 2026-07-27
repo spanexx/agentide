@@ -1,5 +1,3 @@
-import type { EventBus } from "@platform/event-bus";
-
 /*
  * Code Map: session-manager public contracts
  * - SessionRecord: lifecycle metadata retained by manager
@@ -7,8 +5,18 @@ import type { EventBus } from "@platform/event-bus";
  * - SessionManager: public lifecycle and resource API
  * - Event payloads: lifecycle event contracts
  * - Error classes: operation failure boundaries
- * CID Index: types-001 SessionRecord; types-002 ResourceRecord; types-003 SessionManager; types-004 EventPayloads; types-005 Errors
+ *
+ * CID Index:
+ * CID:types-001 -> SessionRecord
+ * CID:types-002 -> ResourceRecord
+ * CID:types-003 -> SessionManager
+ * CID:types-004 -> EventPayloads
+ * CID:types-005 -> Error classes
+ *
+ * Quick lookup: rg -n "CID:types-" packages/session-manager/src/types.ts
  */
+
+import type { EventBus } from "@platform/event-bus";
 
 export type SessionStatus = "active" | "suspended" | "archived";
 export type DestroyReason = "expired" | "explicit";
