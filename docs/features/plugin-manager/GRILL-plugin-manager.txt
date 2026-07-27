@@ -1,0 +1,246 @@
+Plugin Manager - Grill Notes
+
+Status: Phase 0 grilling complete
+Date: 2026-07-27
+Source: docs/architecture/ (Terminology.md, Agentide.md, Capability_System.md, Runtime_Capabilities.md, Platform_Capabilities.md, Plugin_Marketplace.md), docs/CONTEXT.md, docs/features/{event-bus,capability-registry,session-manager}/*
+
+What this feature is about
+
+- Build the platform's Plugin Manager.
+- It installs, updates, disables, enables, reloads, uninstalls, and lists plugins.
+- Plugins extend the platform: Runtime Plugins (execution), Service Plugins (support),
+  Developer Plugins (tooling).
+- Plugin Manager is part of the Control Plane (next to Gateway, Session Manager,
+  Capability Registry).
+- Already depends on event-bus (publishes plugin.* events) and capability-registry
+  (registers plugin capabilities here).
+- Event surface: plugin.installed and plugin.uninstalled already known from docs;
+  others TBD.
+
+Questions and answers locked so far
+
+1. What does a Plugin Manifest look like for non-runtime plugins?
+Answer:
+- Same shape as the runtime example, but with a different top-level key.
+- runtime: { id: browser } for runtime plugins.
+- service: { id: logging-file } for service plugins.
+- developer: { id: vscode-helper } for developer plugins.
+- Only one of these top-level keys per manifest. The key name itself says
+  what type it is. No separate `type` field — the key is the type.
+
+Why:
+- The Plugin Manager reads the file, sees `runtime:` → knows it's a runtime
+  plugin. Sees `service:` → knows it's a service plugin. The type is right
+  there on the surface.
+- The key-as-type approach can't lie — if the file has `service:`, it's a
+  service plugin, period. A unified `plugin: { id, type }` form would let
+  a manifest claim to be a `runtime` while its `id` looks like a service.
+
+2. Where do plugins come from when you install?
+Answer:
+- v1 supports two paths in the API shape, but only one is implemented:
+  - `plugin.install --source <local-path-or-private-url>` → reads the file
+    from disk, validates, installs. THIS WORKS in v1.
+  - `plugin.install <registry-id>` → looks up in the public Plugin Marketplace.
+    STUB in v1 — returns PLUGIN_MARKETPLACE_UNAVAILABLE until the marketplace
+    pack ships.
+- The install machinery (manifest parsing, validation, capability registration,
+  lifecycle transitions, events) is identical for both paths. Only the
+  source-resolving part differs. By building the abstraction now, the
+  marketplace pack just plugs in a different source resolver.
+
+Why:
+- The docs (Plugin_Marketplace.md) already commit to both paths as
+  first-class. `plugin.install` accepts both a registry id and a
+  local source path. The marketplace pack adds the registry side; the
+  local side lands in this pack.
+- The v1 working path is the local source. The marketplace path is designed
+  for but stubs out with a clear "marketplace unavailable" error.
+
+3. What does "disable" actually do?
+Answer:
+- Option A: soft pause. The install record (id, version, source) is durable —
+  disable doesn't touch it. Capabilities stay registered in the Capability
+  Registry. `plugin.list` shows it as "disabled". New invocations of its
+  capabilities return error "plugin disabled". In-flight invocations finish.
+  `plugin.enable` is a one-flag flip, not a re-install.
+
+Why:
+- The install record is durable. Disable is a flag, not a state. The
+  lifecycle stays `Installed → Loaded → Initialized → Registers Capabilities
+  → Running → Stopped → Unloaded`. Disable is orthogonal to that.
+- Operators debugging a problem want to know the difference between
+  "plugin disabled" and "capability not found" — option A gives the
+  clear "plugin disabled" error.
+- Option B (hard deregister) makes disable essentially "uninstall without
+  losing the manifest record" — collapses two different intents into one.
+
+4. What does "update" do to in-flight capability calls?
+Answer:
+- In-flight invocations complete against the old version. New invocations
+  route to the new version. Same as the OS-package-upgrade model.
+
+Why:
+- The in-flight call is using a reference to the old handler. The swap
+  doesn't yank the rug out from under it. The next call uses the new
+  reference.
+- Cutting in-flight invocations off mid-action is dangerous for runtime
+  capabilities (browser.click is a multi-step operation: find button,
+  scroll, click, wait for page reaction). Half-clicked pages are worse
+  than the original problem.
+- The Plugin Manager's job is to swap the install record. The Capability
+  Registry's job is to route invocations. The Session Manager's job is
+  to handle session-level pause/resume. Three separate concerns, three
+  separate owners.
+
+5. What does install validate before saying "ok"?
+Answer:
+- v1 minimum-viable validation:
+  - Manifest schema valid (one of runtime:/service:/developer: at top, with
+    id and version present).
+  - Capability name format valid (matches `domain.action`).
+  - No collision with already-registered capability names.
+- Deferred to later packs:
+  - Platform version constraints (`requires: { platform: ">=1.0" }`).
+  - Cross-plugin dependencies (`requires: [other-plugin]`).
+  - Source integrity (checksum/signature).
+
+Why:
+- Schema and format checks are local concerns. Collision check is per docs
+  ("installation fails rather than silently overwriting"). Silent
+  overwrites of an application's business capabilities by a plugin would
+  be a disaster.
+- Platform-version constraints need a versioning convention first.
+- Cross-plugin deps need a dependency-graph design pass (install order,
+  version constraints, failure recovery).
+- Source integrity is the marketplace pack's concern.
+
+6. What survives a platform restart?
+Answer:
+- Option B: save install record to a file (VS Code pattern).
+- A JSON file at `./data/installed-plugins.json` lists every installed
+  plugin (id, type, version, source path, install timestamp, enabled/disabled).
+- On restart, Plugin Manager reads the file and re-installs each one.
+- Capabilities are re-registered, plugins transition through
+  `Loaded → Initialized → Registers Capabilities → Running`.
+- If a source file is missing at startup, the re-install fails for that
+  plugin only, with a clear error. The install record is preserved
+  (not deleted) — operator can fix the source and run `plugin.reload`
+  to recover.
+
+Why:
+- Matches the production-grade model operators expect. VS Code, npm, vscode
+  marketplace all use this pattern.
+- Operators in production will forget to re-install after a deploy. The
+  platform silently losing capabilities is awful to debug.
+- Option A (in-memory) was considered but rejected for v1: it forces
+  operators to wrap install calls in startup scripts in production.
+- Option C (managed folder, copy source on install) deferred to
+  marketplace pack.
+
+7. What does `plugin.reload` do, and is it different from `plugin.update`?
+Answer:
+- They are different commands with the same mechanics.
+- `plugin.update` requires a source (id + source): swap install record,
+  re-register capabilities, bump version field if manifest version differs.
+- `plugin.reload` just takes an id: re-read the install record's source,
+  re-register capabilities, refresh version field if manifest version differs.
+  Leave source path, id, install timestamp, enable-disable state alone.
+
+Why:
+- `plugin.update` is "I'm intentionally installing a new version. validate
+  everything, swap it in."
+- `plugin.reload` is "the source file changed, re-read it. I'm not
+  declaring a new version, I'm just refreshing."
+- Mechanics are 95% the same. Difference is the entry point and the
+  operator's intent. Without `reload`, operators have to type the source
+  path every time, even when they didn't move the file.
+
+8. What does `plugin.uninstall` actually do?
+Answer:
+- Option A: cleanup event first, then remove.
+- Plugin Manager marks plugin as "uninstalling".
+- Plugin Manager fires `plugin.cleanup` { id }.
+- The plugin receives the event, cleans up its own resources (closes
+  browser tabs, cancels in-flight handlers, etc.).
+- Plugin Manager fires `plugin.uninstalled` { id }.
+- Install record removed from `./data/installed-plugins.json`.
+- Capabilities unregistered from Capability Registry.
+- In-flight capability invocations complete against the old version.
+- Idle sessions lose access on next call.
+
+Why:
+- Mirrors the Session Manager's `cleanup_resources → destroyed` pattern.
+  One event says "do your cleanup", the other says "you're gone."
+- Operators wire their dashboards/alerts to `plugin.uninstalled` and
+  trust it means "everything is gone."
+- The plugin owns the cleanup logic. Browser Runtime knows it has
+  browser tabs. The Plugin Manager doesn't guess "how do I close a
+  browser tab?" — that's the plugin's job.
+
+9. What events does the Plugin Manager publish?
+Answer:
+- Seven events, all separate, all under `plugin.*`:
+  - `plugin.installed` — first install of a plugin id.
+  - `plugin.updated` — version bump via `plugin.update`.
+  - `plugin.reloaded` — `plugin.reload` re-reads source.
+  - `plugin.uninstalled` — plugin removed.
+  - `plugin.enabled` — `plugin.enable` flips state.
+  - `plugin.disabled` — `plugin.disable` flips state.
+  - `plugin.cleanup` — fires before `plugin.uninstalled` so the plugin
+    gets a chance to clean up.
+- Three events for "code got into the system" (install, update, reload)
+  because they mean different things. Audit log needs the distinction.
+- Install vs update vs reload:
+  - install = first time we see this id.
+  - update = same id, version bumped.
+  - reload = same id, same version, source re-read.
+- Consumers can pick what they care about: audit log subscribes to all
+  three, dashboard might only subscribe to install + uninstall, security
+  alert might only care about update.
+
+Why:
+- Install/update/reload are different audit events. Six months later you
+  can't tell whether the change was a version bump or a typo fix if you
+  collapse them.
+- Session Manager already established the pattern of multiple lifecycle
+  events: created, suspended, resumed, destroyed — all separate. Plugin
+  Manager follows the same discipline.
+- `plugin.*` namespace is fair game (only `event.*` is reserved for
+  bus-internal events).
+
+10. What does an error look like to the operator?
+Answer:
+- Every error from every plugin operation has the same shape:
+  {
+    code:    "PLUGIN_SOURCE_NOT_FOUND",       // stable identifier
+    message: "source file ./bad.yaml does not exist",  // human-readable
+    details: { source: "./bad.yaml" }  // structured data
+  }
+- Three rules:
+  1. Code is a stable string — operators can grep, dashboards can match,
+     alerts can fire on it. Never changes once shipped.
+  2. Message is human-readable — no jargon, no stack traces (unless
+     --verbose).
+  3. Details are structured — automation can read and act.
+- v1 error codes for `plugin.install`:
+  - PLUGIN_SOURCE_NOT_FOUND, PLUGIN_SOURCE_UNREADABLE, PLUGIN_MANIFEST_INVALID,
+    PLUGIN_ID_ALREADY_INSTALLED, PLUGIN_CAPABILITY_COLLISION,
+    PLUGIN_CAPABILITY_NAME_INVALID, PLUGIN_TYPE_MISSING,
+    PLUGIN_MARKETPLACE_UNAVAILABLE.
+- v1 error codes for update/reload/uninstall:
+  - PLUGIN_NOT_INSTALLED, PLUGIN_SOURCE_CHANGED, PLUGIN_ALREADY_DISABLED,
+    PLUGIN_ALREADY_ENABLED, PLUGIN_INFLIGHT_TIMEOUT.
+- Errors are terminal-only in v1 — no `plugin.error` event on the Event
+  Bus. Adding that is a follow-up when a real consumer asks for it.
+
+Why:
+- "Error: install failed." forces the operator to read the source code.
+  The structured shape lets them fix the problem in seconds.
+- Stable codes are the contract between Plugin Manager and its consumers
+  (dashboards, CI scripts, alerting). Without stable codes, every minor
+  refactor breaks downstream tooling.
+- Errors in the terminal are visible to the operator; events on the bus
+  are a separate concern. Mixing them in v1 is over-engineering.
+
+No remaining open questions. Grilling is stable — ready for Phase 1 (PRD).
