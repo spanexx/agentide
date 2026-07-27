@@ -1,0 +1,3 @@
+service:
+  id: logging
+version: "1.0"

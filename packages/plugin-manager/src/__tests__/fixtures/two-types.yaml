@@ -1,0 +1,5 @@
+runtime:
+  id: a
+service:
+  id: b
+version: "1.0"

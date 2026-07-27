@@ -4,6 +4,7 @@
   "references": [
     { "path": "packages/event-bus" },
     { "path": "packages/capability-registry" },
-    { "path": "packages/session-manager" }
+    { "path": "packages/session-manager" },
+    { "path": "packages/plugin-manager" }
   ]
 }

@@ -1,0 +1,9 @@
+runtime:
+  id: browser
+version: "1.0"
+capabilities:
+  - browser.navigate
+  - browser.click
+  - browser.screenshot
+metadata:
+  description: Browser automation runtime
