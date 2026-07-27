@@ -1,0 +1,202 @@
+EXPLAINED: Session Manager
+
+A plain-English guide for anyone who needs to understand what the
+Session Manager is and what changes once it exists.
+
+For the technical spec, see the PRD, TRD, FLOW, and IMPL docs in this
+same folder.
+
+---
+
+Situation 1: An AI agent asks the system to do something
+
+An AI agent like Claude or ChatGPT connects to the platform through an
+adapter (MCP, CLI, REST). The agent says "read the customer record for
+ID 42."
+
+Before this feature exists, there is no defined container for that
+interaction. The Gateway authenticates the request, routes it to the
+right handler, gets the answer, and sends it back. If the agent then
+asks "now open the admin panel in a browser," a new browser tab starts,
+but there is no connection between that tab and the first request. If
+the agent walks away, nothing knows that the tab should be closed.
+
+What we are doing about it
+
+When a request arrives, the Gateway asks the Session Manager to create
+a session. The Session Manager assigns it a unique ID and marks it
+"Active." Every capability call the agent makes during that interaction
+carries the same session ID. If a browser tab is launched, it is
+registered against that session. If a temporary file is created, it is
+also registered. Everything is tracked to one session.
+
+What this means for the platform operator
+
+You can see, at a glance in the Dashboard, exactly what is happening
+right now: "Session 123 is active, it owns one browser tab and one temp
+file, it belongs to the finance app, and it has been running for 4
+minutes." When the session ends, everything it owns is cleaned up
+automatically. No more orphaned browser tabs.
+
+What this does not mean
+
+This change does not store what the agent and the system said to each
+other. Sessions are execution containers — they hold resources, not
+conversation history. The agent's actual question "read customer ID 42"
+and the response are logged elsewhere.
+
+---
+
+Situation 2: An agent pauses between steps, then continues
+
+A support agent is working through a refund workflow. It looks up the
+customer record (step 1), then asks an operator for approval — and
+waits. 20 seconds pass. 2 minutes pass.
+
+Before this feature exists, there is no timeout. The browser tab stays
+open. The authentication token stays valid. The temp file stays on
+disk. If the agent never comes back, all of that leaks. If the agent
+comes back 30 minutes later, the tab might have timed out by itself,
+or it might still be there — unpredictable.
+
+What we are doing about it
+
+The Session Manager watches the idle timer. Every time the agent makes
+a call, the timer resets. If the agent goes quiet for 5 minutes (the
+default idle timeout), the Session Manager suspends the session. The
+browser tab is preserved. The auth token is preserved. The temp file
+stays. But the session is marked "Suspended."
+
+If the agent comes back and makes another call, the Gateway tells the
+Session Manager to resume the session. The browser tab is still there,
+the auth is still valid, the temp file is still on disk. The agent
+picks up exactly where it left off, without restarting anything.
+
+What this means for the platform operator
+
+Long-running workflows with human approval steps or thinking pauses are
+now reliable. A session that is suspended for 15 minutes and then
+resumed picks up seamlessly. You do not have to worry about every
+integration point adding its own keepalive logic.
+
+What this does not mean
+
+Suspension is not indefinite. If a suspended session is not resumed
+within 30 minutes (the default suspended TTL), the Session Manager
+archives it: resources are cleaned up, and the session is marked done.
+This prevents abandoned sessions from holding records forever.
+
+---
+
+Situation 3: A user closes their laptop, and the session is abandoned
+
+An operator starts a session from the CLI, runs a few steps, then
+closes their laptop and goes home. They do not explicitly end the
+session.
+
+Before this feature exists, every resource that session created
+(browser tab, temp files, running containers) stays alive. The system
+has no way to tell "the operator has left" from "the operator is
+reading a long document." Resources accumulate until someone manually
+cleans them up or the machine restarts.
+
+What we are doing about it
+
+The Session Manager handles it in two stages. First, after 5 minutes of
+inactivity, it suspends the session — resources are preserved but the
+session is paused. Then, if another 30 minutes pass without a resume,
+it archives the session: it tells every runtime to clean up their
+resources for that session, and marks the session "Archived." The
+session's metadata record (who owned it, how long it ran, what adapter
+it came through) is kept for 7 days, then purged.
+
+What this means for the platform operator
+
+Abandoned sessions clean themselves up. You do not need a cron job to
+find and kill stale sessions. You do not need to train every adapter
+and every runtime to implement its own cleanup. The Session Manager
+handles it for all of them.
+
+What this does not mean
+
+The 7-day archive is metadata only — a few kilobytes of text saying
+"session 123 existed, it was owned by the finance app, it ran for 6
+minutes, then archived." The actual resources (the browser tab, the
+temp file) were cleaned up at archive time. The archive exists so you
+can debug failures and generate billing reports after the fact.
+
+---
+
+The core idea
+
+Think of the Session Manager as a hotel front desk.
+
+- Creating a session = checking into a room. You get a room key
+  (session ID). Everything you order during your stay (room service,
+  extra towels) is charged to that room.
+- Suspending = stepping out for a walk. Your room is held. Your things
+  stay where they are. When you come back, you go straight to your room.
+- Resuming = coming back from the walk. You show your room key, go
+  back to your room, everything is as you left it.
+- Archiving (soft-delete) = checking out. The room is cleaned, your
+  things are removed. But the front desk keeps a record of your stay
+  (name, dates, charges) for a while, then eventually deletes it.
+- Explicit destroy = checking out early. Same as archive, but you asked
+  for it rather than waiting for checkout time.
+
+---
+
+How you can tell it is working
+
+- When an agent first connects and makes a request, a new session
+  appears in the Dashboard's active session list.
+- If the agent pauses for more than 5 minutes, the session moves from
+  "Active" to "Suspended" in the Dashboard.
+- If the agent makes a new call after being suspended, the session
+  returns to "Active" and the browser tab or temp file from before is
+  still accessible.
+- If a session stays suspended for more than 30 minutes, it disappears
+  from the active list and appears in "Recent Sessions" as Archived.
+- The Archived session record shows the duration, owner, and adapter
+  type. After 7 days, it disappears from Recent Sessions too.
+- Running destroy() on an active or suspended session immediately moves
+  it to Archived, cleans up resources, and shows up in Recent Sessions.
+
+---
+
+What you should not expect from this change
+
+- This change does not store conversation history or chat logs. The
+  session knows a browser tab was open but does not know what the agent
+  typed into it.
+- This change does not handle multiple Gateways sharing sessions. That
+  is a future feature.
+- This change does not let agents create, suspend, or destroy their own
+  sessions. The Gateway and the Session Manager handle lifecycle
+  automatically — agents just call capabilities.
+- This change does not survive a server restart. If the platform
+  restarts, all sessions are lost and agents reconnect fresh.
+- Suspend does not guarantee that every resource type can be preserved.
+  A database connection might time out independently. Suspend preserves
+  what it can, but individual runtimes decide what survive suspension.
+
+---
+
+The technical names for the curious
+
+- Session: SessionRecord (id, status, ownerId, adapterType, createdAt,
+  lastActivityAt, metadata)
+- Session status "Active": "active"
+- Session status "Suspended": "suspended"
+- Session status "Archived": "archived"
+- Session Manager: SessionManager class or module
+- Creating a session: create()
+- Resuming a session: resume(sessionId)
+- Destroying a session (explicit or TTL): destroy(sessionId)
+- Idle timeout: idleTimeoutMs (default 5 minutes)
+- Suspended TTL: suspendedTtlMs (default 30 minutes)
+- Archive retention: archiveTtlMs (default 7 days)
+- Resource registration: attachResource(sessionId, resourceRecord)
+- Resource cleanup event: session.cleanup_resources
+- Events: session.created, session.suspended, session.resumed,
+  session.destroyed, session.cleanup_resources

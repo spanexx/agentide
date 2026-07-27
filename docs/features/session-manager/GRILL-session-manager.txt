@@ -1,0 +1,139 @@
+Session Manager - Grill Notes
+
+Status: Phase 0 grilling in progress
+Date: 2026-07-26
+Source: docs/architecture/ (Terminology.md, Agentide.md, Goals.md), docs/CONTEXT.md
+
+What this feature is about
+
+- Build the platform's session manager.
+- It creates, tracks, and destroys sessions.
+- Sessions are execution contexts (not chat history).
+- Sessions own runtime resources: browser instances, auth tokens, temp files, containers.
+- Session Manager is part of the Control Plane.
+- Gateway calls Session Manager to create sessions (Gateway owns session lifecycle).
+- Already depends on event-bus (for session.* events) and capability-registry.
+- Event namespace: session.created (known from docs), others TBD.
+
+Questions and answers locked so far
+
+1. What state machine should sessions follow?
+Answer:
+- Option C: Active ⇄ Suspended → Destroyed.
+- A session can be suspended (resources preserved, execution paused) and resumed later.
+- Destroy can happen from either Active or Suspended state with full cleanup.
+- A timeout from Suspended prevents abandoned sessions holding resources forever.
+
+Why:
+- Per-request sessions (simple reads like customer.read) are short Active → Destroyed.
+- Long-running sessions (browser automation across steps) need to stay Active across
+  multiple capability calls.
+- Mixed workflows (read docs, then automate UI) need idle tolerance between phases.
+- Suspend/Resume enables true persistence of runtime state (browser tabs, auth, temp
+  files) across agent pauses, matching the "execution context" definition most faithfully.
+
+3. How long does the system hold session data?
+Answer:
+- Soft-delete / archive on destroy, keep for a configurable TTL (default 7 days).
+- Session moves to an `archived` state on destroy. Record kept for TTL, then purged.
+- Resources are already cleaned up on destroy — only metadata is retained.
+- Enables debugging, billing, and Dashboard's "recent sessions" feature.
+
+Why:
+- Debugging — trace why a session failed hours later.
+- Billing — sessions as billable units need a historical record.
+- Dashboard — "active sessions" is a listed feature; "recent sessions" follows naturally.
+- Purge TTL prevents unbounded growth (set-and-forget hygiene).
+
+2. Who decides to suspend vs. destroy?
+Answer:
+- Gateway + Session Manager combined (A + C).
+- Session Manager owns the timer policy: activity resets idle clock, no activity for N
+  seconds → auto-suspend, suspended for M minutes → auto-destroy.
+- Gateway triggers explicit suspend/destroy when adapters detect disconnect.
+- The agent never calls suspend/resume directly — it's transparent.
+
+Why:
+- Gateway knows about adapter connection state (disconnect, timeout).
+- Session Manager knows about internal activity (no need for Gateway to ping on every
+  capability call).
+- Both can suspend/destroy without conflict.
+- Agent stays agnostic of session lifecycle — simpler SDK contracts.
+
+4. Resume semantics — session ID only or with a resume token?
+Answer:
+- Session ID only. Gateway is the sole caller of resume(), and auth is already handled
+  before reaching Session Manager. A token adds complexity with no threat to mitigate.
+
+Why:
+- Gateway translates adapter requests to internal calls — agents never see session IDs.
+- Auth lives in the Gateway layer, not the session record.
+- Token would only matter if resume() were exposed externally, which it isn't in v1.
+
+5. Timeout values — idle timeout and suspended TTL?
+Answer:
+- Active → Suspended (idle timeout): default 5 minutes. Configurable per-session via
+  metadata in create(). Catches gaps between agent thinking steps without suspending
+  mid-workflow on brief interruptions.
+- Suspended → Destroyed (suspended TTL): default 30 minutes. Configurable per-session
+  via metadata. Long enough for a user to walk away and come back; short enough that
+  "recent sessions" Dashboard doesn't show yesterday's.
+
+Why:
+- Banking scenario: 5 min idle after reviewing transactions → suspend. 20 min meeting
+  → resume("sess_abc123"), browser tab still on the transactions page. 45 min meeting
+  → TTL fires, session archived, Claude starts fresh. Both defaults fit this flow.
+
+6. Resource tracking — how do runtimes report resources to Session Manager?
+Answer:
+- Runtime registers resources directly via internal call:
+  SessionManager.attachResource(sessionId, { type, id, runtimeId }).
+- Cleanup is triggered via Event Bus: Session Manager publishes
+  session.cleanup_resources { sessionId }. Each runtime subscribes and cleans
+  its own resource types.
+- Why split: registration is a simple internal call (no event schemas, no race
+  conditions). Cleanup via Event Bus is the right boundary — Session Manager
+  says "done" without knowing what runtimes exist.
+
+Concrete destroy flow:
+  1. Session Manager changes status to archived
+  2. Publishes session.cleanup_resources { sessionId } on Event Bus
+  3. Browser Runtime receives it, kills its tab for that session
+  4. Backend Runtime receives it, cancels in-flight handlers
+  5. Session Manager removes resource tracking records (or lets archive TTL
+     handle it)
+
+7. Event surface — what session.* events does Session Manager publish?
+Answer:
+| Event | When | Payload |
+|---|---|---|
+| session.created | Gateway calls create() | { sessionId, ownerId, adapterType, createdAt } |
+| session.suspended | Idle timeout fires | { sessionId, lastActivityAt, suspendedAt } |
+| session.resumed | Gateway calls resume() | { sessionId, resumedAt } |
+| session.destroyed | Destroy completes | { sessionId, reason, destroyedAt, duration } |
+| session.cleanup_resources | Destroy begins | { sessionId } |
+
+- session.created and session.destroyed already referenced in docs
+  (Platform_Capabilities.md, Terminology.md).
+- session.suspended, session.resumed, session.cleanup_resources are new from
+  this grilling session — they follow from the suspend/resume state machine
+  and the resource tracking design.
+
+8. Cleanup ordering — which fires first: cleanup_resources or destroyed?
+Answer:
+- cleanup_resources first, then destroyed.
+- Session Manager marks status as archived → publishes session.cleanup_resources
+  → runtimes clean up → then publishes session.destroyed.
+- Rationale: session.destroyed should mean "the session and everything it owned
+  is gone." A Dashboard or billing system listening to session.destroyed should
+  be confident that cleanup was at least signaled.
+- Runtimes clean up asynchronously — ordering ensures the signal goes out before
+  the "done" announcement, but doesn't synchronously wait for cleanup.
+
+No remaining open questions. Grilling is stable — ready for Phase 1 (PRD).
+- Session data model (what fields does a session record carry?)
+- Resume semantics (how does a client resume a session — by ID? By token?)
+- Timeout details (idle timeout for Active → Suspended? TTL timeout for Suspended → Destroyed?)
+- Resource tracking (how do runtimes report resource creation/destruction to Session Manager?)
+- Event surface beyond session.created (session.suspended? session.resumed? session.destroyed? session.expired?)
+- Cleanup ordering (events before or after destroy?)

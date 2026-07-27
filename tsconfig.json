@@ -3,6 +3,7 @@
   "files": [],
   "references": [
     { "path": "packages/event-bus" },
-    { "path": "packages/capability-registry" }
+    { "path": "packages/capability-registry" },
+    { "path": "packages/session-manager" }
   ]
 }
