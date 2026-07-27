@@ -289,11 +289,11 @@ Eight lifecycle methods plus one stubbed method. All lifecycle methods that chan
 
 ### 2.3 API contracts
 
-All lifecycle methods are async (they publish events via the Event Bus, which is async). All methods take and return plain values. The factory is synchronous.
+All lifecycle methods are async (they publish events via the Event Bus, which is async). All methods take and return plain values. The factory is **asynchronous** — startup re-install reads from disk (async I/O), so the factory returns `Promise<PluginManager>` and callers must `await` it. An earlier draft of this TRD specified a synchronous factory; that was revised during implementation because disk I/O cannot be synchronous in Node.
 
-#### `createPluginManager(eventBus, capabilityRegistry, config?): PluginManager`
+#### `createPluginManager(eventBus, capabilityRegistry, config?): Promise<PluginManager>`
 
-Factory function. Returns a PluginManager instance. Performs startup re-install on construction (re-reads `./data/installed-plugins.json` and re-installs each plugin from its source).
+Factory function. Returns a `Promise<PluginManager>`. Performs startup re-install on construction (re-reads `./data/installed-plugins.json` and re-installs each plugin from its source).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -442,7 +442,7 @@ Fires `plugin.cleanup`, waits for plugin confirmation (or timeout), then fires `
 1. Read install record. Failure: `PLUGIN_NOT_INSTALLED`.
 2. Fire `plugin.cleanup` event with `{ id }`. The plugin (or a subscriber acting on the plugin's behalf) is expected to clean up its own resources.
 3. Wait for `plugin.cleanup.confirm` event on the bus, filtered by `{ id }`. Timeout: `config.cleanupTimeoutMs` (default 5000ms).
-4. If timeout: log warning, proceed (resource leak is the plugin's problem, not the platform's). Set `record.lastError = { code: "PLUGIN_CLEANUP_TIMEOUT", ... }` for the operator's awareness.
+4. If timeout: log warning via `console.warn`, proceed (resource leak is the plugin's problem, not the platform's). The install record is removed in the next step, so a `lastError` field would be unobservable — the warning is the only operator-visible signal. (An earlier draft of this TRD specified setting `record.lastError`; that was revised during implementation because the record is removed immediately after, making the field invisible via `plugin.list`.)
 5. Unregister capabilities by calling `capabilityRegistry.register("plugin:<id>", { owner: "plugin:<id>", capabilities: [] })`. The registry diffs and removes all of the owner's capabilities.
 6. Remove install record from `./data/installed-plugins.json` (atomic write of the reduced set).
 7. Fire `plugin.uninstalled` event.

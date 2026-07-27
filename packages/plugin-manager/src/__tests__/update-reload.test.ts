@@ -258,6 +258,41 @@ describe("plugin-manager reload", () => {
     expect(reloaded.source).toBe(installed.source);
   });
 
+  it("rolls back the install record when registry.register throws during update", async () => {
+    const { fs, clock } = await setup({ fixtures: FIXTURE_LIST });
+    // Build a registry proxy whose register() succeeds for install but fails for update.
+    const realBus = createEventBus();
+    const realRegistry = createCapabilityRegistry(realBus);
+    let registerCalls = 0;
+    const failingRegistry = new Proxy(realRegistry, {
+      get(target, prop, receiver) {
+        if (prop === "register") {
+          return async (...args: Parameters<typeof target.register>) => {
+            registerCalls += 1;
+            if (registerCalls > 1) {
+              throw new Error("simulated registry failure");
+            }
+            return Reflect.apply(target.register, target, args);
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const failingPm = await createPluginManager(realBus, failingRegistry, {
+      fs,
+      clock,
+      installRecordPath: "/data/installed-rollback.json",
+    });
+    const installed = await failingPm.install(path("browser.yaml"));
+    await expect(
+      failingPm.update("browser", path("browser-v2.yaml")),
+    ).rejects.toThrow("simulated registry failure");
+    const after = failingPm.list();
+    expect(after).toHaveLength(1);
+    expect(after[0].version).toBe(installed.version);
+    expect(after[0].installedAt).toBe(installed.installedAt);
+  });
+
   it("publishes plugin.reloaded", async () => {
     const { pm, bus } = await setup({ fixtures: FIXTURE_LIST });
     await pm.install(path("browser.yaml"));

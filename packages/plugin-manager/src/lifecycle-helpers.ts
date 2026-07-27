@@ -154,10 +154,21 @@ export async function applyManifest(
   ctx.store.set(updated);
   await ctx.store.save();
 
-  await ctx.capabilityRegistry.register(owner, {
-    owner,
-    capabilities: buildCapabilityRecords(manifest, pluginCapabilityType(type), owner),
-  });
+  try {
+    await ctx.capabilityRegistry.register(owner, {
+      owner,
+      capabilities: buildCapabilityRecords(manifest, pluginCapabilityType(type), owner),
+    });
+  } catch (err) {
+    // Roll back the persisted record so disk and registry stay consistent.
+    ctx.store.set(existing);
+    try {
+      await ctx.store.save();
+    } catch {
+      /* swallow secondary failure — the original error is what matters */
+    }
+    throw err;
+  }
 
   return updated;
 }
