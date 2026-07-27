@@ -1,11 +1,3 @@
-function createId(): string {
-  const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
 import type { EventBus } from "@platform/event-bus";
 import { EventPublisher } from "./events.js";
 import { ResourceTracker } from "./resources.js";
@@ -23,6 +15,20 @@ import {
   type SessionRecord,
   type SessionStatus,
 } from "./types.js";
+
+/*
+ * Code Map: session-manager lifecycle factory
+ * - createSessionManager: composes store, timers, resources, and events
+ * CID Index: index-001 createSessionManager
+ */
+
+function createId(): string {
+  const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
 const DEFAULT_SUSPENDED_TTL_MS = 1_800_000;

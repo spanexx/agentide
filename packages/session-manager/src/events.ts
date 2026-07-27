@@ -1,4 +1,10 @@
 import type { EventBus } from "@platform/event-bus";
+
+/*
+ * Code Map: lifecycle event publisher
+ * - EventPublisher: maps session state changes to Event Bus payloads
+ * CID Index: events-001 EventPublisher
+ */
 import type {
   CleanupResourcesPayload,
   SessionCreatedPayload,

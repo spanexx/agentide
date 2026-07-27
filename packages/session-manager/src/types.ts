@@ -1,5 +1,15 @@
 import type { EventBus } from "@platform/event-bus";
 
+/*
+ * Code Map: session-manager public contracts
+ * - SessionRecord: lifecycle metadata retained by manager
+ * - ResourceRecord: opaque runtime-owned resource registration
+ * - SessionManager: public lifecycle and resource API
+ * - Event payloads: lifecycle event contracts
+ * - Error classes: operation failure boundaries
+ * CID Index: types-001 SessionRecord; types-002 ResourceRecord; types-003 SessionManager; types-004 EventPayloads; types-005 Errors
+ */
+
 export type SessionStatus = "active" | "suspended" | "archived";
 export type DestroyReason = "expired" | "explicit";
 
