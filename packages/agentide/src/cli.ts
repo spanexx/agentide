@@ -13,7 +13,7 @@ Usage:
   agentide status  [--data-dir <path>]
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
   agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--data-dir <path>]
-  agentide capability {list|describe --name <name>} [--data-dir <path>]
+  agentide capability {list|describe --name <name>} [--owner <string>] [--tier <read|write>] [--data-dir <path>]
   agentide plugin  {list} [--data-dir <path>]
   agentide --help
 
@@ -210,8 +210,26 @@ async function runCapability(
   });
   try {
     if (sub === "list") {
-      const list = platform.capabilityRegistry.list();
-      const lines = list.map((c) => `- ${c.name}\t${c.version}\t${c.description}`);
+      const ownerFilter = getFlag(flags, "owner", "");
+      const tierFilter = getFlag(flags, "tier", "") as "read" | "write" | "";
+      const cards = platform.capabilityRegistry.list();
+      // Perf note: N×M filter walks the registry once per filter check.
+      // v1 has ~30 caps; this is sub-millisecond. A registry.listByOwner() helper
+      // would make this O(1) for future higher-cardinality catalogs.
+      const enriched = cards.map((card) => {
+        const full = platform.capabilityRegistry.describe(card.name).capability;
+        return { card, full };
+      });
+      const filtered = enriched.filter(({ full }) => {
+        if (!full) return false;
+        if (ownerFilter && full.owner !== ownerFilter) return false;
+        if (tierFilter) {
+          const hasTier = full.permissions.some((p) => p.endsWith(`.${tierFilter}`));
+          if (!hasTier) return false;
+        }
+        return true;
+      });
+      const lines = filtered.map(({ card }) => `- ${card.name}\t${card.version}\t${card.description}`);
       return result(lines.join("\n") + "\n");
     }
     if (sub === "describe") {

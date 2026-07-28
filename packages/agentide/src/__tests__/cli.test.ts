@@ -89,6 +89,65 @@ describe("CLI", () => {
     expect(r.stdout).toMatch(/tenant\.list/);
   });
 
+  it("`capability list --owner session-manager` shows only session.* caps", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await runCli(["capability", "list", "--owner", "session-manager", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/session\.create/);
+    expect(r.stdout).toMatch(/session\.list/);
+    expect(r.stdout).not.toMatch(/gateway\.status/);
+    expect(r.stdout).not.toMatch(/tenant\.list/);
+  });
+
+  it("`capability list --owner plugin-manager` shows only plugin.* caps", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await runCli(["capability", "list", "--owner", "plugin-manager", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/plugin\.install/);
+    expect(r.stdout).toMatch(/plugin\.list/);
+    expect(r.stdout).not.toMatch(/session\.create/);
+    expect(r.stdout).not.toMatch(/gateway\.status/);
+  });
+
+  it("`capability list --owner nonexistent` returns empty list", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await runCli(["capability", "list", "--owner", "nonexistent", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.trim()).toBe("");
+  });
+
+  it("`capability list --tier read` shows only read-tier caps", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await runCli(["capability", "list", "--tier", "read", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/session\.list/);
+    expect(r.stdout).not.toMatch(/session\.create/);
+    expect(r.stdout).not.toMatch(/plugin\.install/);
+  });
+
+  it("`capability list --tier write` shows only write-tier caps", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await runCli(["capability", "list", "--tier", "write", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/session\.create/);
+    expect(r.stdout).toMatch(/plugin\.install/);
+    expect(r.stdout).not.toMatch(/session\.list/);
+  });
+
+  it("`capability list --owner plugin-manager --tier read` shows only plugin.list", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await runCli(["capability", "list", "--owner", "plugin-manager", "--tier", "read", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/plugin\.list/);
+    expect(r.stdout).not.toMatch(/plugin\.install/);
+  });
+
   it("unknown command exits non-zero with a clear message", async () => {
     const fs = new InMemoryFs();
     const r = await runCli(["frobnicate", "--data-dir", "/data"], { fs });

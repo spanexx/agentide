@@ -10,6 +10,7 @@
     { "path": "../event-bus" },
     { "path": "../capability-registry" },
     { "path": "../session-manager" },
-    { "path": "../plugin-manager" }
+    { "path": "../plugin-manager" },
+    { "path": "../platform-capabilities" }
   ]
 }

@@ -35,6 +35,11 @@ import type {
 // `session.touch` operates on an existing session but doesn't need it active (it's a no-op for
 // a missing session — caller may be calling to "wake up" a session). `session.destroy` and
 // capability.*/plugin.* write paths REQUIRE an active session.
+// Per GRILL Q3 (gateway-core): session-less caps are session.* lifecycle, read-only discovery,
+// and operator token issuance. session.* read + write paths (session.create, session.resume,
+// session.touch, session.list) don't carry a sessionId; session.destroy DOES (it operates on
+// an existing session). plugin.* write paths (install/uninstall/enable/disable/reload) require
+// a session. plugin.list is read-only discovery and is session-less.
 const SESSION_LESS_CAPABILITIES: ReadonlySet<string> = new Set([
   "session.create",
   "session.resume",
@@ -42,10 +47,16 @@ const SESSION_LESS_CAPABILITIES: ReadonlySet<string> = new Set([
   "session.list",
   "capability.list",
   "capability.describe",
+  "plugin.list",
   "gateway.status",
   "gateway.metrics",
   "gateway.configuration",
   "tenant.list",
+  "system.info",
+  "system.version",
+  "system.health",
+  "auth.token.issue",
+  "auth.token.revoke",
 ]);
 
 export interface HandleInvocationCtx {

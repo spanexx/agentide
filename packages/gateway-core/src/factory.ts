@@ -1,15 +1,16 @@
 /*
- * Code Map: gateway-core factory + tenant/token/adapter lifecycle + capability registrations
+ * Code Map: gateway-core factory + tenant/token/adapter lifecycle + handler registration
  * - createGateway: composition factory (Tier 1 + capabilities + audit + rate-limit + dispatch)
  * - loadOrCreateSecret: file-backed JWT secret bootstrap; base64-encoded on disk, decoded on read
- * - registerGatewayCapabilities: registers auth/session/tenant/capability/gateway capabilities as owner "gateway"
+ * - buildGatewayHandlers: per-capability handler implementations for the 16 platform caps
+ *   that stay resident in the kernel (auth.*, tenant.*, gateway.*, system.*, session.*, capability.*, plugin.*)
  * - atomicTenantSave: writes tenants.json via the FileSystem (production uses node:fs/promises)
  * - nodeFileSystem: production fs; writeFile without mode = append (audit log); with mode = write (gateway-secret, mode 0600)
  *
  * CID Index:
  * CID:factory-001 -> createGateway
  * CID:factory-002 -> loadOrCreateSecret
- * CID:factory-003 -> registerGatewayCapabilities
+ * CID:factory-003 -> buildGatewayHandlers
  *
  * Quick lookup: rg -n "CID:factory-" packages/gateway-core/src/factory.ts
  */
@@ -17,7 +18,8 @@
 import { randomBytes } from "node:crypto";
 import { appendFile, writeFile as fsWriteFile, readFile, access } from "node:fs/promises";
 import type { EventBus } from "@platform/event-bus";
-import type { CapabilityRegistry, CapabilityRecord, CapabilityType } from "@platform/capability-registry";
+import type { CapabilityRegistry } from "@platform/capability-registry";
+import { registerPlatformCapabilities } from "@platform/platform-capabilities";
 import type { SessionManager } from "@platform/session-manager";
 import type { PluginManager } from "@platform/plugin-manager";
 import { AuditWriter } from "./audit.js";
@@ -64,47 +66,16 @@ async function loadOrCreateSecret(secretPath: string, fs: FileSystem): Promise<U
   return secret;
 }
 
-// CID:factory-003 - registerGatewayCapabilities
-// Purpose: register all platform-level capabilities (auth/session/tenant/capability/gateway) with the Capability Registry under owner "gateway"
-//   Dispatch (Q5 / Gap 9) recognizes owner "gateway" and Tier 1 manager owners (session-manager, plugin-manager, capability-registry, platform-*).
+// CID:factory-003 - buildGatewayHandlers
+// Purpose: per-capability handler implementations for the 16 platform caps that stay resident in the kernel.
+//   The 25 caps registered by `registerPlatformCapabilities` (see @platform/platform-capabilities)
+//   include session.*, capability.*, plugin.*, tenant.*, gateway.*, auth.token.*, and system.*.
+//   Handlers for caps that don't go through the in-process Tier 1 manager owners (session-manager,
+//   plugin-manager, capability-registry) live here. The dispatch layer (packages/gateway-core/src/dispatch.ts)
+//   routes each owner to the gatewayHandlers map.
 // Used by: createGateway() factory at boot
-async function registerGatewayCapabilities(registry: CapabilityRegistry): Promise<void> {
-  const caps: CapabilityRecord[] = [
-    cap("auth.token.issue", "platform", ["platform.token.issue"], "Mint a JWT for a caller"),
-    cap("auth.token.revoke", "platform", ["platform.token.issue"], "Revoke a JWT (no-op in v1)"),
-    cap("session.create", "platform", ["platform.session.create"], "Create a session"),
-    cap("session.resume", "platform", ["platform.session.read"], "Resume a session"),
-    cap("session.destroy", "platform", ["platform.session.delete"], "Destroy a session and cleanup resources"),
-    cap("session.touch", "platform", ["platform.session.write"], "Reset a session's idle timer"),
-    cap("session.list", "platform", ["platform.session.read"], "List sessions in the caller's tenant"),
-    cap("tenant.create", "platform", ["platform.tenant.write"], "Create a tenant and bootstrap token"),
-    cap("tenant.list", "platform", ["platform.tenant.read"], "List tenants visible to the caller"),
-    cap("tenant.suspend", "platform", ["platform.tenant.write"], "Suspend a tenant (block new calls)"),
-    cap("tenant.delete", "platform", ["platform.tenant.write"], "Delete a tenant (purge records)"),
-    cap("capability.list", "platform", ["platform.capability.read"], "List registered capabilities"),
-    cap("capability.describe", "platform", ["platform.capability.read"], "Describe one capability by name"),
-    cap("gateway.status", "platform", ["platform.gateway.read"], "Gateway runtime status"),
-    cap("gateway.metrics", "platform", ["platform.gateway.read"], "Gateway counters and metrics"),
-    cap("gateway.configuration", "platform", ["platform.gateway.read"], "Effective configuration (with secrets redacted)"),
-  ];
-  await registry.register("gateway", { owner: "gateway", capabilities: caps });
-}
-
-function cap(
-  name: string,
-  type: CapabilityType,
-  permissions: readonly string[],
-  description: string,
-): CapabilityRecord {
-  return {
-    name,
-    version: "1.0.0",
-    type,
-    description,
-    permissions,
-    owner: "gateway",
-  };
-}
+// Permissions and ownership are declared in @platform/platform-capabilities/src/caps.ts; this file
+//   only contains the runtime implementations.
 
 // Persist tenant state to disk via the FileSystem. For the production filesystem this is
 // appendFile + atomic-write-temp-then-rename (deferred to a v2 enhancement; v1 uses appendFile
@@ -153,7 +124,7 @@ export async function createGateway(
     fs,
   });
 
-  await registerGatewayCapabilities(registry);
+  await registerPlatformCapabilities(registry);
 
   return {
     handleInvocation: (req) =>
@@ -449,10 +420,79 @@ function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
         // secretPath is omitted to avoid leaking filesystem layout
       };
     }),
+
+    // === plugin management (BI[6] — wraps Plugin Manager methods) ===
+    "plugin.list": wrap(() => ctx.pluginManager.list()),
+
+    "plugin.install": wrap((input) => {
+      const i = input as { source?: string };
+      if (typeof i.source !== "string") {
+        throw new GatewayError(
+          ERROR_CODES.INVALID_REQUEST,
+          "plugin.install requires {source}",
+          {},
+          false,
+        );
+      }
+      return ctx.pluginManager.install(i.source);
+    }),
+
+    "plugin.uninstall": wrap((input) => {
+      const i = input as { id?: string };
+      if (typeof i.id !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "plugin.uninstall requires {id}", {}, false);
+      }
+      // Some Plugin Manager versions return void; normalize to a structured outcome.
+      return ctx.pluginManager.uninstall(i.id).then(() => ({ uninstalled: true, id: i.id }));
+    }),
+
+    "plugin.enable": wrap((input) => {
+      const i = input as { id?: string };
+      if (typeof i.id !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "plugin.enable requires {id}", {}, false);
+      }
+      return ctx.pluginManager.enable(i.id);
+    }),
+
+    "plugin.disable": wrap((input) => {
+      const i = input as { id?: string };
+      if (typeof i.id !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "plugin.disable requires {id}", {}, false);
+      }
+      return ctx.pluginManager.disable(i.id);
+    }),
+
+    "plugin.reload": wrap((input) => {
+      const i = input as { id?: string };
+      if (typeof i.id !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "plugin.reload requires {id}", {}, false);
+      }
+      return ctx.pluginManager.reload(i.id);
+    }),
+
+    // === system introspection (BI[6] — kernel-direct reads) ===
+    "system.info": wrap(() => ({
+      name: "agentide",
+      version: getPlatformVersion(),
+    })),
+
+    "system.version": wrap(() => ({
+      version: getPlatformVersion(),
+      buildHash: null,
+    })),
+
+    "system.health": wrap(() => ({ status: "ok" })),
   };
   // Suppress unused-import warning for an unused field in handlers.
   void ctx.sessionManager;
   return { gatewayHandlers: handlers };
+}
+
+// CID:factory-004 - getPlatformVersion
+// Purpose: returns the platform version. Read from AGENTIDE_VERSION env (set by install.sh) or defaults to "0.0.0".
+//   The buildHash from CI is always null in v1 (per BI[6] Phase 0.5 verdict).
+function getPlatformVersion(): string {
+  return process.env["AGENTIDE_VERSION"] ?? "0.0.0";
 }
 
 // System clock + production fs. Top-level static imports (ESM) — not require() — per Gap 2.

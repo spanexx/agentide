@@ -175,8 +175,8 @@ describe("Gateway.handleInvocation", () => {
     const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
     // session.create requires ownerId + adapterType in input (matches the Session Manager's contract).
     const invocation: CanonicalInvocation = {
-      token: makeToken(clock, "default", "alice", ["platform.session.create", "platform.session.read"]),
-      caller: { tenantId: "default", callerId: "alice", scope: ["platform.session.create", "platform.session.read"] },
+      token: makeToken(clock, "default", "alice", ["platform.session.write"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["platform.session.write"] },
       capability: { name: "session.create" },
       input: { ownerId: "alice", adapterType: "mcp", metadata: { task: "test" } },
       sessionId: session.id,
