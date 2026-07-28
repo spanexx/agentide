@@ -1,74 +1,71 @@
-# BI[6] platform-capabilities: SHIPPED
+# Main clean — BI[6] merged, ready for next pack
 
 ## Soul
 
-This session opened with grill and PRD drafted awaiting approval. The user's "Approve as-is, move to TRD" landed at the PRD gate. Then TRD → FLOW → IMPL → 6 phases of implementation. The interesting discoveries:
-
-1. **The authz gap nobody mentioned.** PRD claimed `platform.*.read` would cover every read-tier platform cap. The current `checkAuthz` (`packages/gateway-core/src/authz.ts`) treats `*` as a literal segment — it does exact-match on `parts[1]`. So the wildcard would have shipped broken. The fix is 3 lines in `tierCovers` (parts[1] === '*' → rank check). The user caught this in the TRD review and pushed for documentation, leading to the under-the-hood fix that landed in Phase 2.
-
-2. **The cross-owner migration problem.** The registry's `register` is per-owner and throws on cross-owner collision. A naive single-call `register("platform-capabilities", {25 caps})` would fail on upgrade because the legacy records still hold owner="gateway" for `session.*` and `capability.*`. The fix is a 4-call dance: phase 1 re-registers `gateway` with only its 12 legitimate caps (the registry's diff removes the 7 legacy caps under gateway); phase 2-4 register the other 13 caps under session-manager, capability-registry, plugin-manager. Verbose but it works. Documented in TRD §4.2.
-
-3. **The session-less set was stale.** While testing the new handlers, hit "GATEWAY_SESSION_REQUIRED" on `plugin.list` and `system.*`. The kernel's `SESSION_LESS_CAPABILITIES` set was missing these per GRILL Q3. Updated to include `plugin.list`, `system.info`, `system.version`, `system.health`, `auth.token.issue`, `auth.token.revoke`. Without this fix, MCP agents using `tools/call plugin.list` would have been blocked.
-
-4. **pnpm does not work with this monorepo.** The root `package.json` has `"workspaces": ["packages/*"]` (npm format). pnpm 11 prints a warning and silently ignores it. After adding `@platform/gateway-core`'s new dep on `@platform/platform-capabilities`, `pnpm install` left the symlink missing. The fix: use `npm install` (which honors the workspaces format via npm's resolver). The build script uses `npm run build --workspaces --if-present` which works fine. Documented for the next session.
+This session closed with PR #6 merged into main (commit 300fb44). The cleanup pass:
+local main fast-forwarded to `300fb44`, both stale branches (`feature/platform-capabilities` and `feature/gateway-core`) deleted locally and remotely. Working tree clean. Repo state matches origin: `main` is the only branch.
 
 ## What We Did
 
-Implemented `@platform/platform-capabilities` per the IMPL plan in 6 phases:
+The session ran the full BI[6] feature pipeline from grill to ship:
+- Phase 0 (grill): 5 questions locked in plain English (Q1 ownership, Q2 scope, Q3 permission naming, Q4 package location, Q5 registration wiring).
+- Phase 0.5 (uncertainty scan): U1-U7 classified; U2 (`system.health` depth) defaulted to always-ok in v1.
+- Phase 1 (PRD): 142 lines, 7 acceptance criteria.
+- Phase 2 (TRD): 386 lines, including the authz wildcard fix and the 4-call migration strategy.
+- Phase 3 (FLOW): 292 lines, 6 flows + QA checklist.
+- Phase 4 (IMPL): 326 lines, 6 phases.
+- Phase 5a (stability check): cross-doc consistency review. Caught one counting discrepancy (TRD §4.2 stutter) and one perf N+1 smell (CLI filters) — both fixed.
+- Phase 5b (implement): 6 phases, 308/308 tests pass, 0 lint errors, build clean.
+- Phase 5c (gap-report review): feature-pipeline-review sub-agent found 0 RED, 5 YELLOW. All 4 follow-ups resolved: AC-3 happy-path test added, drift 1/2 docs updated, session.list caveat added.
+- Phase 6 (ship): 3 commits, 2 via PR #6 (merged).
 
-- **Phase 0 (scaffold)**: Created `packages/platform-capabilities/{package.json, tsconfig.json, src/{index,caps,register}.ts}`. Workspace ref in root tsconfig.json. First build green.
-- **Phase 1 (registration + migration)**: 25 `CapabilityRecord` values via `cap(...)` helper; `registerPlatformCapabilities` does the 4-call register dance. Removed `registerGatewayCapabilities` from `gateway-core/src/factory.ts`; renamed permissions on the 16 migrated handlers (`platform.session.create` → `platform.session.write`, `platform.token.issue` → `platform.token.write`). 14 tests covering fresh install, upgrade migration, and idempotency.
-- **Phase 2 (authz wildcard)**: `tierCovers` gains 3-line namespace-wildcard rule. 31 tests covering all 9 wildcard outcomes plus regression for existing exact-match and tier-hierarchy behavior.
-- **Phase 3 (9 new handlers)**: 6 `plugin.*` handlers wrapping `pluginManager` (with proper INVALID_REQUEST validation); 3 `system.*` handlers kernel-direct (read `AGENTIDE_VERSION` env). 14 tests covering all 9 handlers plus authz, scope checks, and env fallback. Also: `SESSION_LESS_CAPABILITIES` updated to match GRILL Q3.
-- **Phase 4 (CLI filters)**: `runCapability` in `packages/agentide/src/cli.ts` gains `--owner` and `--tier` flags. Pure client-side filter on `registry.list()` + `describe()` per cap (N+1 trade-off documented; add perf comment per user feedback). 6 new CLI tests.
-- **Phase 5 (final validation)**: 307/307 tests pass (was 242). Lint 0 errors (4 pre-existing warnings in plugin-manager tests). Typecheck clean. Build clean. `grep registerGatewayCapabilities packages/gateway-core/src` returns 0. `grep platform.session.create|platform.token.issue packages/gateway-core/src` returns 0.
+## What Was Shipped
 
-Doc pack shipped: PRD (142 lines), TRD (386 lines after cleanup), FLOW (292 lines), IMPL (326 lines), GRILL (395 lines). Total 1541 lines. Cross-doc consistency verified at the 5a stability check.
+- **`@platform/platform-capabilities`** (new package, 5 files, 14 tests)
+- **`gateway-core` augmentations**: 3-line authz wildcard fix, 9 new handlers (plugin.* + system.*), SESSION_LESS_CAPABILITIES set extended
+- **`@platform/agentide` CLI**: `--owner` and `--tier` filters on `capability list`
+- **Doc pack**: 5 docs (GRILL, PRD, TRD, FLOW, IMPL) totalling 1141 lines
+- **Backlog**: BI[6] row shipped (status, what, impl, notes fields updated)
+- **HTML graph**: Tier 2 progress line updated, gateway-core notes field updated to reflect post-BI[6] state
 
-## Key Decisions Made Mid-Implementation
+## Key Decisions Made
 
-- **DOWNGRADE is broken** (Q-1 in PRD/TRD): the registry's `register` is forward-only. A downgrade to a pre-BI[6] `registerGatewayCapabilities` would re-register `session.create@1.0.0` under `owner="gateway"`, but the global store still has it under `owner="session-manager"` — the cross-owner collision throws. The new package is forward-only. A downgrade requires a manual `agentide capability reset` step (out of scope for v1). Documented in TRD §4.2 and the IMPL Phase 5 rollout notes.
-- **`buildHash: null` is intentional** (Q-2): the v1 `system.version` returns `{version: <semver>, buildHash: null}`. The null is reserved for v2 when CI ships signed builds.
-- **`--owner` is exact match** (Q-3): no partial matching (`--owner plugin` would NOT match `plugin-manager`). v1 decision; partial match is a v2 enhancement.
-- **CLI filter perf**: N+1 walk accepted for v1's ~30 caps. Future enhancement: `registry.listByOwner(owner)` helper. Documented in TRD §2.3.
+- **Authz wildcard**: 3-line fix in `tierCovers` makes `platform.*.read` cover every read-tier platform cap. Discovered this was broken during TRD review.
+- **4-call migration**: re-register `gateway` with only its 12 caps (registry diff removes 7 legacy caps); then 3 calls for session-manager, capability-registry, plugin-manager. The only path that handles the cross-owner collision on upgrade.
+- **`platform-capabilities` is a registration seam only**: handlers live in gateway-core. The new package owns the *shape* of every platform cap (name, version, permissions, description, owner) but not the runtime implementations.
 
-## What We Found
+## Known Caveats
 
-A few things shifted during implementation:
+- **Downgrade is not supported**: rollback to pre-BI[6] would fail the cross-owner collision check. Documented in TRD §4.2. A downgrade requires a manual `agentide capability reset` step (out of scope for v1).
+- **`session.list` returns `[]` placeholder**: SessionManager v1 doesn't expose `listSessions(tenantId)`. v2 enhancement.
+- **CLI filters are O(N+1)**: iterate `list()` → `describe()` per cap. v1 has ~30 caps; sub-millisecond. Future `registry.listByOwner()` helper if catalog grows.
 
-- The `pnpm install` issue with the new package was the trickiest non-design problem. The existing `package-lock.json` is an npm lockfile; the workspaces format is npm. pnpm 11 prints a warning but doesn't reconcile. The fix is `npm install` instead of `pnpm install`. The build script (`npm run build --workspaces --if-present`) still works. The next session should use `npm install` for any new package additions.
-- The `docs/gateway-core` symlink at the agentide root (`docs/gateway-core -> features/gateway-core`) is benign but untracked. Created during a previous session. Not introduced by BI[6].
-- The `SESSION_LESS_CAPABILITIES` update was technically out of scope for BI[6] (it changed the session-required-or-not decision for capabilities that didn't exist before). But without it, the new `plugin.list` and `system.*` caps would have been unreachable by MCP agents. Captured in the implementations notes.
+## Next Pack
 
-## How to Continue
+The next pack is **BI[7] permission-tiering**. Its docs are not yet drafted. The CLI already filters by tier (read/write), but the actual scope convention enforcement platform-wide is BI[7]'s scope. Per the BACKLOG IMPL:
 
-The next pack is BI[7] `permission-tiering`. Its docs are not yet drafted. The CLI already filters by tier (read/write), but the actual scope convention enforcement platform-wide is BI[7]'s scope. Run `feature-pipeline` from Phase 0.
+> Implement the `read`/`act`/`destructive` scope convention platform-wide (not just documented).
 
-The session-handoff for this session is overwritten from the previous BI[6]-grill-only handoff. The breadcrumb trail is `agentide/sessions/.handoff-log.md`. The drift log is at `agentide/docs/drift.md` (D-1 still open and unrelated to BI[6]).
+Run `feature-pipeline` from Phase 0 (grill). The authz.ts wildcard fix from BI[6] is a useful precedent for BI[7] — the authz already supports tier-hierarchy (`read < act < destructive` for runtime, `read < write` for platform), but BI[7] probably needs to extend the namespace-scoping further (e.g., `runtime.*.act` covering `runtime.*.read` cross-namespace, similar to `platform.*.read` in BI[6]).
 
-To pick up BI[7]: `cd agentide && npm install` first to confirm deps, then `npm run test` (307/307 should pass), then create `docs/features/permission-tiering/` and start the grill.
+To pick up BI[7]:
+1. `cd agentide && npm install` (use `npm`, not `pnpm` — documented in BI[6] handoff)
+2. `npm run test` — confirm 308/308 baseline
+3. Create `docs/features/permission-tiering/`
+4. Start the grill with the BI[7] PRD surface
 
-Skill load order for the next session: `caveman`, `log-prompt`, `situation-awareness` (reads `.last-handoff` directly), `feature-pipeline` (Phase 0 grill).
+Skill load order for next session: `caveman`, `log-prompt`, `situation-awareness` (reads this handoff directly), `feature-pipeline` (Phase 0).
 
-## Commit history this session
+## Commit history for this session
 
-No commits yet — this session ended at the handoff write. The user has not asked for a commit. The branch is `feature/platform-capabilities` with 11 modified files and 8 untracked files (the new package and 3 docs). All 307 tests pass; lint and build are clean.
+- `83b8b94` feat(platform-capabilities): ship 25 platform caps with real owners + authz wildcard + CLI filters
+- `f0e8258` fix(platform-capabilities): address gap-report findings (AC-3 test, drift 1/2, session.list caveat)
+- `5209a81` docs(backlog): record platform-capabilities ship in HTML sequencing notes
+- `300fb44` Merge pull request #6 from spanexx/feature/platform-capabilities (PR #6 merged)
 
-**Files modified/untracked in the working tree:**
-- `packages/platform-capabilities/` (new package, 5 files)
-- `packages/gateway-core/src/authz.ts` (wildcard fix)
-- `packages/gateway-core/src/factory.ts` (handler removal + 9 new handlers)
-- `packages/gateway-core/src/handle-invocation.ts` (session-less set update)
-- `packages/gateway-core/src/__tests__/authz.test.ts` (new, 31 tests)
-- `packages/gateway-core/src/__tests__/plugin-system-handlers.test.ts` (new, 14 tests)
-- `packages/gateway-core/src/__tests__/handle-invocation.test.ts` (permission rename on line 178)
-- `packages/agentide/src/cli.ts` (--owner, --tier flags)
-- `packages/agentide/src/__tests__/cli.test.ts` (6 new CLI tests)
-- `packages/gateway-core/package.json` (new dep)
-- `packages/gateway-core/tsconfig.json` (new ref)
-- `tsconfig.json` (new ref at top)
-- `docs/features/platform-capabilities/{TRD,FLOW,IMPL}-platform-capabilities.md` (3 new docs)
-- `docs/CONTEXT.md` (decision log entry)
-- `docs/Feature_Backlog.md` (BI[6] status — note: the backlog script lives at `../../scripts/backlog/` not in this repo)
-- `scripts/backlog/platform-capabilities.js` (new — backlog data file)
-- `package-lock.json` (modified by `npm install` symlink resolution)
+## Repo state
+
+- Local: `main` at 300fb44, clean
+- Remote: `origin/main` at 300fb44
+- Branches: `main` only (local + remote)
+- Stale branches cleaned up: `feature/platform-capabilities`, `feature/gateway-core` (both deleted locally and remotely)
