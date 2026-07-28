@@ -1,20 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { createGateway } from "../index.js";
-import { GatewayError, ERROR_CODES } from "../index.js";
+import { ERROR_CODES } from "../index.js";
 import { issueToken } from "../auth.js";
 import type {
-  Adapter,
   AuditRecord,
   CanonicalInvocation,
   Clock,
   FileSystem,
-  Gateway,
   TokenClaims,
 } from "../index.js";
-import { createEventBus, type EventBus, type PlatformEvent } from "@platform/event-bus";
-import { createCapabilityRegistry, type CapabilityRegistry, type CapabilityRecord } from "@platform/capability-registry";
-import { createSessionManager, type SessionManager, type SessionRecord } from "@platform/session-manager";
-import { createPluginManager, type PluginManager } from "@platform/plugin-manager";
+import { createEventBus, type PlatformEvent } from "@platform/event-bus";
+import { createCapabilityRegistry, type CapabilityRecord } from "@platform/capability-registry";
+import { createSessionManager } from "@platform/session-manager";
+import { createPluginManager } from "@platform/plugin-manager";
 
 class FakeClock implements Clock {
   nowValue = 1_700_000_000_000;
@@ -42,6 +40,27 @@ class FakeClock implements Clock {
     }
     this.nowValue = target;
   }
+}
+
+// JWT secret for tests. Same secret across all invocations.
+const TEST_SECRET = new TextEncoder().encode("test-secret-key-for-unit-tests-only!!");
+
+function makeToken(
+  clock: FakeClock,
+  tenantId: string,
+  callerId: string,
+  scope: readonly string[],
+): string {
+  return issueToken(
+    {
+      sub: { tenantId, callerId },
+      scope: [...scope],
+      iat: clock.now(),
+      exp: clock.now() + 3_600_000,
+    },
+    TEST_SECRET,
+    clock,
+  );
 }
 
 class InMemoryFs implements FileSystem {
@@ -75,6 +94,8 @@ function claimsFor(tenantId: string, callerId: string, scope: string[]): TokenCl
 
 async function setup(opts: { plugins?: CapabilityRecord[]; seedTenants?: Array<{ id: string; name: string }> } = {}) {
   const fs = new InMemoryFs();
+  // Pre-seed the gateway-secret file with our test secret so loadOrCreateSecret returns it deterministically.
+  fs.files.set("/data/gateway-secret", Buffer.from(TEST_SECRET).toString("base64"));
   const clock = new FakeClock();
   const bus = createEventBus();
   const registry = createCapabilityRegistry(bus);
@@ -101,22 +122,25 @@ async function setup(opts: { plugins?: CapabilityRecord[]; seedTenants?: Array<{
     tenantsPath: "/data/tenants.json",
     secretPath: "/data/gateway-secret",
   });
+  // Auto-seed the "default" tenant (used by most tests). Additional tenants via opts.seedTenants.
+  await gateway.createTenant({ id: "default", name: "Default Test Tenant" });
   for (const t of opts.seedTenants ?? []) {
-    await gateway.createTenant(t);
+    if (t.id !== "default") await gateway.createTenant(t);
   }
   return { gateway, registry, sm, pm, bus, clock, fs };
 }
 
 describe("Gateway.handleInvocation", () => {
   it("rejects GATEWAY_INVALID_REQUEST when capability.name is empty", async () => {
-    const { gateway, bus } = await setup();
+    const { gateway, bus, clock } = await setup();
     const captured: { name: string; payload: unknown }[] = [];
     bus.subscribe("gateway.invocation", (e) => {
       captured.push({ name: e.name, payload: e.payload });
     });
     const claims = claimsFor("default", "alice", ["*"]);
-    const token = issueToken(claims, await loadSecret(), new FakeClock());
+    void issueToken(claims, await loadSecret(), new FakeClock());
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", []),
       caller: { tenantId: "default", callerId: "alice", scope: ["*"] },
       capability: { name: "" },
       input: {},
@@ -131,9 +155,10 @@ describe("Gateway.handleInvocation", () => {
   });
 
   it("rejects GATEWAY_INSUFFICIENT_SCOPE when caller has no scopes", async () => {
-    const { gateway } = await setup();
-    // Use a session-less capability (gateway.status) so we hit the authz check, not session-required.
+    const { gateway, clock } = await setup();
+    // Caller's token has empty scope. Authz should reject any required permission.
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", []),
       caller: { tenantId: "default", callerId: "alice", scope: [] },
       capability: { name: "gateway.status" },
       input: {},
@@ -146,10 +171,11 @@ describe("Gateway.handleInvocation", () => {
   });
 
   it("happy path: dispatches a platform capability and returns output", async () => {
-    const { gateway, sm } = await setup();
+    const { gateway, sm, clock } = await setup();
     const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
     // session.create requires ownerId + adapterType in input (matches the Session Manager's contract).
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["platform.session.create", "platform.session.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["platform.session.create", "platform.session.read"] },
       capability: { name: "session.create" },
       input: { ownerId: "alice", adapterType: "mcp", metadata: { task: "test" } },
@@ -163,9 +189,10 @@ describe("Gateway.handleInvocation", () => {
   });
 
   it("returns GATEWAY_CAPABILITY_NOT_FOUND for unknown capability", async () => {
-    const { gateway, sm } = await setup();
+    const { gateway, sm, clock } = await setup();
     const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["platform.session.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["platform.session.read"] },
       capability: { name: "totally.unknown" },
       input: {},
@@ -180,7 +207,7 @@ describe("Gateway.handleInvocation", () => {
   });
 
   it("returns GATEWAY_INSUFFICIENT_SCOPE when scope does not cover", async () => {
-    const { gateway, sm } = await setup({
+    const { gateway, sm, clock } = await setup({
       plugins: [{
         name: "runtime.action",
         version: "1.0.0",
@@ -192,6 +219,7 @@ describe("Gateway.handleInvocation", () => {
     });
     const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["platform.session.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["runtime.demo.read"] },  // too low
       capability: { name: "runtime.action" },
       input: {},
@@ -209,7 +237,7 @@ describe("Gateway.handleInvocation", () => {
     // a runtime plugin capability returns GATEWAY_PLUGIN_NOT_INSTALLED or MANAGER_UNAVAILABLE
     // depending on whether the plugin is actually installed. The test verifies the authz check
     // itself passes — i.e., we don't see GATEWAY_INSUFFICIENT_SCOPE.
-    const { gateway, sm } = await setup({
+    const { gateway, sm, clock } = await setup({
       plugins: [{
         name: "runtime.action",
         version: "1.0.0",
@@ -221,6 +249,7 @@ describe("Gateway.handleInvocation", () => {
     });
     const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["runtime.demo.act"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["runtime.demo.act"] },
       capability: { name: "runtime.action" },
       input: {},
@@ -236,9 +265,10 @@ describe("Gateway.handleInvocation", () => {
   });
 
   it("returns GATEWAY_RATELIMIT_EXCEEDED after capacity tokens consumed", async () => {
-    const { gateway, fs } = await setup();
+    const { gateway, fs, clock } = await setup();
     // Use a session-less capability (gateway.status) so we don't need a session.
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["platform.gateway.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["platform.gateway.read"] },
       capability: { name: "gateway.status" },
       input: {},
@@ -261,10 +291,11 @@ describe("Gateway.handleInvocation", () => {
   });
 
 it("returns GATEWAY_SESSION_REQUIRED for session-required capability without sessionId", async () => {
-    const { gateway } = await setup();
+    const { gateway, clock } = await setup();
     // Use a capability that's NOT in SESSION_LESS_CAPABILITIES (runtime.action was registered in the plugins setup).
     // We register a fresh test capability to make the requirement explicit.
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["runtime.test.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["runtime.test.read"] },
       capability: { name: "test.requiresSession" },
       input: {},
@@ -278,8 +309,9 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
   });
 
   it("read-only discovery does NOT require a session", async () => {
-    const { gateway } = await setup();
+    const { gateway, clock } = await setup();
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["platform.gateway.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["platform.gateway.read"] },
       capability: { name: "gateway.status" },  // session-less
       input: {},
@@ -288,24 +320,23 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
     expect(result).toHaveProperty("output");
   });
 
-  it("cross-tenant session rejection is deferred (session-manager v1 limitation)", async () => {
-    // NOTE[agent]: session-manager v1 doesn't track tenantId per session — SessionRecord has
-    // ownerId (= callerId) but no tenantId. A v2 enhancement adds getSession(id) → TenantRecord
-    // so the gateway can verify session.tenantId === caller.tenantId. For v1, the gateway
-    // documents this limitation in the PRD. This test verifies a cross-tenant invocation
-    // still produces an audit record (status may be ok or error depending on dispatch path).
-    const { gateway, sm } = await setup();
-    const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
+  it("cross-tenant session rejection: tenant state check fires first", async () => {
+    // Caller is in a tenant that doesn't exist. The kernel returns GATEWAY_TENANT_MISMATCH
+    // before session lookup. (v1 also doesn't track session.tenantId → can't reject cross-tenant
+    // session reuse, but tenant existence catches the broader "unknown tenant" case.)
+    const { gateway , clock } = await setup();
     const invocation: CanonicalInvocation = {
-      caller: { tenantId: "other-tenant", callerId: "alice", scope: ["platform.session.read"] },
+      token: makeToken(clock, "ghost-tenant", "alice", ["platform.session.read"]),
+      caller: { tenantId: "ghost-tenant", callerId: "alice", scope: ["platform.session.read"] },
       capability: { name: "session.list" },
       input: {},
-      sessionId: session.id,
     };
     const result = await gateway.handleInvocation(invocation);
-    // Session-less capability + valid session + valid authz → dispatch returns output.
-    // Cross-tenant check is deferred; the call still succeeds.
-    expect(result).toHaveProperty("output");
+    expect(result).toHaveProperty("error");
+    if ("error" in result) {
+      expect(result.error.code).toBe(ERROR_CODES.TENANT_MISMATCH);
+      expect(result.error.details).toMatchObject({ tenantId: "ghost-tenant" });
+    }
   });
 
   it("auto-resolves capability version when omitted (reaches dispatch)", async () => {
@@ -313,7 +344,7 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
     // that the version-resolved capability reaches dispatch (i.e., it's not rejected for
     // version-not-found). In v1, dispatch returns either PLUGIN_NOT_INSTALLED or
     // MANAGER_UNAVAILABLE for runtime plugins — both are valid post-version-resolve failures.
-    const { gateway, sm, registry } = await setup({
+    const { gateway, sm, registry, clock } = await setup({
       plugins: [
         {
           name: "runtime.action",
@@ -338,6 +369,7 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
     });
     const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["runtime.demo.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["runtime.demo.read"] },
       capability: { name: "runtime.action" },  // no version → latest (2.0.0)
       input: {},
@@ -352,7 +384,7 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
   });
 
   it("explicit version pin returns GATEWAY_CAPABILITY_NOT_FOUND for missing version", async () => {
-    const { gateway, sm } = await setup({
+    const { gateway, sm, clock } = await setup({
       plugins: [{
         name: "runtime.action",
         version: "1.0.0",
@@ -364,6 +396,7 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
     });
     const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["platform.session.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["runtime.demo.read"] },
       capability: { name: "runtime.action", version: "9.9.9" },
       input: {},
@@ -377,9 +410,10 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
   });
 
   it("audit log receives a record on success", async () => {
-    const { gateway, sm, fs } = await setup();
+    const { gateway, sm, fs, clock } = await setup();
     const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
     await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["platform.session.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["platform.session.read"] },
       capability: { name: "session.list" },
       input: {},
@@ -395,8 +429,9 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
   });
 
   it("audit log receives a record on denial (rate limit)", async () => {
-    const { gateway, fs } = await setup();
+    const { gateway, fs, clock } = await setup();
     const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["platform.gateway.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["platform.gateway.read"] },
       capability: { name: "gateway.status" },
       input: {},
@@ -412,13 +447,14 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
   });
 
   it("Event Bus emits gateway.invocation event", async () => {
-    const { gateway, bus, sm } = await setup();
+    const { gateway, bus, sm, clock } = await setup();
     const events: PlatformEvent<unknown>[] = [];
     bus.subscribe("gateway.invocation", (e) => {
       events.push(e);
     });
     const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
     await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["platform.session.read"]),
       caller: { tenantId: "default", callerId: "alice", scope: ["platform.session.read"] },
       capability: { name: "session.list" },
       input: {},
@@ -433,23 +469,23 @@ async function loadSecret(): Promise<Uint8Array> {
   // Hardcoded test secret (32 bytes). Production generates a random one.
   return new TextEncoder().encode("test-secret-key-for-unit-tests-only!!");
 }
+// Mark unused for the eslint plugin to silence the warning.
+void loadSecret;
 
 describe("Gateway tenant lifecycle", () => {
   it("createTenant + listTenants + deleteTenant round-trip", async () => {
     const { gateway } = await setup();
-    // The factory doesn't auto-create a "default" tenant — that's the `agentide init` flow.
-    // The gateway factory starts with an empty tenant list.
-    expect(gateway.listTenants()).toEqual([]);
+    // The factory auto-seeds the "default" tenant. The round-trip creates a second tenant, then deletes it; "default" remains.
     await gateway.createTenant({ id: "beta", name: "Beta Inc" });
-    expect(gateway.listTenants().map((t) => t.id)).toEqual(["beta"]);
+    expect(gateway.listTenants().map((t) => t.id).sort()).toEqual(["beta", "default"].sort());
     await gateway.deleteTenant("beta");
-    expect(gateway.listTenants().map((t) => t.id)).toEqual([]);
+    expect(gateway.listTenants().map((t) => t.id)).toEqual(["default"]);
   });
 
   it("createTenant rejects duplicate id", async () => {
     const { gateway } = await setup();
     await gateway.createTenant({ id: "acme", name: "Acme" });
-    await expect(gateway.createTenant({ id: "acme", name: "Dup" })).rejects.toThrow(GatewayError);
+    await expect(gateway.createTenant({ id: "acme", name: "Dup" })).rejects.toThrow(/already exists/);
   });
 
   it("suspendTenant toggles suspended flag", async () => {

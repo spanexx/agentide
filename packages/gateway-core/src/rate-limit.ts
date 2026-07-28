@@ -47,7 +47,10 @@ export class RateLimiter {
     } else {
       const elapsedMs = now - bucket.lastRefillAt;
       if (elapsedMs > 0) {
-        const refilled = Math.ceil((elapsedMs * this.config.tokensPerSecond) / 1000);
+        // Round DOWN — a caller retrying every millisecond must NOT earn a token
+        // for fractional accumulation. (Math.ceil would let a 1ms retry earn 1 token
+        // per retry at 10 tokens/sec config — 10x the configured rate.)
+        const refilled = Math.floor((elapsedMs * this.config.tokensPerSecond) / 1000);
         bucket.tokens = Math.min(this.config.capacity, bucket.tokens + refilled);
         bucket.lastRefillAt = now;
       }

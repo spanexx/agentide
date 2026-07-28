@@ -23,6 +23,9 @@ export class AuditWriter {
   async append(record: AuditRecord): Promise<void> {
     const line = `${JSON.stringify(record)}\n`;
     try {
+      // FileSystem.writeFile is APPEND-only (per the interface contract in types.ts). The production
+      // filesystem uses node:fs/promises.appendFile. This guarantees the audit log never loses
+      // history due to a stray overwrite.
       await this.fs.writeFile(this.auditLogPath, line);
     } catch (err) {
       console.warn(

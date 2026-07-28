@@ -54,9 +54,14 @@ export interface CallerIdentity {
 }
 
 // CID:types-003 - CanonicalInvocation
-// Purpose: the input to handleInvocation; protocol-agnostic (no JSON-RPC, no MCP, no HTTP); adapters translate to/from this shape
+// Purpose: the input to handleInvocation; protocol-agnostic (no JSON-RPC, no MCP, no HTTP); adapters translate to/from this shape.
+//   `token` is REQUIRED — the kernel verifies it (HS256 via verifyToken) and uses the
+//   verified claims as the source of truth for caller identity. `caller` is OPTIONAL
+//   (adapters may pass it for downstream convenience); the kernel overrides it with
+//   the verified claims and rejects if a passed `caller` disagrees with the token.
 export interface CanonicalInvocation {
-  readonly caller: CallerIdentity;
+  readonly token: string;
+  readonly caller?: CallerIdentity;
   readonly capability: { readonly name: string; readonly version?: string };
   readonly input: YamlValue;
   readonly sessionId?: string;
@@ -79,9 +84,11 @@ export type CanonicalResponse =
 
 // CID:types-006 - AuditRecord
 // Purpose: one durable record per invocation; persisted to disk and emitted on Event Bus as gateway.invocation
+//   `tenantId` is recorded explicitly (Q8: every record is tenant-scoped).
 export interface AuditRecord {
   readonly schemaVersion: 1;
   readonly ts: number;
+  readonly tenantId: string;
   readonly caller: { readonly id: string; readonly scope: readonly string[] };
   readonly session?: { readonly id: string };
   readonly capability: { readonly name: string; readonly version: string };
@@ -128,9 +135,11 @@ export interface Clock {
 
 // CID:types-012 - FileSystem
 // Purpose: filesystem seam; production uses Node fs.promises; tests use an in-memory fake
+//   writeFile is APPEND (mirrors fs.appendFile) so append-only log files don't lose history.
+//   The optional `mode` parameter carries POSIX file mode (e.g., 0o600 for secrets).
 export interface FileSystem {
   readFile(path: string): Promise<string>;
-  writeFile(path: string, content: string): Promise<void>;
+  writeFile(path: string, content: string, mode?: number): Promise<void>;
   exists(path: string): Promise<boolean>;
 }
 
@@ -193,5 +202,5 @@ export interface Gateway {
   listTenants(): readonly TenantRecord[];
   suspendTenant(id: string): Promise<TenantRecord>;
   deleteTenant(id: string): Promise<void>;
-  status(): GatewayStatus;
+  status(): Promise<GatewayStatus>;
 }

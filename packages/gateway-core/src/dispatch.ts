@@ -41,13 +41,19 @@ export async function dispatchCapability(
 ): Promise<YamlValue> {
   const owner = capability.owner;
   const work = (async (): Promise<YamlValue> => {
-    if (owner === "gateway") {
+    // (a) Platform built-ins: the Gateway itself ("gateway") or any known Tier 1 manager
+    // ("session-manager", "plugin-manager", "capability-registry", or "platform-*"). All dispatch
+    // to the gatewayHandlers map. The Gateway registers its own + the session.* / plugin.* / capability.* /
+    // tenant.* / gateway.* / auth.* capabilities under owner "gateway"; a future Tier 1 manager
+    // with its own owner just needs its capabilities registered under owner "gateway" too (or extend
+    // this dispatch to recognize the new owner).
+    if (owner === "gateway" || owner === "session-manager" || owner === "plugin-manager" || owner === "capability-registry" || owner.startsWith("platform-")) {
       const handler = ctx.handlers.gatewayHandlers[capability.name];
       if (!handler) {
         throw new GatewayError(
-          ERROR_CODES.INTERNAL_ERROR,
-          `gateway has no handler for ${capability.name}`,
-          { capability: capability.name },
+          ERROR_CODES.MANAGER_UNAVAILABLE,
+          `no handler registered for ${capability.name} (owner: ${owner})`,
+          { capability: capability.name, owner },
         );
       }
       return await handler(input, sessionId);

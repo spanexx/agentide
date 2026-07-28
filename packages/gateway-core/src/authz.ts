@@ -1,6 +1,9 @@
 /*
  * Code Map: tier-hierarchy permission check
  * - checkAuthz: caller.scope vs capability.permissions; higher-tier scopes cover lower-tier ones (runtime + platform); business caps exact-match
+ *   The wildcard scope "*" covers every required permission (used by the bootstrap operator token).
+ *   Tier hierarchy is namespace-scoped for runtime permissions (per GRILL Q4): "runtime.demo.act" covers "runtime.demo.read"
+ *   but does NOT cover "platform.demo.write" or "runtime.other.read".
  *
  * CID Index:
  * CID:authz-001 -> checkAuthz
@@ -39,22 +42,28 @@ function rank(scope: string): number | null {
 
 // CID:authz-001 - checkAuthz
 // Purpose: tier-hierarchy permission check (Q4 decision)
-//   Runtime caps: read < act < destructive (higher covers lower)
-//   Platform caps: read < write (higher covers lower)
-//   Business caps: exact match (each capability is its own action)
+//   Wildcard: a scope of "*" covers every required permission (bootstrap operator token).
+//   Runtime caps: read < act < destructive (higher covers lower); namespace-scoped.
+//   Platform caps: read < write (higher covers lower); namespace-scoped (the "namespace" for platform
+//     is the next segment, e.g., "plugin" in "platform.plugin.write"; "platform.plugin.write" does NOT
+//     cover "platform.tenant.read").
+//   Business caps: exact match (each capability is its own action).
 // Returns true if the caller's scope covers ANY of the capability's declared permissions.
 // Used by: handleInvocation pipeline (after rate-limit + session checks, before dispatch)
 export function checkAuthz(callerScope: readonly string[], requiredPermissions: readonly string[]): boolean {
   for (const required of requiredPermissions) {
-    const requiredRank = rank(required);
     for (const granted of callerScope) {
-      // Business caps + other exact-match permissions: rank() returns null → exact-string match.
-      if (rank(required) === null && rank(granted) === null) {
+      // Wildcard covers everything.
+      if (granted === "*") return true;
+      // Both rank-null → exact string match (business caps, anything not in runtime/platform tier system).
+      const requiredRank = rank(required);
+      const grantedRank = rank(granted);
+      if (requiredRank === null && grantedRank === null) {
         if (granted === required) return true;
         continue;
       }
-      // Both have a tier rank → same namespace AND caller rank >= required rank.
-      if (requiredRank !== null && rank(granted) !== null && tierCovers(granted, required)) {
+      // Both have a tier rank → same kind + same namespace + caller rank >= required rank.
+      if (requiredRank !== null && grantedRank !== null && tierCovers(granted, required)) {
         return true;
       }
     }
@@ -66,17 +75,16 @@ function tierCovers(grantedScope: string, requiredScope: string): boolean {
   const gr = rank(grantedScope);
   const req = rank(requiredScope);
   if (gr === null || req === null) return false;
+  const grantedParts = grantedScope.split(".");
+  const requiredParts = requiredScope.split(".");
+  if (grantedParts.length < 2 || requiredParts.length < 2) return false;
   // Same kind (runtime vs platform) — first segment must match.
-  const grantedKind = grantedScope.split(".")[0];
-  const requiredKind = requiredScope.split(".")[0];
-  if (grantedKind !== requiredKind) return false;
-  // For runtime: the namespace (parts[1]) must also match. For platform: there is no namespace.
-  if (grantedKind === "runtime") {
-    const grantedNs = grantedScope.split(".")[1];
-    const requiredNs = requiredScope.split(".")[1];
-    if (grantedNs !== requiredNs) return false;
-  }
-  // Higher tier covers lower tier (e.g., "runtime.demo.act" covers "runtime.demo.read").
+  if (grantedParts[0] !== requiredParts[0]) return false;
+  // For both runtime and platform, scope the comparison to (kind, namespace):
+  //   runtime: kind="runtime", namespace=parts[1], tier=last
+  //   platform: kind="platform", namespace=parts[1], tier=last  (e.g., "platform.plugin.write" → ns="plugin", tier="write")
+  // Same kind + same namespace + caller's tier rank >= required's tier rank → covers.
+  if (grantedParts[1] !== requiredParts[1]) return false;
   return gr >= req;
 }
 

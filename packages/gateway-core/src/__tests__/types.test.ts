@@ -47,6 +47,7 @@ describe("gateway-core types", () => {
   it("types are assignable in their declared shapes", () => {
     const caller: CallerIdentity = { tenantId: "acme", callerId: "agent-1", scope: ["customer.read"] };
     const invocation: CanonicalInvocation = {
+      token: "x",
       caller,
       capability: { name: "customer.read" },
       input: { id: 42 },
@@ -70,6 +71,7 @@ describe("gateway-core types", () => {
     const audit: AuditRecord = {
       schemaVersion: 1,
       ts: 0,
+      tenantId: "acme",
       caller: { id: "agent-1", scope: ["customer.read"] },
       session: { id: "s_abc" },
       capability: { name: "customer.read", version: "1.0.0" },
@@ -96,10 +98,10 @@ describe("gateway-core types", () => {
       listTenants: () => [tenant],
       suspendTenant: async (_id) => tenant,
       deleteTenant: async (_id) => {},
-      status: () => ({ uptimeMs: 0, tenantCount: 1, pluginCount: 0, auditLogBytes: 0 }),
+      status: async () => ({ uptimeMs: 0, tenantCount: 1, pluginCount: 0, auditLogBytes: 0 }),
     };
 
-    expect(invocation.caller.tenantId).toBe("acme");
+    expect(invocation.caller?.tenantId).toBe("acme");
     expect(okResponse.output).toEqual({ customer: { name: "Acme" } });
     expect(errResponse.error.code).toBe("GATEWAY_INSUFFICIENT_SCOPE");
     expect(tenant.id).toBe("acme");

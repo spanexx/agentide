@@ -28,6 +28,7 @@ function record(overrides: Partial<AuditRecord> = {}): AuditRecord {
   return {
     schemaVersion: 1,
     ts: 1700000000000,
+    tenantId: "acme",
     caller: { id: "agent-1", scope: ["customer.read"] },
     capability: { name: "customer.read", version: "1.0.0" },
     owner: "backend-sdk-acme",
