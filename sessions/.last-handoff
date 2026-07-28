@@ -1,96 +1,33 @@
-# Handoff — Tier 1 complete, repo clean, ready for Tier 2
+# gateway-core ship: from uncommitted refactor to meta-package landing
 
-**Date**: 2026-07-27
-**Branch**: `main` (clean — only branch)
-**Last commit on main**: `b945f36` (Merge pull request #4 from spanexx/feature/plugin-manager)
+## Soul
 
-## Current state
+The kernel was already half-flying when this session opened. Phases 0–6 had shipped as commit `407f2f3`, but the working tree carried 455 lines of unfinished refactor: a switch from caller-as-truth to JWT-as-truth, a new file-backed secret model, and a long thread of audit-record fixes meant to close the dangerous tenant-isolation gap the prior review had flagged. On top of that sat the rest of the IMPL plan — Phases 7 (meta-package, CLI, install.sh) and 8 (integration tests) — neither started. The branch name said it: `feature/gateway-core`. The backlog said otherwise: `BI[5]` still read `status: "not-started"`. Someone had to land the refactor without breaking it, then carry the kernel into a usable platform, then make sure the backlog and the graph agreed.
 
-Tier 1 of the Agentide platform is **fully shipped and merged**. Local repo is clean: only `main` branch locally and remotely. All four Tier 1 packs are on `main`:
+## What We Did
 
-| # | Pack | Package | Tests | Commit |
-|---|---|---|---|---|
-| 1 | `event-bus` | `@platform/event-bus` | 29 | `aac3e24` (merged earlier) |
-| 2 | `capability-registry` | `@platform/capability-registry` | 18 | `aac3e24` (merged earlier) |
-| 3 | `session-manager` | `@platform/session-manager` | 67 | `aac3e24` (merged earlier) |
-| 4 | `plugin-manager` | `@platform/plugin-manager` | 175 | `b945f36` (this merge) |
+We followed the `execute-pack` protocol literally. Boot was four skill invocations — `caveman`, `log-prompt`, `situation-awareness`, `tdd` — then a clarification call to confirm the user wanted the uncommitted refactor landed *first*, then Phases 7–8 on the same branch (rather than committing as-is or jumping straight to the meta-package). The kernel hardening commit went out as `a875867`: JWT-based tenant scoping in `CanonicalInvocation`, a 32-byte random secret persisted base64-encoded with mode `0600` under `${dataDir}/gateway-secret`, `tenantId` recorded explicitly on every `AuditRecord`, the `ERROR_CODES` constants now used throughout the pipeline, and `Math.floor` rate-limit refill so callers retrying every millisecond can't earn a fractional token.
 
-Full suite: 174 + 1 (rollback regression test) = green. `npm run precommit` clean (check-banned-types + typecheck + lint + build) across all packages.
+Phase 7 came next. We scaffolded `packages/agentide/` from scratch — its own `package.json` and `tsconfig.json`, a workspace reference wired into the root tsconfig — then ran strict TDD per slice. First slice: `createPlatform(config)` composition. Test went red, factory wrote the wiring, test went green. Second slice: the CLI with subcommands `init / status / tenant {create|list|suspend|delete} / token issue / capability {list|describe} / plugin list`. Third slice: `install.sh` as a bash script that detects OS/arch, tries Docker first, npx second, binary download third, and prints clear remediation if all three fail. Each slice added real tests (4 + 8 + 3 = 15 new test cases), and the full suite went from 227 to 242 tests passing.
 
-## What happened this session (post-merge)
+The integration test exercises the full lifecycle — `init` writes the secret and prints a JWT, `status` reads it back, `tenant create` and `token issue` operate on top, `capability list` shows the registered cards, and a second `status` confirms state survives a process restart. There's also a JWT round-trip test that decodes the base64 secret off disk and verifies a freshly-minted token against `verifyToken`, plus an idempotency test that runs `init` twice and confirms tenant count stays at one.
 
-1. **Doc-pack shipped for plugin-manager** (`ee186e3` → `8a38b0c`): PRD, TRD, FLOW, IMPL, GRILL files in `agentide/docs/features/plugin-manager/`.
-2. **Plugin manager implemented** (`3fc9061` → `66d4362`): all 8 IMPL phases via strict TDD. Public API: `createPluginManager(eventBus, capabilityRegistry, config?) → Promise<PluginManager>` with 9 methods (`install`, `installFromRegistry`, `update`, `reload`, `disable`, `enable`, `uninstall`, `list`, `get`).
-3. **Feature pipeline review ran via sub-agent** — found 3 gaps, all addressed in `a7f8ffd`:
-   - TRD async factory clarification
-   - **Atomic rollback on registry failure during update/reload** (real code fix + regression test)
-   - TRD cleanup-timeout lastError impossible-state cleanup
-4. **Backlog synced**: `docs/Feature_Backlog.md` row #4 marked SHIPPED; `docs/Feature_Backlog.html` "Current progress" notes updated; `scripts/backlog/plugin-manager.js` (local-only artifact) filled with full record.
-5. **Merge + cleanup** (current branch state):
-   - User merged `feature/plugin-manager` → remote `main` (PR #4)
-   - Local `main` fast-forwarded to `b945f36`
-   - `feature/plugin-manager` deleted (local + remote)
-   - `feature/session-manager` (remote) deleted
-   - `feature/event-bus` (local, no unique work) deleted
-   - `remote prune origin` — no stale refs
+The Meta shipped as commit `7aecef1`, the backlog mark-up as `7e2d998`. `scripts/backlog/gateway-core.js` now reads `status: "shipped"` with full `what` / `impl` / `notes` fields, and the HTML graph's sequencing notes picked up a Tier 2 progress line. The HTML assembler auto-loads the per-slug files, so the graph will paint gateway-core green the next time someone opens it.
 
-## Inline notes / decisions worth carrying forward
+## What We Found
 
-- **`createPluginManager` is async** — returns `Promise<PluginManager>`. Callers must `await`. Documented in TRD §2.3 (revision noted in TRD itself).
-- **Atomic rollback pattern** (applyManifest): wrap `capabilityRegistry.register()` in try/catch; on failure, restore `existing` to the store and re-save. Don't trust the registry's own collision check as a guarantee — wrap it anyway.
-- **`PLUGIN_CLEANUP_TIMEOUT` is a console warning only**, not a stored `lastError`. The record is removed immediately after, so a `lastError` field would be invisible. Documented in TRD.
-- **`installFromRegistry()` always throws `PLUGIN_MARKETPLACE_UNAVAILABLE`** until the marketplace pack ships. Body is the API seam — no other code path touches it.
-- **Plugin type → CapabilityType**: `runtime` → `runtime`; `service`/`developer` → `platform`. Aligns with docs' permission tiering.
-- **CapabilityRecord `owner` field** is required by the registry even though the registry overrides it with the function param. Always include `owner` when pre-registering capabilities in tests or when building records.
-- **System clock** uses `@ts-expect-error` on Node's `setTimeout` (returns `Timeout`, `Clock` declares `number`). Two packages affected: `plugin-manager` and `session-manager` (committed in `66d4362`).
-- **`YamlValue` recursive type** replaces `unknown` to satisfy the project's banned-types check. Defined in `plugin-manager/src/types.ts`.
+The kernel hardening landed the high-priority review gaps cleanly. The JWT verification in `auth.ts` is now the source of truth for caller identity — adapters can pass a `caller` for convenience, but the kernel overrides it with verified claims and rejects any disagreement. That closes the dangerous Gap 4 from `.reports/2026-07-28T04-10-00Z-gateway-core-feature-pipeline-review.md` (tenant isolation in dispatch): a tenant's caller can no longer be told apart from a tenant's data. The audit `tenantId` field closes Gap 8. The `ERROR_CODES` usage in `handle-invocation.ts` closes Gap 5. The 0600 secret mode and append-only audit writeFile close the implicit write-permission gap in the audit seam.
 
-## Next pack (Tier 2, #5)
+A couple of surprises during Phase 7. First: the IMPL's Phase 7 said `createPlatform(config)` would wire a default MCP adapter, but `BI[9]` (mcp-adapter) is a separate pack that depends on `BI[5]`. So the meta-package ships **without** a default adapter — kernel-first, per PHILOSOPHY — and `BI[9]` is the next pack to start. We noted this in the backlog entry but didn't add a new BI item; the meta-package is scoped inside gateway-core per the IMPL §Scope header. Second: the `scripts/backlog/` directory lives outside `agentide/.git`, in the workspace parent. The HTML graph references it via a relative path, but there's no workspace-level git, so the `gateway-core.js` status update is committed-on-paper only. Anyone syncing the HTML from a fresh checkout would see Tier 2 still grey. The drift log entry for this lives implicitly in the handoff — the next session should either git-init the workspace or move `scripts/backlog/` under `agentide/`.
 
-**`gateway-core`** — Auth, session creation, capability discovery, routing to a runtime. No execution logic.
+One file-level smell worth flagging: `packages/gateway-core/src/handle-invocation.ts` is now 336 lines, just under the 350-line cap from AGENTS.md. The next phase that touches it should split it into `pipeline.ts` (the linear flow) + `audit-on-exit.ts` (the `auditOk` / `auditError` / `exitWithError` helpers). Drift: `D-1` (session-manager contract drift, medium) remains open and unrelated; we did not open a new drift entry because the refactor resolved its own gaps without surfacing new ones.
 
-- **Depends on**: Tier 1 complete ✓ (now true)
-- **Source doc**: Agentide → Section 9; Terminology → Control Plane
-- **First real consumer** of `@platform/plugin-manager` — will subscribe to `plugin.*` events (the events bus doesn't have any subscribers yet on the platform side)
-- **Will also wire up** `@platform/session-manager` and `@platform/capability-registry` as the three core control-plane components
+## How to Continue
 
-Parallel opportunity once gateway-core lands: `sdk-node` (#8) and `mcp-adapter` (#9) don't block each other.
+The next pack is `mcp-adapter` (BI[9]). Its docs are partly co-located in `docs/features/gateway-core/` (IMPL §Phase 6, TRD §2.3 mapping table) but it's a separate backlog item and a separate IMPL. Run `feature-pipeline` first if you want a fresh doc pack for it; otherwise the existing IMPL §Phase 6 has the protocol mapping. The `verifyToken` and `issueToken` exports from `@platform/gateway-core` are now stable seams — the adapter will mint no tokens itself, only call `gateway.handleInvocation({ token, capability, input, sessionId? })` for each `tools/call`.
 
-## Doc references (already shipped)
+The session-handoff for this session is `agentide/sessions/.last-handoff` (overwritten from a previous gateway-core pack handoff). The breadcrumb trail is `agentide/sessions/.handoff-log.md`. The drift log is at `agentide/docs/drift.md`. To pick up the MCP adapter: `cd agentide && pnpm run test` first to confirm baseline green (should be 242/242), then create `packages/adapter-mcp/` and follow the IMPL §Phase 6 mapping table.
 
-- `agentide/docs/Feature_Backlog.md` — Tier-by-tier list with status
-- `agentide/docs/Feature_Backlog.html` — graph view (open in browser)
-- `agentide/docs/CONTEXT.md` — glossary + decisions log (10 plugin-manager decisions dated 2026-07-27)
-- `agentide/docs/drift.md` — D-1 (session-manager) still open, unrelated to plugin-manager
-- `agentide/docs/features/plugin-manager/` — full doc pack (PRD/TRD/FLOW/IMPL/GRILL)
+Skill load order for the next session: `caveman`, `log-prompt`, `situation-awareness` (reads `.last-handoff` directly), `feature-pipeline` (if you want a clean PRD/TRD/FLOW/IMPL for BI[9]), then `execute-pack` again. The CLI has been smoke-tested against an in-memory filesystem and an installed Docker, but `install.sh`'s binary-download branch has not been exercised against a real release URL — operators using the binary path will need a published artifact first.
 
-## Drifts / open items
-
-- **Drift D-1** (session-manager) — still open: `touch()` visibility, resource attach state, minimum timeout values. Owner: session-manager. Doesn't block Tier 2.
-- **CONTEXT.md "Open Items"** (carried forward, unresolved by this session):
-  - Tenant design — multi-tenancy isolation semantics
-  - Plugin Marketplace operational details (trust tiers, SLA, revocation, monetization)
-  - Per-runtime ownership track assignment for future runtimes
-
-## How to verify
-
-```bash
-cd agentide
-git status                    # clean
-git log --oneline -10         # should end with b945f36
-npm run precommit             # all checks pass
-npm run test -- --run         # all tests pass (174 + 1 rollback = 175 plugin-manager tests; full suite = several hundred)
-```
-
-## Skills suggested for the next session
-
-- `situation-awareness` — boot
-- `log-prompt` + `caveman` — mandatory
-- `feature-pipeline` — for the gateway-core pack
-- `grill-with-docs` — Phase 0 of the pipeline
-- `opensrc` — only if gateway-core needs new external deps (likely not; it composes existing Tier 1 packages)
-- `tdd` — strict red-green-refactor per phase
-
-## How to start the next pack
-
-User mentioned "go to the next thing". Next thing = gateway-core pack via `feature-pipeline` skill. Confirm with user before starting (gateway-core might not be the immediate priority).
+Commit history this session: `a875867` (kernel hardening) → `7aecef1` (meta-package) → `7e2d998` (backlog mark-up). All three on `feature/gateway-core`, ready to ship as a PR.
