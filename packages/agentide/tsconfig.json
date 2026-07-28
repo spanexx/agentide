@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../event-bus" },
+    { "path": "../capability-registry" },
+    { "path": "../session-manager" },
+    { "path": "../plugin-manager" },
+    { "path": "../gateway-core" }
+  ]
+}

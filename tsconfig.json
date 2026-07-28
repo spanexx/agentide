@@ -1,11 +1,24 @@
+// Add a reference here for each package under packages/ as it's implemented.
 {
-  // Add a reference here for each package under packages/ as it's implemented.
   "files": [],
   "references": [
-    { "path": "packages/event-bus" },
-    { "path": "packages/capability-registry" },
-    { "path": "packages/session-manager" },
-    { "path": "packages/plugin-manager" },
-    { "path": "packages/gateway-core" }
+    {
+      "path": "packages/event-bus"
+    },
+    {
+      "path": "packages/capability-registry"
+    },
+    {
+      "path": "packages/session-manager"
+    },
+    {
+      "path": "packages/plugin-manager"
+    },
+    {
+      "path": "packages/gateway-core"
+    },
+    {
+      "path": "packages/agentide"
+    }
   ]
 }

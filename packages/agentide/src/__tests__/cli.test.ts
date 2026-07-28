@@ -1,0 +1,98 @@
+import { describe, expect, it } from "vitest";
+import { runCli } from "../index.js";
+import type { FileSystem } from "@platform/gateway-core";
+
+class InMemoryFs implements FileSystem {
+  files = new Map<string, string>();
+  async readFile(path: string): Promise<string> {
+    const v = this.files.get(path);
+    if (v === undefined) {
+      const err = new Error(`ENOENT: ${path}`) as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      throw err;
+    }
+    return v;
+  }
+  async writeFile(path: string, content: string): Promise<void> {
+    this.files.set(path, content);
+  }
+  async exists(path: string): Promise<boolean> {
+    return this.files.has(path);
+  }
+}
+
+describe("CLI", () => {
+  it("prints help and exits 0 when invoked with --help", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli(["--help", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/agentide/);
+    expect(r.stdout).toMatch(/init|start|stop|status|tenant|token|capability|plugin/);
+  });
+
+  it("prints help when invoked with no args", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli([], { fs });
+    expect(r.exitCode).toBe(0);
+  });
+
+  it("`init` creates the default tenant + secret file and prints the bootstrap token", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(fs.files.has("/data/gateway-secret")).toBe(true);
+    expect(r.stdout).toMatch(/Bootstrap token for tenant "acme":/);
+    // The token is a JWT
+    const tokenLine = r.stdout.split("\n").find((l: string) => l.includes(".") && l.includes(".") && !l.startsWith("#")) ?? "";
+    expect(tokenLine).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  });
+
+  it("`status` returns a JSON-ish status line after init", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await runCli(["status", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/tenants:\s*1/);
+    expect(r.stdout).toMatch(/plugins:\s*0/);
+  });
+
+  it("`tenant create` adds a new tenant and `tenant list` shows it", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const c = await runCli(["tenant", "create", "--id", "beta", "--name", "Beta Co", "--data-dir", "/data"], { fs });
+    expect(c.exitCode).toBe(0);
+    const l = await runCli(["tenant", "list", "--data-dir", "/data"], { fs });
+    expect(l.exitCode).toBe(0);
+    expect(l.stdout).toMatch(/acme/);
+    expect(l.stdout).toMatch(/beta/);
+  });
+
+  it("`token issue` mints a JWT and prints it", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await runCli(
+      ["token", "issue", "--tenant", "acme", "--caller", "agent-1", "--scope", "platform.tenant.read,platform.capability.read", "--data-dir", "/data"],
+      { fs },
+    );
+    expect(r.exitCode).toBe(0);
+    const lines = r.stdout.split("\n").map((l: string) => l.trim()).filter(Boolean);
+    const last = lines[lines.length - 1] ?? "";
+    expect(last).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  });
+
+  it("`capability list` shows the registered capabilities", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await runCli(["capability", "list", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/gateway\.status/);
+    expect(r.stdout).toMatch(/tenant\.list/);
+  });
+
+  it("unknown command exits non-zero with a clear message", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli(["frobnicate", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toMatch(/unknown command/i);
+  });
+});
