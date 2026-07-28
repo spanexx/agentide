@@ -2,15 +2,16 @@
 //================================================================
 // simulate-pre.ts — BI[7] permission-tiering pre-impl simulation
 //
-// This is a DESIGN-TIME simulation. It mirrors the GRILLed design
-// BEFORE code is written. The user runs it interactively to surface
-// design issues the GRILL missed.
+// DESIGN-TIME simulation. Mirrors the GRILLed design BEFORE code
+// is written. The user runs stages interactively to surface design
+// issues the GRILL missed.
 //
 // Run: npx tsx docs/features/permission-tiering/simulate-pre.ts
-//      (or with subcommands as args)
+//      npx tsx docs/features/permission-tiering/simulate-pre.ts stage <name>
+//      npx tsx docs/features/permission-tiering/simulate-pre.ts <command> [args]
 //
-// Hardcoded catalog. No real events. No real auth. The point is to
-// make the operator flow visible.
+// Hardcoded catalog (25 caps from BI[6]). No real events. No real
+// auth. The point is to make the operator flow visible.
 //================================================================
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
@@ -128,6 +129,10 @@ function saveState(s: State): void {
   writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
 }
 
+function resetActive(s: State): void {
+  s.active_token = null;
+}
+
 //---------------------------------------------------------------
 // Authz (the existing tierCovers algorithm, simulated in TS)
 //---------------------------------------------------------------
@@ -148,15 +153,11 @@ function rank(scope: string): number {
   return 0;
 }
 
-// Returns true if the granted scope covers any of the required permissions.
 function checkAuthz(grantedScope: string[], requiredPerms: string[]): boolean {
-  // Bare wildcard covers everything.
   if (grantedScope.includes("*")) return true;
-
   for (const required of requiredPerms) {
     for (const granted of grantedScope) {
       if (granted === required) return true;
-
       const gr = rank(granted);
       const req = rank(required);
       if (gr > 0 && req > 0) {
@@ -187,11 +188,19 @@ const C = {
   yellow: "\x1b[1;33m",
   red: "\x1b[1;31m",
   dim: "\x1b[2m",
+  magenta: "\x1b[1;35m",
 };
-function banner(s: string): void { console.log(`\n${C.cyan}== ${s} ==${C.reset}`); }
+
+function banner(s: string): void {
+  console.log(`\n${C.cyan}== ${s} ==${C.reset}`);
+}
+function stage(s: string): void {
+  console.log(`\n${C.magenta}-- ${s} --${C.reset}`);
+}
 function ok(s: string): void { console.log(`  ${C.green}✓${C.reset} ${s}`); }
 function warn(s: string): void { console.log(`  ${C.yellow}!${C.reset} ${s}`); }
 function err(s: string): void { console.log(`  ${C.red}✗${C.reset} ${s}`); }
+function info(s: string): void { console.log(`  ${C.dim}${s}${C.reset}`); }
 
 //---------------------------------------------------------------
 // Commands
@@ -203,7 +212,19 @@ function cmdInit(): void {
 }
 
 function cmdReset(): void {
-  cmdInit();
+  const s = initialState();
+  saveState(s);
+  ok("State reset to initial.");
+}
+
+function cmdState(): void {
+  const s = loadState();
+  banner("Current state");
+  console.log(`  active_token: ${s.active_token ?? "(none)"}`);
+  console.log(`  tokens:       ${s.tokens.length}`);
+  console.log(`  capabilities: ${s.capabilities.length}`);
+  console.log(`  audit_log:    ${s.audit_log.length}`);
+  console.log(`  state file:   ${STATE_FILE}`);
 }
 
 interface TokenIssueOpts { scope: string; tenant?: string; caller?: string }
@@ -225,7 +246,6 @@ function cmdTokenIssue(opts: TokenIssueOpts): void {
   console.log(`  tenant:  ${token.tenant}`);
   console.log(`  caller:  ${token.caller}`);
   console.log(`  scope:   ${token.scope.join(", ")}`);
-  console.log(id);
 }
 
 function cmdTokenUse(id: string): void {
@@ -237,6 +257,20 @@ function cmdTokenUse(id: string): void {
   s.active_token = id;
   saveState(s);
   ok(`Active token: ${id}`);
+}
+
+function cmdTokenList(): void {
+  const s = loadState();
+  if (s.tokens.length === 0) {
+    warn("No tokens issued");
+    return;
+  }
+  console.log("  id                                       tenant  caller                scope");
+  for (const t of s.tokens) {
+    const active = t.id === s.active_token ? "*" : " ";
+    console.log(`  ${active} ${t.id.padEnd(36)} ${t.tenant.padEnd(7)} ${t.caller.padEnd(20)} ${t.scope.join(", ")}`);
+  }
+  console.log(`  (* = active)`);
 }
 
 function cmdTokenShow(): void {
@@ -258,9 +292,9 @@ function cmdTokenShow(): void {
 
 function cmdCapabilityList(): void {
   const s = loadState();
-  const id = s.active_token;
   const all = s.capabilities;
   const countAll = all.length;
+  const id = s.active_token;
 
   if (!id) {
     banner("Capability list (unfiltered — no active token)");
@@ -277,17 +311,15 @@ function cmdCapabilityList(): void {
     return;
   }
   const scope = token.scope;
-  const scopeStr = scope.join(", ");
 
   banner("Capability list (filtered by active token's scope)");
-  console.log(`  Token scope: ${scopeStr}`);
+  console.log(`  Token:    ${token.caller} (id=${token.id})`);
+  console.log(`  Scope:    ${scope.join(", ")}`);
   console.log("");
 
   const filtered: Cap[] = [];
   for (const c of all) {
-    if (checkAuthz(scope, c.permissions)) {
-      filtered.push(c);
-    }
+    if (checkAuthz(scope, c.permissions)) filtered.push(c);
   }
 
   console.log(`  Filtered: ${filtered.length} of ${countAll} caps`);
@@ -389,40 +421,279 @@ function cmdRegister(opts: RegisterOpts): void {
   }
 }
 
+function cmdInvoke(capabilityName: string): void {
+  const s = loadState();
+  if (!s.active_token) {
+    err("No active token. Run: token issue --scope <csv> --caller <id>");
+    return;
+  }
+  const token = s.tokens.find((t) => t.id === s.active_token);
+  if (!token) {
+    err("Active token not found");
+    return;
+  }
+  const cap = s.capabilities.find((c) => c.name === capabilityName);
+  if (!cap) {
+    err(`Capability not found: ${capabilityName}`);
+    return;
+  }
+  const covered = checkAuthz(token.scope, cap.permissions);
+  const tierMatch = (() => {
+    // For a "tier match" demo: caller must have at least the cap's tier rank.
+    if (token.scope.includes("*")) return "covered (wildcard)";
+    const req = rank(cap.permissions[0] ?? "");
+    if (req === 0) return "covered (exact match)";
+    let ok = false;
+    let reason = "";
+    for (const granted of token.scope) {
+      const gr = rank(granted);
+      if (gr === 0) continue;
+      if (granted.split(".")[0] !== cap.permissions[0]!.split(".")[0]) continue;
+      const ns = granted.split(".")[1] ?? "";
+      if (ns === "*" || ns === (cap.permissions[0]!.split(".")[1] ?? "")) {
+        if (gr >= req) { ok = true; break; }
+        reason = `caller tier rank ${gr} < required ${req}`;
+      }
+    }
+    return ok ? "covered (tier hierarchy)" : `denied (${reason || "namespace mismatch"})`;
+  })();
+  console.log(`  Caller:   ${token.caller}`);
+  console.log(`  Cap:      ${cap.name} (tier: ${cap.tier})`);
+  console.log(`  Required: ${cap.permissions.join(", ")}`);
+  console.log(`  Result:   ${tierMatch}`);
+  if (covered) {
+    ok("Call would succeed");
+    cmdAuditRecord(token.caller, cap.name, "ok");
+  } else {
+    err("Call would be denied with GATEWAY_INSUFFICIENT_SCOPE");
+    cmdAuditRecord(token.caller, cap.name, "denied");
+  }
+}
+
 function cmdHelp(): void {
   console.log(`BI[7] permission-tiering - pre-impl simulation
 
-Commands:
-  init                                       Initialize state
-  reset                                      Clear and reinitialize state
-  token issue --scope <csv> [--tenant T] [--caller C]
-                                             Issue a token with given scope
-  token use <id>                             Switch active token
-  token show                                 Show active token details
-  capability list                            List capabilities (filtered by active token)
-  capability describe --name <name>          Show full record for a capability
-  tier-of <cap-name>                         Show what tier the convention would assign
-  register --type <t> --name <cap> [--tier <tier>]
-                                             Simulate registration with tier validation
-  audit                                      Show audit log
-  help                                       This help
+USAGE
+  npx tsx simulate-pre.ts                     interactive menu
+  npx tsx simulate-pre.ts stage <name>       run a stage
+  npx tsx simulate-pre.ts <command> [args]   direct command
 
-State file: ${STATE_FILE}
+STAGES
+  scenario       run the full 7-step demo
+  setup          initialize / reset / show state
+  token          issue, list, switch, show tokens
+  filter         capability list with different scopes
+  invoke         simulate a handleInvocation call
+  tier           test the tier convention (verb list)
+  validate       test the validator (cap registration)
+  audit          view the audit log
+
+DIRECT COMMANDS
+  init                                  initialize state
+  reset                                 clear and reinit state
+  state                                 show state summary
+  token issue --scope <csv> [--tenant T] [--caller C]
+  token list                            list all tokens
+  token use <id>                        switch active token
+  token show                            show active token
+  capability list                       list caps (filtered by active token)
+  capability describe --name <name>     show full record
+  invoke <capability-name>              simulate a handleInvocation call
+  tier-of <cap-name>                    infer tier from convention
+  register --type <t> --name <cap> [--tier <tier>]
+  audit                                 show audit log
+  help                                  this help
+
+STATE
+  ${STATE_FILE}
+
+Run with no args for the interactive menu, or pick a stage to start.
 `);
 }
 
 //---------------------------------------------------------------
-// Interactive demo
+// STAGES — selectable scenarios the user can run
 //---------------------------------------------------------------
-function interactiveDemo(): void {
-  banner("BI[7] permission-tiering - pre-impl simulation");
-  console.log("This is a design-time simulation. The catalog below is the 25");
-  console.log("platform caps from BI[6]. The script demonstrates how the tier");
-  console.log("system changes what an agent sees when it calls capability.list.");
+
+function stageSetup(): void {
+  stage("STAGE: setup");
+  info("Reset or initialize the simulation state.");
+  info("Commands: init, reset, state");
+  info("");
+  info("Try:");
+  info("  > reset            # fresh state with 25 caps");
+  info("  > state            # show what's in the state file");
+  const s = loadState();
+  if (s.tokens.length === 0) {
+    warn("No tokens yet. Run 'token issue' or 'stage token'.");
+  } else {
+    ok(`${s.tokens.length} token(s) in state. Active: ${s.active_token ?? "(none)"}`);
+  }
+}
+
+function stageToken(): void {
+  stage("STAGE: token — issue and switch tokens");
+  info("Try the operator flow: issue a token, switch between them, list all.");
+  info("");
+  info("Suggested:");
+  info("  > token issue --scope '*' --caller bootstrap");
+  info("  > token issue --scope 'platform.*.read' --caller dashboard-bot");
+  info("  > token issue --scope 'runtime.*.act' --caller agent-alpha");
+  info("  > token list");
+  info("  > token use <id>            # switch to a different token");
+  info("  > capability list           # see the catalog filtered by active token");
+  info("");
+  cmdTokenList();
+}
+
+function stageFilter(): void {
+  stage("STAGE: filter — capability.list with different scopes");
+  info("The headline feature. The catalog filters by what the active token can invoke.");
+  info("");
+  info("Try: issue a few tokens, then use 'capability list' to see the filtered catalog.");
+  info("");
+
+  // Auto-issue three sample tokens if none exist
+  const s = loadState();
+  if (s.tokens.length === 0) {
+    info("(no tokens yet — auto-issuing three sample tokens for the demo)");
+    info("");
+    cmdTokenIssue({ scope: "*", caller: "bootstrap" });
+    console.log("");
+    cmdTokenIssue({ scope: "platform.*.read", caller: "dashboard-bot" });
+    console.log("");
+    cmdTokenIssue({ scope: "runtime.*.act", caller: "agent-alpha" });
+    console.log("");
+    // Reload state to get the freshly-issued tokens
+    const fresh = loadState();
+    if (fresh.tokens.length > 0) {
+      cmdTokenUse(fresh.tokens[0]!.id);
+    }
+  }
+
+  info("Pick a token with 'token use <id>' then run 'capability list'.");
+  info("Watch the filtered count change as you switch tokens.");
+}
+
+function stageInvoke(): void {
+  stage("STAGE: invoke — simulate handleInvocation");
+  info("Walk through the actual invocation: caller + cap + tier check + audit.");
+  info("");
+
+  // Auto-ensure two tokens exist
+  const s = loadState();
+  if (!s.tokens.find((t) => t.caller === "bootstrap")) {
+    cmdTokenIssue({ scope: "*", caller: "bootstrap" });
+  }
+  if (!s.tokens.find((t) => t.caller === "dashboard-bot")) {
+    cmdTokenIssue({ scope: "platform.*.read", caller: "dashboard-bot" });
+  }
+  const fresh = loadState();
+  const bootstrap = fresh.tokens.find((t) => t.caller === "bootstrap")!;
+  const dash = fresh.tokens.find((t) => t.caller === "dashboard-bot")!;
+
+  info("Auto-demo: bootstrap invocations, then dashboard-bot invocations.");
+  info("");
+  cmdTokenUse(bootstrap.id);
+  cmdInvoke("plugin.install");
+  console.log("");
+  cmdInvoke("auth.token.issue");
+  console.log("");
+  cmdTokenUse(dash.id);
+  cmdInvoke("tenant.create");
+  console.log("");
+  cmdInvoke("tenant.list");
+  console.log("");
+  info("Try other invocations:");
+  info("  > invoke capability.list    # read-only can list");
+  info("  > invoke system.info        # read-only can read");
+  info("  > invoke plugin.install     # dashboard-bot should be denied");
+}
+
+function stageTier(): void {
+  stage("STAGE: tier — test the convention (verb -> tier)");
+  info("The plugin manager infers the tier from the action verb.");
+  info("Plugin authors override when the verb is ambiguous.");
+  info("");
+  info("Try: 'tier-of <cap-name>' with various names.");
+  info("");
+  const examples = [
+    "browser.navigate",
+    "browser.click",
+    "browser.screenshot",
+    "browser.delete",
+    "browser.run",
+    "browser.exec",
+    "browser.snapshot",
+    "docker.run",
+    "docker.remove",
+    "git.push",
+    "git.commit",
+    "filesystem.read",
+    "filesystem.write",
+  ];
+  for (const ex of examples) {
+    cmdTierOf(ex);
+  }
+  info("");
+  info("Notice: 'screenshot', 'snapshot', 'run', 'exec' are ambiguous.");
+  info("Plugin authors must declare them explicitly:");
+  info("  > register --type runtime --name browser.screenshot --tier read");
+}
+
+function stageValidate(): void {
+  stage("STAGE: validate — test the registry validator");
+  info("Try registering caps with different types and tiers.");
+  info("");
+
+  // Auto-test cases
+  const cases: RegisterOpts[] = [
+    { type: "runtime", name: "browser.screenshot", tier: "read" },
+    { type: "runtime", name: "browser.delete", tier: "destructive" },
+    { type: "runtime", name: "browser.run" },  // tier inferred
+    { type: "runtime", name: "browser.run", tier: "write" },  // invalid
+    { type: "runtime", name: "browser.snapshot" },  // unknown verb
+    { type: "platform", name: "tenant.create" },
+    { type: "platform", name: "tenant.list" },
+    { type: "platform", name: "weird.platform.cap" },  // no permission
+    { type: "business", name: "customer.refund" },
+    { type: "business", name: "customer.refund", tier: "write" },  // business + tier != null
+  ];
+  info("Auto-test cases:");
+  info("");
+  for (const c of cases) {
+    const tierStr = c.tier ? `--tier ${c.tier}` : "(no tier)";
+    info(`  > register --type ${c.type} --name ${c.name} ${tierStr}`);
+    cmdRegister(c);
+  }
+  info("");
+  info("Note: runtime caps REQUIRE a tier (validator enforces).");
+  info("Platform caps may omit it (derived from permissions).");
+  info("Business caps MUST have tier=null.");
+}
+
+function stageAudit(): void {
+  stage("STAGE: audit — view the audit log");
+  info("Every invocation (ok or denied) is recorded.");
+  info("");
+  const s = loadState();
+  if (s.audit_log.length === 0) {
+    warn("Audit log is empty. Try 'stage invoke' first.");
+  } else {
+    cmdAudit();
+  }
+}
+
+function stageScenario(): void {
+  stage("STAGE: scenario — full 7-step demo");
+  info("Walks the full operator flow. Use 'reset' first to start fresh.");
+  info("");
+
+  // Reset to fresh state
+  cmdInit();
   console.log("");
 
-  loadState();
-
+  // Step 1: wildcard scope
   banner("Step 1: a wildcard scope (operator / bootstrap)");
   console.log("A token with scope='*' sees everything. The operator's * scope");
   console.log("covers every read+write.");
@@ -430,47 +701,53 @@ function interactiveDemo(): void {
   cmdTokenIssue({ scope: "*", caller: "bootstrap" });
   console.log("");
   cmdCapabilityList();
-  sReset();
+  const s1 = loadState();
+  s1.active_token = null;
+  saveState(s1);
 
+  // Step 2: read-only
   banner("Step 2: a read-only token");
   console.log("This token can list and read but cannot create or modify anything.");
   console.log("");
   cmdTokenIssue({ scope: "platform.*.read", caller: "dashboard-bot" });
   console.log("");
   cmdCapabilityList();
-  sReset();
+  const s2 = loadState();
+  s2.active_token = null;
+  saveState(s2);
 
+  // Step 3: tier-aware wildcard
   banner("Step 3: a tier-aware wildcard");
   console.log("A token with runtime.*.act covers every act-tier runtime cap (and");
   console.log("every read-tier too, since act > read). In v1 there are 0 runtime");
-  console.log("caps in the platform catalog, so the response is 0. The wildcard");
-  console.log("is correct; the catalog just doesn't have runtime caps yet.");
+  console.log("caps in the platform catalog, so the response is 0.");
   console.log("");
   cmdTokenIssue({ scope: "runtime.*.act", caller: "agent-alpha" });
   console.log("");
   cmdCapabilityList();
-  sReset();
+  const s3 = loadState();
+  s3.active_token = null;
+  saveState(s3);
 
+  // Step 4: invoke
   banner("Step 4: invoke a capability outside the active token's scope");
   console.log("The bootstrap operator token tries to call plugin.install. Fine.");
   console.log("Then the dashboard-bot token tries to call tenant.create. Denied.");
   console.log("");
-  const bootstrapId = loadState().tokens.find((t) => t.caller === "bootstrap")?.id;
-  if (bootstrapId) {
-    cmdTokenUse(bootstrapId);
-    console.log("  Calling: handleInvocation({capability: 'plugin.install', ...})");
-    console.log("  -> ok (operator scope covers plugin.write)");
-    cmdAuditRecord("bootstrap", "plugin.install", "ok");
+  const bootstrap = loadState().tokens.find((t) => t.caller === "bootstrap");
+  if (bootstrap) {
+    cmdTokenUse(bootstrap.id);
+    cmdInvoke("plugin.install");
+    console.log("");
   }
-  const dashId = loadState().tokens.find((t) => t.caller === "dashboard-bot")?.id;
-  if (dashId) {
-    cmdTokenUse(dashId);
-    console.log("  Calling: handleInvocation({capability: 'tenant.create', ...})");
-    console.log("  -> GATEWAY_INSUFFICIENT_SCOPE (caller scope does not cover platform.tenant.write)");
-    cmdAuditRecord("dashboard-bot", "tenant.create", "denied");
+  const dash = loadState().tokens.find((t) => t.caller === "dashboard-bot");
+  if (dash) {
+    cmdTokenUse(dash.id);
+    cmdInvoke("tenant.create");
+    console.log("");
   }
-  console.log("");
 
+  // Step 5: tier convention
   banner("Step 5: the tier convention");
   console.log("A runtime plugin author writes a manifest. The plugin manager");
   console.log("infers the tier from the verb in the action name.");
@@ -482,6 +759,7 @@ function interactiveDemo(): void {
   cmdTierOf("browser.run");
   console.log("");
 
+  // Step 6: validator
   banner("Step 6: the validator");
   console.log("A runtime cap without a tier (and an unknown verb) is rejected.");
   console.log("");
@@ -492,25 +770,46 @@ function interactiveDemo(): void {
   cmdRegister({ type: "business", name: "customer.refund", tier: "write" });
   console.log("");
 
+  // Step 7: audit
   banner("Step 7: audit log");
   cmdAudit();
 }
 
-function sReset(): void {
-  const s = loadState();
-  s.active_token = null;
-  saveState(s);
+const STAGES: Record<string, () => void> = {
+  setup: stageSetup,
+  token: stageToken,
+  filter: stageFilter,
+  invoke: stageInvoke,
+  tier: stageTier,
+  validate: stageValidate,
+  audit: stageAudit,
+  scenario: stageScenario,
+};
+
+function showStages(): void {
+  console.log("Pick a stage to run:");
+  console.log("");
+  for (const [name, fn] of Object.entries(STAGES)) {
+    const desc = {
+      setup: "initialize / reset / show state",
+      token: "issue, list, switch, show tokens",
+      filter: "capability list with different scopes",
+      invoke: "simulate a handleInvocation call",
+      tier: "test the tier convention (verb list)",
+      validate: "test the validator (cap registration)",
+      audit: "view the audit log",
+      scenario: "run the full 7-step demo",
+    }[name] ?? "";
+    console.log(`  ${C.cyan}${name.padEnd(10)}${C.reset}  ${desc}`);
+  }
+  console.log("");
+  console.log("Run: npx tsx simulate-pre.ts stage <name>");
+  console.log("Or:  npx tsx simulate-pre.ts <direct-command> [args]");
 }
 
 //---------------------------------------------------------------
-// CLI argument parsing
+// CLI
 //---------------------------------------------------------------
-function parseArgs(argv: string[]): { command: string; rest: string[] } {
-  const command = argv[0] ?? "";
-  const rest = argv.slice(1);
-  return { command, rest };
-}
-
 function parseFlags(args: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
   for (let i = 0; i < args.length; i++) {
@@ -530,24 +829,49 @@ function parseFlags(args: string[]): Record<string, string> {
 }
 
 function main(): void {
-  const { command, rest } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
 
+  if (argv.length === 0) {
+    showStages();
+    return;
+  }
+
+  const [command, ...rest] = argv;
+
+  // Stage dispatch
+  if (command === "stage") {
+    const stageName = rest[0];
+    if (!stageName) {
+      showStages();
+      return;
+    }
+    const fn = STAGES[stageName];
+    if (!fn) {
+      err(`Unknown stage: ${stageName}`);
+      showStages();
+      return;
+    }
+    fn();
+    return;
+  }
+
+  // Direct command dispatch
   switch (command) {
-    case "":
-      interactiveDemo();
-      break;
     case "init":
       cmdInit();
       break;
     case "reset":
       cmdReset();
       break;
+    case "state":
+      cmdState();
+      break;
     case "token": {
       const sub = rest[0] ?? "";
       const subRest = rest.slice(1);
       const flags = parseFlags(subRest);
       switch (sub) {
-        case "issue":
+        case "issue": {
           if (!flags["scope"]) {
             err("Usage: token issue --scope <csv> [--tenant T] [--caller C]");
             break;
@@ -558,18 +882,19 @@ function main(): void {
             caller: flags["caller"],
           });
           break;
+        }
         case "use":
-          if (!subRest[0]) {
-            err("Usage: token use <id>");
-            break;
-          }
+          if (!subRest[0]) { err("Usage: token use <id>"); break; }
           cmdTokenUse(subRest[0]);
+          break;
+        case "list":
+          cmdTokenList();
           break;
         case "show":
           cmdTokenShow();
           break;
         default:
-          cmdHelp();
+          err(`Unknown token subcommand: ${sub}`);
       }
       break;
     }
@@ -581,22 +906,21 @@ function main(): void {
           cmdCapabilityList();
           break;
         case "describe":
-          if (!flags["name"]) {
-            err("Usage: capability describe --name <name>");
-            break;
-          }
+          if (!flags["name"]) { err("Usage: capability describe --name <name>"); break; }
           cmdCapabilityDescribe(flags["name"]!);
           break;
         default:
-          cmdHelp();
+          err(`Unknown capability subcommand: ${sub}`);
       }
       break;
     }
+    case "invoke": {
+      if (!rest[0]) { err("Usage: invoke <capability-name>"); break; }
+      cmdInvoke(rest[0]);
+      break;
+    }
     case "tier-of":
-      if (!rest[0]) {
-        err("Usage: tier-of <cap-name>");
-        break;
-      }
+      if (!rest[0]) { err("Usage: tier-of <cap-name>"); break; }
       cmdTierOf(rest[0]);
       break;
     case "register": {
@@ -621,6 +945,7 @@ function main(): void {
       cmdHelp();
       break;
     default:
+      err(`Unknown command: ${command}`);
       cmdHelp();
   }
 }
