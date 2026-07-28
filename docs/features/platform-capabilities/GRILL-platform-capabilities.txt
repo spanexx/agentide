@@ -1,0 +1,173 @@
+Platform Capabilities - Grill Notes
+
+Status: Phase 0 grilling complete
+Date: 2026-07-28
+Source: docs/architecture/Platform_Capabilities.md, docs/CONTEXT.md, docs/features/gateway-core/* (existing kernel hardening), scripts/backlog/platform-capabilities.js, CONTEXT.md Decisions Q1-Q12
+
+What this feature is about
+
+- Ship @platform/platform-capabilities: a new package that owns every
+  platform capability registration in one place.
+- Migrate the 16 platform caps that gateway-core shipped, but registered
+  under the wrong owner (all under "gateway"). Re-register them under
+  their real owners: session-manager, capability-registry, gateway.
+- Add 9 new caps that today's kernel has no record of: plugin.* (6) and
+  system.* (3).
+- Standardize permissions on every platform cap to a read/write split.
+  Write-caps declare platform.<domain>.write; read-caps declare
+  platform.<domain>.read. The wildcard platform.*.read covers every
+  read-tier cap through the existing authz tier-hierarchy.
+- Wire the new package into createGateway() so gateway-core's factory
+  shrinks and there's one source of truth for "what platform caps exist."
+- This pack is Tier 2 #6. Dep: [5] (gateway-core). Already unblocked.
+
+Questions and answers locked so far
+
+1. Who actually owns each platform capability?
+Answer:
+- Every platform cap registers under the owner of the MODULE that owns it,
+  not under a single "gateway" owner.
+- session.* -> owner="session-manager" (the Session Manager implements
+  them; the dispatcher already routes session-manager owners in-process).
+- capability.list / capability.describe -> owner="capability-registry"
+  (the Capability Registry owns discovery).
+- tenant.* / auth.token.* / gateway.* -> owner="gateway" (no separate
+  module exists in v1 for tenants, auth, or the gateway itself; the
+  kernel still owns them).
+- plugin.* (new) -> owner="plugin-manager" (matches plugin.* routing that
+  already exists in dispatch.ts).
+- system.* (new) -> owner="gateway" (read-only platform visibility,
+  no separate module needed).
+
+Why:
+- Today every platform cap says owner="gateway" because gateway-core was
+  the convenient place to register them at boot. But the architecture doc
+  is honest: Session Manager owns session caps, Capability Registry owns
+  capability caps. The owner field is supposed to answer "who built this,
+  who do I blame, who can I replace" - today it lies.
+- The dispatcher already routes owner="session-manager" / "plugin-manager"
+  / "capability-registry" in-process (dispatch.ts lines 207-212). Those
+  owners were always expected. The registration just has to match.
+- Filtering by owner becomes meaningful: `agentide capability list
+  --owner session-manager` returns the session caps, not a lie.
+
+2. Which capability categories ship in this pack?
+Answer:
+- session.* (already shipped, just migrate owner) - 6 caps.
+- tenant.* (already shipped, stay owner=gateway) - 4 caps.
+- capability.* (already shipped, migrate owner) - 2 caps.
+- gateway.* (already shipped, stay owner=gateway) - 3 caps.
+- auth.token.* (already shipped, stay owner=gateway) - 2 caps.
+- plugin.* NEW - 6 caps: install / list / uninstall / enable / disable /
+  reload.
+- system.* NEW - 3 caps: info / version / health.
+- runtime.* (platform-owned runtime management) - DEFERRED. No Runtime
+  Manager pack exists in v1; punt until one is designed.
+- marketplace.* - separate backlog item BI[16].
+- dashboard.* - separate backlog item BI[13].
+
+Why:
+- The Plugin Manager pack shipped handlers for plugin.install,
+  plugin.list, etc., but never registered them as platform capabilities.
+  The CLI calls pluginManager.list() directly, so `agentide plugin list`
+  works - but an MCP agent calling tools/list doesn't see plugin.* and
+  can't invoke it. The CLI and an agent see different platforms. This
+  pack closes that gap.
+- system.* are trivial read-only caps (info/version/health). Same shape
+  as gateway.status. Trivially scoped to "what BI[6] owns."
+- runtime.* stubs would emit no events, return MANAGER_UNAVAILABLE, and
+  confuse operators into thinking something is broken. Better: ship
+  runtime.* when there's actually a runtime to manage.
+
+3. How are permissions named on each platform cap?
+Answer:
+- Standardize on a two-tier read/write split.
+- Every write-cap declares ONE permission: platform.<domain>.write.
+- Every read-cap declares ONE permission: platform.<domain>.read.
+- The authz tier-hierarchy in checkAuthz already supports this; we
+  just rename the existing declarations to match.
+- Renames from today's mixed names:
+  - platform.session.create / delete / write -> platform.session.write
+  - platform.session.read -> platform.session.read (unchanged)
+  - platform.token.issue -> platform.token.write
+  - platform.tenant.write (unchanged) and platform.tenant.read
+    (unchanged)
+  - platform.capability.read (unchanged)
+  - platform.gateway.read (unchanged)
+- New declarations:
+  - plugin.install / uninstall / enable / disable / reload ->
+    platform.plugin.write
+  - plugin.list -> platform.plugin.read
+  - system.info / version / health -> platform.system.read
+
+Why:
+- Today's naming mixes actions and tiers: platform.session.create is an
+  action, platform.session.read is a tier. Operators can't tell at a
+  glance which side of the read/write line a scope covers.
+- The wildcard platform.*.read falls out of the existing tier-hierarchy:
+  caller's scope "platform.*.read" matches every read-tier platform cap.
+  One scope covers every read-cap. Operators mint read-only tokens with
+  one string.
+- Backward compat is not required - v1 hasn't shipped to anyone yet.
+
+4. Where does this pack's code live?
+Answer:
+- New separate package @platform/platform-capabilities under
+  packages/platform-capabilities/.
+- Same shape as @platform/plugin-manager: own package.json, own tests,
+  own tsconfig, workspace reference in root tsconfig.json.
+- gateway-core LOSES its registerGatewayCapabilities function. The
+  new package's registerPlatformCapabilities replaces it.
+- gateway-core's factory.ts shrinks: one line calls
+  registerPlatformCapabilities(registry) instead of the old internal
+  registration loop.
+
+Why:
+- PHILOSOPHY §Nothing Is Special says every component is replaceable.
+  Bundling platform-cap registration inside the kernel package couples
+  "what the kernel does" with "what caps the kernel exposes" - they're
+  different concerns.
+- Operators reading the codebase want one place to find every platform
+  cap. packages/platform-capabilities/src/ is that place; one file
+  contains all 25 declarations.
+- Plugin Manager is already its own package for the same reason.
+  Platform capabilities follow the same pattern.
+
+5. How does the new package wire into createGateway()?
+Answer:
+- @platform/platform-capabilities exports registerPlatformCapabilities
+  (registry). It registers ALL 25 caps: its 9 new + the migrated 16.
+- createGateway() calls registerPlatformCapabilities(registry) instead
+  of the old registerGatewayCapabilities(registry).
+- The old registerGatewayCapabilities function is removed from
+  gateway-core. Single source of truth for platform caps lives in
+  the new package.
+- The new package depends on @platform/capability-registry and
+  @platform/event-bus (both already opensrc'd). No new external deps.
+
+Why:
+- Splitting registration across gateway-core and platform-capabilities
+  would mean opening two files to understand one set of caps. Worse:
+  changing the registration shape (e.g. adding a new owner) would
+  require touching both packages.
+- Putting the 16 migrations in the new package alongside the 9 new
+  caps means one commit, one diff, one review covers the whole
+  ownership migration. The "before" state is the old gateway-core
+  registration; the "after" state is the new package's call.
+
+6. What does system.health return?
+Answer:
+- { status: "ok" } always, in v1 single-process.
+- "degraded" path deferred to v2 when there are runtimes to check.
+- Single-process means: if createGateway() succeeded, the platform is
+  alive. There's no second process to lose contact with.
+
+Why:
+- A health check that always returns ok is honest about v1's
+  limitations. A health check that lies (pretends to check things it
+  can't check) is worse than no health check.
+- v2 with runtimes will need real health: "is the Browser Runtime
+  responsive? is the Backend Runtime connected to SDK X?" That's a
+  separate design problem for a separate pack.
+
+No remaining open questions. Grilling is stable - ready for Phase 1 (PRD).
