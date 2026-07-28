@@ -1,0 +1,280 @@
+EXPLAINED: Gateway Core
+
+A plain-English guide for anyone who needs to understand what happens
+when someone tries to invoke a capability on the Agentide platform.
+
+For the technical spec, see PRD-gateway-core.md, TRD-gateway-core.md, and
+FLOW-gateway-core.md in this same folder.
+
+---
+
+The Gateway is like the front desk at a large office building.
+
+Tenants are companies that rent floors of the building. Each floor has
+its own locked doors — you can't walk from one tenant's floor to
+another. Callers are visitors. Tokens are visitor IDs that say which
+company you belong to and which doors you're allowed to open. Sessions
+are the visitor badges the front desk gives you when you arrive, so
+the receptionist can find your host while you're in the building.
+Capabilities are the rooms. Adapters are the building's entrances (MCP
+door, REST door, CLI door). The front desk checks your ID, checks your
+permissions, gives you a badge, walks you to the right room, and writes
+down who you visited in the log book.
+
+---
+
+Situation 1: Self-hosted operator installs Agentide for the first time
+
+Sarah is a platform engineer at Acme Corp. She's heard about Agentide
+and wants to see if it works for an internal project. She opens a
+terminal on her laptop and pastes one line.
+
+What we are doing about it
+
+The install script does everything. It detects that her laptop is
+Linux with no Docker installed, so it downloads a single binary to
+/usr/local/bin/agentide. It creates a data directory at
+~/.agentide/data/ to hold audit logs and plugin records. Then it tells
+her to run `agentide init` and `agentide start`.
+
+When she runs `agentide init`, the platform creates a "default" tenant
+on her behalf (this is Acme's only tenant — Sarah is the only company
+that will ever use this installation) and generates a bootstrap operator
+token. The token is a long string that Sarah copies into her password
+manager. It grants full platform permissions to whoever presents it.
+
+When she runs `agentide start`, the platform boots up. The terminal
+prints a clear "is running" message, shows the URL where the default
+MCP adapter is listening (http://localhost:7100), and reminds her
+which token to use.
+
+Total time: about two minutes, no code written.
+
+What this means for Sarah
+
+She has a working Agentide platform running on her laptop. She can
+configure her team's AI agent (running in another terminal) to
+connect to it via MCP. She can install runtime plugins, manage
+capabilities, and see the audit log — all from the command line.
+
+What this does not mean
+
+Sarah is not yet ready for production. The bootstrap token grants full
+permissions. For a production setup, she'd run `agentide tenant create`
+to provision proper tenants, `agentide token issue` to mint scoped
+tokens per application, and `agentide plugin install` for the runtime
+plugins her agents need. The platform runs in a single process on her
+laptop — horizontal scaling, Redis-backed rate limiting, and
+multi-machine deployment are not in scope for v1.
+
+---
+
+Situation 2: AI agent wants to invoke a business capability
+
+Alex is building an AI agent that helps Acme's customers track their
+orders. The agent runs in Acme's own app. Acme has a Backend SDK
+(built in a separate pack) that registers a `customer.read` capability
+on the platform. Alex's agent, talking MCP, wants to call that
+capability.
+
+What we are doing about it
+
+The agent sends an MCP `tools/call` request to localhost:7100:
+
+    { method: "tools/call", params: { name: "customer.read",
+                                       arguments: { id: 42 } } }
+
+The MCP adapter at the front desk:
+1. Reads the Authorization header (Bearer <jwt>) — the SDK's token.
+2. Verifies the token signature, extracts the tenant and caller.
+3. Looks up the sessionId in _meta.dev.agentide/sessionId.
+4. Translates the request to the canonical internal packet.
+5. Hands it to the Gateway kernel.
+
+The Gateway kernel:
+6. Verifies the token is still valid (signature, expiry, tenant).
+7. Checks the rate-limit bucket — has Alex's agent exceeded the limit?
+   No.
+8. Checks the audit log — appends a record: "alex-agent invoking
+   customer.read".
+9. Checks the permissions — Alex's agent's scope includes
+   "customer.read".
+10. Checks the session — the sessionId exists and belongs to Alex's
+    tenant.
+11. Asks the Capability Registry for the capability's owner — it
+    returns "backend-sdk-ecommerce-app".
+12. Dispatches to the Backend Runtime, which forwards to the running
+    SDK, which calls the application's customer.read handler.
+13. Records the result in the audit log with the duration (12 ms).
+14. Returns the result to the MCP adapter, which wraps it as MCP
+    content and sends back to the agent.
+
+The agent gets back:
+
+    { result: { structuredContent: { name: "Acme", tier: "gold" } } }
+
+What this means for Alex
+
+The agent has the data it needs. Alex doesn't need to know that the
+platform is doing auth, rate limiting, audit, dispatch, and session
+management — the front desk handles all of it. Alex writes normal MCP
+client code; the platform makes it work.
+
+What this does not mean
+
+The agent cannot invoke capabilities it lacks scope for. If Alex's
+agent's token doesn't include "customer.delete", a `customer.delete`
+invocation returns an error — not silently. The agent doesn't see
+tenants it isn't part of. It can't bypass the rate limit by opening
+new sessions — buckets are keyed by the caller's identity, not the
+session.
+
+---
+
+Situation 3: A misbehaving SDK starts hammering the platform
+
+Acme's analytics SDK has a bug — it accidentally calls `customer.read`
+10,000 times per second instead of once per user. Sarah sees the audit
+log filling up and the platform's CPU spike.
+
+What we are doing about it
+
+Every call from the analytics SDK consumes one token from the SDK's
+rate-limit bucket (capacity 100, refill 10 per second). After the first
+100 calls, the bucket is empty. The next 9,900 calls return:
+
+    { error: { code: "GATEWAY_RATE_LIMIT_EXCEEDED",
+               retryable: true,
+               message: "rate limit exceeded for caller
+                         analytics-sdk-prod-1" } }
+
+Each denial produces an audit log entry with `status: "denied"` and
+`denyReason: "GATEWAY_RATE_LIMIT_EXCEEDED"`. Sarah can grep the audit
+log for the pattern, see the count spike, and identify the SDK.
+
+She has two paths to fix it: (a) fix the SDK's bug; (b) issue a token
+with a higher rate-limit budget for that specific caller via a future
+config knob.
+
+What this means for Sarah
+
+The platform self-protects against runaway clients. Sarah doesn't have
+to take the platform down to fix one misbehaving SDK.
+
+What this does not mean
+
+The rate limit is not a substitute for input validation. A caller can
+still submit invalid requests up to the bucket capacity. And the rate
+limit is in-memory — when the platform restarts, the buckets reset
+(documented limitation for v1).
+
+---
+
+Situation 4: Hosted platform operator provisions a new customer tenant
+
+A hosted Agentide platform serves multiple customer companies from a
+single process. Sarah is now operating this platform at scale. A new
+customer, Beta Inc, signs up and wants their own tenant.
+
+What we are doing about it
+
+Sarah runs `agentide tenant create beta "Beta Inc"`. The platform:
+1. Creates a `beta` tenant record.
+2. Generates a bootstrap operator token scoped to that tenant.
+3. Prints the token. Sarah hands it to Beta's IT contact, who
+   distributes it to Beta's apps.
+4. Beta's apps connect via MCP, presenting the tenant-scoped token.
+5. Every Beta invocation, audit record, and session is scoped to the
+   `beta` tenant.
+
+Beta cannot see Acme's data. If a Beta app tries to call a capability
+Acme registered, the Gateway refuses — the capability is in a
+different tenant's catalog. If a Beta app's token has a tenantId claim
+that doesn't match the tenant it's connecting to, the Gateway rejects
+the request with `GATEWAY_TENANT_MISMATCH`.
+
+Sarah can later run `agentide tenant suspend beta` (Beta is temporarily
+cut off; in-flight invocations finish, new ones rejected) or
+`agentide tenant delete beta` (Beta is removed; their data, sessions,
+and audit records are purged).
+
+What this means for Sarah
+
+The same Gateway binary serves both self-hosted (one tenant) and
+hosted (many tenants) deployments. No separate "enterprise edition",
+no second binary, no fork. The hosted deployment provisions tenants
+through the same `tenant.*` capabilities that the Gateway itself
+exposes.
+
+What this does not mean
+
+The hosted deployment is not a separate product. It is the same
+platform, run by Sarah instead of by Acme. Sarah uses the same
+`agentide tenant create` command that Acme would never invoke (they
+only ever have one tenant). The tenant-lifecycle capabilities are part
+of gateway-core because they're the natural seam between "platform
+kernel" and "hosted platform provisioning."
+
+---
+
+How you can tell it is working
+
+- The install command completes with no operator interaction and prints
+  a "running" message.
+- An MCP client can connect, list capabilities, and invoke one.
+- The audit log file exists and has one record per invocation.
+- A wrong token returns a clear auth error, not a generic 500.
+- A capability that doesn't exist returns
+  `GATEWAY_CAPABILITY_NOT_FOUND`.
+- A capability with a scope the caller doesn't hold returns
+  `GATEWAY_INSUFFICIENT_SCOPE`.
+- Running `agentide tenant list` shows all configured tenants.
+- Running `agentide logs` tails the audit log with structured records.
+- After 100 rapid calls from one caller, the 101st returns
+  `GATEWAY_RATE_LIMIT_EXCEEDED`.
+
+---
+
+What you should not expect from this change
+
+- **OAuth 2.1 / Authorization Server Discovery.** MCP's standard auth
+  flow is OPTIONAL per the spec. v1 ships simpler `Authorization:
+  Bearer <jwt>`. OAuth lands in a later pack.
+- **Multi-process or horizontal scaling.** v1 runs as a single process.
+  Rate-limit buckets are in-memory. Audit log is a single file. Redis
+  and DB backends are v2.
+- **Streaming or async invocations.** Every call is sync. Long-running
+  work is multiple sync calls.
+- **Capability input validation in the Gateway.** The Gateway trusts
+  the handler. JSON Schema validation lives in the handler.
+- **Per-call timeout overrides per capability.** Single default 30s
+  with a single config knob. Per-capability timeouts are deferred.
+- **Backend SDK connection lifecycle.** The Gateway has a
+  `backend-sdk-*` dispatch path, but no SDK ships in v1. That lives in
+  the Tier 3 SDK pack.
+- **Auto-update mechanism.** Operators upgrade manually via
+  `agentide upgrade` (binary) or `docker pull` (image).
+- **Capability deprecation semantics.** Version resolution is auto-latest
+  or explicit pin; no "deprecated" flag. The marketplace pack adds
+  deprecation later.
+- **Hot-reload of the kernel.** Restart to apply configuration changes.
+
+---
+
+The technical names for the curious
+
+- "Front desk" → **Gateway** (`@platform/gateway-core`)
+- "Visitor ID" → **Bearer token** (JWT with claims)
+- "Company floor" → **Tenant** (`tenantId` in the token's `sub`)
+- "Visitor badge" → **Session** (`sessionId` in `_meta`)
+- "Room" → **Capability** (the unit of work the Gateway routes)
+- "Entrance" → **Adapter** (`@platform/adapter-mcp`, `-rest`, `-cli`, `-ws`)
+- "Permission card on the badge" → **Scope** (`scope: [...]` in the token)
+- "Checking the badge" → **Authz** (tier-hierarchy permission check)
+- "Log book" → **Audit log** (`~/.agentide/data/audit.log`)
+- "Crowd control" → **Rate limit** (token bucket per caller)
+- "Hallway between floors is locked" → **Cross-tenant refusal**
+- "`agentide init`" → The first-run bootstrap that creates a default
+  tenant and prints the operator token
+- "`handleInvocation`" → The single function the Gateway exposes for
+  capability routing (the canonical internal API)

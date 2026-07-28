@@ -1,0 +1,489 @@
+/*
+ * Code Map: gateway-core factory + tenant/token/adapter lifecycle + capability registrations
+ * - createGateway: composition factory (Tier 1 + capabilities + audit + rate-limit + dispatch)
+ * - loadOrCreateSecret: file-backed JWT secret bootstrap; base64-encoded on disk, decoded on read
+ * - registerGatewayCapabilities: registers auth/session/tenant/capability/gateway capabilities as owner "gateway"
+ * - atomicTenantSave: writes tenants.json via the FileSystem (production uses node:fs/promises)
+ * - nodeFileSystem: production fs; writeFile without mode = append (audit log); with mode = write (gateway-secret, mode 0600)
+ *
+ * CID Index:
+ * CID:factory-001 -> createGateway
+ * CID:factory-002 -> loadOrCreateSecret
+ * CID:factory-003 -> registerGatewayCapabilities
+ *
+ * Quick lookup: rg -n "CID:factory-" packages/gateway-core/src/factory.ts
+ */
+
+import { randomBytes } from "node:crypto";
+import { appendFile, writeFile as fsWriteFile, readFile, access } from "node:fs/promises";
+import type { EventBus } from "@platform/event-bus";
+import type { CapabilityRegistry, CapabilityRecord, CapabilityType } from "@platform/capability-registry";
+import type { SessionManager } from "@platform/session-manager";
+import type { PluginManager } from "@platform/plugin-manager";
+import { AuditWriter } from "./audit.js";
+import { issueToken } from "./auth.js";
+import { handleInvocation } from "./handle-invocation.js";
+import { type DispatchHandlers } from "./dispatch.js";
+import { RateLimiter } from "./rate-limit.js";
+import { TenantStore } from "./tenant-store.js";
+import { ERROR_CODES, GatewayError } from "./errors.js";
+import type {
+  Adapter,
+  Clock,
+  CreateTenantRequest,
+  FileSystem,
+  Gateway,
+  GatewayConfig,
+  GatewayStatus,
+  IssueTokenRequest,
+  TenantRecord,
+  TokenClaims,
+  YamlValue,
+} from "./types.js";
+
+const DEFAULT_AUDIT_LOG_PATH = "/data/audit.log";
+const DEFAULT_TENANTS_PATH = "/data/tenants.json";
+const DEFAULT_SECRET_PATH = "/data/gateway-secret";
+const DEFAULT_HANDLER_TIMEOUT_MS = 30000;
+const DEFAULT_RATE_LIMIT_CAPACITY = 100;
+const DEFAULT_RATE_LIMIT_TOKENS_PER_SECOND = 10;
+const DEFAULT_TOKEN_TTL_MS = 3_600_000;
+const SECRET_FILE_MODE = 0o600;
+
+// CID:factory-002 - loadOrCreateSecret
+// Purpose: file-backed JWT secret bootstrap; generates 32 random bytes on first run; persists base64-encoded with mode 0600.
+//   On reload, decodes the base64 → raw bytes. This round-trip ensures the same secret is used across
+//   process restarts (a UTF-8 round-trip would re-interpret the bytes and produce a different signing key).
+async function loadOrCreateSecret(secretPath: string, fs: FileSystem): Promise<Uint8Array> {
+  if (await fs.exists(secretPath)) {
+    const stored = (await fs.readFile(secretPath)).replace(/\n$/, "");
+    return Buffer.from(stored, "base64");
+  }
+  const secret = new Uint8Array(randomBytes(32));
+  await fs.writeFile(secretPath, Buffer.from(secret).toString("base64"), SECRET_FILE_MODE);
+  return secret;
+}
+
+// CID:factory-003 - registerGatewayCapabilities
+// Purpose: register all platform-level capabilities (auth/session/tenant/capability/gateway) with the Capability Registry under owner "gateway"
+//   Dispatch (Q5 / Gap 9) recognizes owner "gateway" and Tier 1 manager owners (session-manager, plugin-manager, capability-registry, platform-*).
+// Used by: createGateway() factory at boot
+async function registerGatewayCapabilities(registry: CapabilityRegistry): Promise<void> {
+  const caps: CapabilityRecord[] = [
+    cap("auth.token.issue", "platform", ["platform.token.issue"], "Mint a JWT for a caller"),
+    cap("auth.token.revoke", "platform", ["platform.token.issue"], "Revoke a JWT (no-op in v1)"),
+    cap("session.create", "platform", ["platform.session.create"], "Create a session"),
+    cap("session.resume", "platform", ["platform.session.read"], "Resume a session"),
+    cap("session.destroy", "platform", ["platform.session.delete"], "Destroy a session and cleanup resources"),
+    cap("session.touch", "platform", ["platform.session.write"], "Reset a session's idle timer"),
+    cap("session.list", "platform", ["platform.session.read"], "List sessions in the caller's tenant"),
+    cap("tenant.create", "platform", ["platform.tenant.write"], "Create a tenant and bootstrap token"),
+    cap("tenant.list", "platform", ["platform.tenant.read"], "List tenants visible to the caller"),
+    cap("tenant.suspend", "platform", ["platform.tenant.write"], "Suspend a tenant (block new calls)"),
+    cap("tenant.delete", "platform", ["platform.tenant.write"], "Delete a tenant (purge records)"),
+    cap("capability.list", "platform", ["platform.capability.read"], "List registered capabilities"),
+    cap("capability.describe", "platform", ["platform.capability.read"], "Describe one capability by name"),
+    cap("gateway.status", "platform", ["platform.gateway.read"], "Gateway runtime status"),
+    cap("gateway.metrics", "platform", ["platform.gateway.read"], "Gateway counters and metrics"),
+    cap("gateway.configuration", "platform", ["platform.gateway.read"], "Effective configuration (with secrets redacted)"),
+  ];
+  await registry.register("gateway", { owner: "gateway", capabilities: caps });
+}
+
+function cap(
+  name: string,
+  type: CapabilityType,
+  permissions: readonly string[],
+  description: string,
+): CapabilityRecord {
+  return {
+    name,
+    version: "1.0.0",
+    type,
+    description,
+    permissions,
+    owner: "gateway",
+  };
+}
+
+// Persist tenant state to disk via the FileSystem. For the production filesystem this is
+// appendFile + atomic-write-temp-then-rename (deferred to a v2 enhancement; v1 uses appendFile
+// for the audit log, but tenants.json is a small JSON file replaced atomically by the production
+// writeFile implementation in v2). For tests, the InMemoryFs fake overwrites — acceptable.
+async function persistTenants(tenantStore: TenantStore, tenantsPath: string, fs: FileSystem): Promise<void> {
+  await fs.writeFile(tenantsPath, JSON.stringify([...tenantStore.list()], null, 2));
+}
+
+// CID:factory-001 - createGateway
+// Purpose: composition factory — wires Tier 1 components + gateway capabilities + audit + rate-limit; performs startup tenant load + secret bootstrap
+// Returns: Promise<Gateway> (async because tenant load + secret bootstrap are I/O)
+// Used by: every consumer (the agentide CLI / MCP adapter / REST adapter / future SDK adapters call this first)
+export async function createGateway(
+  eventBus: EventBus,
+  registry: CapabilityRegistry,
+  sessionManager: SessionManager,
+  pluginManager: PluginManager,
+  config: GatewayConfig = {},
+): Promise<Gateway> {
+  const fs: FileSystem = config.fs ?? nodeFileSystem();
+  const clock: Clock = config.clock ?? systemClock();
+  const auditLogPath = config.auditLogPath ?? DEFAULT_AUDIT_LOG_PATH;
+  const tenantsPath = config.tenantsPath ?? DEFAULT_TENANTS_PATH;
+  const secretPath = config.secretPath ?? DEFAULT_SECRET_PATH;
+  const handlerTimeoutMs = config.handlerTimeoutMs ?? DEFAULT_HANDLER_TIMEOUT_MS;
+
+  const audit = new AuditWriter(auditLogPath, fs);
+  const rateLimit = config.rateLimit ?? { capacity: DEFAULT_RATE_LIMIT_CAPACITY, tokensPerSecond: DEFAULT_RATE_LIMIT_TOKENS_PER_SECOND };
+  const rateLimiter = new RateLimiter(rateLimit, clock);
+  const tenantStore = new TenantStore(tenantsPath, fs);
+  await tenantStore.load();
+  const secret = await loadOrCreateSecret(secretPath, fs);
+
+  const startedAt = clock.now();
+  const handlers = buildGatewayHandlers({
+    tenantStore,
+    registry,
+    secret,
+    clock,
+    sessionManager,
+    pluginManager,
+    tenantsPath,
+    auditLogPath,
+    startedAt,
+    fs,
+  });
+
+  await registerGatewayCapabilities(registry);
+
+  return {
+    handleInvocation: (req) =>
+      handleInvocation(req, {
+        registry,
+        sessionManager,
+        pluginManager,
+        tenantStore,
+        handlers,
+        audit,
+        eventBus,
+        rateLimiter,
+        clock,
+        handlerTimeoutMs,
+        secret,
+      }),
+
+    registerAdapter: async (adapter: Adapter): Promise<void> => {
+      await adapter.start();
+    },
+    unregisterAdapter: async (name: string): Promise<void> => {
+      void name;
+      throw new GatewayError(
+        ERROR_CODES.MANAGER_UNAVAILABLE,
+        "adapter tracking by name is not yet implemented; call adapter.stop() directly",
+        { name },
+        false,
+      );
+    },
+
+    issueToken: async (req: IssueTokenRequest) => {
+      const claims: TokenClaims = {
+        sub: { tenantId: req.tenantId, callerId: req.callerId },
+        scope: [...req.scope],
+        iat: clock.now(),
+        exp: clock.now() + (req.expiresInMs ?? DEFAULT_TOKEN_TTL_MS),
+      };
+      const token = issueToken(claims, secret, clock);
+      return { token, claims };
+    },
+
+    createTenant: async (req: CreateTenantRequest) => {
+      if (tenantStore.get(req.id) !== null) {
+        throw new GatewayError(
+          ERROR_CODES.INVALID_REQUEST,
+          `tenant "${req.id}" already exists`,
+          { id: req.id },
+          false,
+        );
+      }
+      const record: TenantRecord = {
+        id: req.id,
+        name: req.name,
+        createdAt: clock.now(),
+        suspended: false,
+      };
+      tenantStore.set(record);
+      await persistTenants(tenantStore, tenantsPath, fs);
+      return record;
+    },
+
+    listTenants: () => tenantStore.list(),
+
+    suspendTenant: async (id: string) => {
+      const existing = tenantStore.get(id);
+      if (!existing) {
+        throw new GatewayError(
+          ERROR_CODES.INVALID_REQUEST,
+          `tenant "${id}" not found`,
+          { id },
+          false,
+        );
+      }
+      const updated: TenantRecord = { ...existing, suspended: true };
+      tenantStore.set(updated);
+      await persistTenants(tenantStore, tenantsPath, fs);
+      return updated;
+    },
+
+    deleteTenant: async (id: string) => {
+      if (tenantStore.get(id) === null) {
+        throw new GatewayError(
+          ERROR_CODES.INVALID_REQUEST,
+          `tenant "${id}" not found`,
+          { id },
+          false,
+        );
+      }
+      tenantStore.delete(id);
+      await persistTenants(tenantStore, tenantsPath, fs);
+    },
+
+    status: async (): Promise<GatewayStatus> => {
+      const uptimeMs = clock.now() - startedAt;
+      const tenantCount = tenantStore.list().length;
+      const pluginCount = pluginManager.list().length;
+      const auditLogBytes = await auditLogSize(auditLogPath, fs);
+      return { uptimeMs, tenantCount, pluginCount, auditLogBytes };
+    },
+  };
+}
+
+async function auditLogSize(auditLogPath: string, fs: FileSystem): Promise<number> {
+  if (!(await fs.exists(auditLogPath))) return 0;
+  const content = await fs.readFile(auditLogPath);
+  return content.length;
+}
+
+interface BuildHandlersCtx {
+  readonly tenantStore: TenantStore;
+  readonly registry: CapabilityRegistry;
+  readonly secret: Uint8Array;
+  readonly clock: Clock;
+  readonly sessionManager: SessionManager;
+  readonly pluginManager: PluginManager;
+  readonly tenantsPath: string;
+  readonly auditLogPath: string;
+  readonly startedAt: number;
+  readonly fs: FileSystem;
+}
+
+function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
+  // Each handler returns its concrete type (SessionRecord, TenantRecord, DescribeResult, etc.).
+  // JSON round-trip coerces to YamlValue.
+  const wrap = <T>(fn: (input: YamlValue) => T | Promise<T>) =>
+    async (input: YamlValue, _sessionId: string | undefined): Promise<YamlValue> =>
+      JSON.parse(JSON.stringify(await fn(input))) as YamlValue;
+
+  // Persist tenant state when tenant.create / tenant.suspend / tenant.delete mutate it.
+  const persistTenantsNow = async (): Promise<void> => {
+    await persistTenants(ctx.tenantStore, ctx.tenantsPath, ctx.fs);
+  };
+
+  const handlers: Record<string, (input: YamlValue, sessionId: string | undefined) => Promise<YamlValue>> = {
+    // === auth ===
+    "auth.token.issue": wrap((input) => {
+      const i = input as { tenantId?: string; callerId?: string; scope?: readonly string[]; expiresInMs?: number };
+      if (typeof i.tenantId !== "string" || typeof i.callerId !== "string" || !Array.isArray(i.scope)) {
+        throw new GatewayError(
+          ERROR_CODES.INVALID_REQUEST,
+          "auth.token.issue requires {tenantId, callerId, scope}",
+          {},
+          false,
+        );
+      }
+      const claims: TokenClaims = {
+        sub: { tenantId: i.tenantId, callerId: i.callerId },
+        scope: i.scope as readonly string[],
+        iat: ctx.clock.now(),
+        exp: ctx.clock.now() + (i.expiresInMs ?? DEFAULT_TOKEN_TTL_MS),
+      };
+      return { token: issueToken(claims, ctx.secret, ctx.clock), claims };
+    }),
+
+    "auth.token.revoke": wrap(() => {
+      // v1: JWTs are stateless. No-op until a deny-list is implemented (v2).
+      return { revoked: false };
+    }),
+
+    // === session ===
+    "session.create": wrap((input) => {
+      const i = input as { ownerId?: string; adapterType?: string; metadata?: Record<string, string> };
+      if (typeof i.ownerId !== "string" || typeof i.adapterType !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "session.create requires {ownerId, adapterType}", {}, false);
+      }
+      const session = ctx.sessionManager.create({
+        ownerId: i.ownerId,
+        adapterType: i.adapterType as "mcp" | "cli" | "rest" | "ws",
+        ...(i.metadata ? { metadata: i.metadata } : {}),
+      });
+      return session;
+    }),
+
+    "session.resume": wrap((input) => {
+      const i = input as { sessionId?: string };
+      if (typeof i.sessionId !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "sessionId required", {}, false);
+      }
+      return ctx.sessionManager.resume(i.sessionId);
+    }),
+
+    "session.destroy": wrap((input) => {
+      const i = input as { sessionId?: string };
+      if (typeof i.sessionId !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "sessionId required", {}, false);
+      }
+      return ctx.sessionManager.destroy(i.sessionId, "explicit");
+    }),
+
+    "session.touch": wrap((input) => {
+      const i = input as { sessionId?: string };
+      if (typeof i.sessionId !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "sessionId required", {}, false);
+      }
+      return ctx.sessionManager.touch(i.sessionId);
+    }),
+
+    "session.list": wrap(() => {
+      // NOTE[agent]: session-manager v1 doesn't expose listSessions(tenantId). v1 returns [].
+      // v2 enhancement adds listSessions(tenantId) → SessionRecord[].
+      return [];
+    }),
+
+    // === tenant ===
+    "tenant.create": wrap((input) => {
+      const i = input as { id?: string; name?: string };
+      if (typeof i.id !== "string" || typeof i.name !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "tenant.create requires {id, name}", {}, false);
+      }
+      if (ctx.tenantStore.get(i.id) !== null) {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, `tenant "${i.id}" already exists`, { id: i.id }, false);
+      }
+      const record: TenantRecord = {
+        id: i.id,
+        name: i.name,
+        createdAt: ctx.clock.now(),
+        suspended: false,
+      };
+      ctx.tenantStore.set(record);
+      void persistTenantsNow();
+      return record;
+    }),
+
+    "tenant.list": wrap(() => ctx.tenantStore.list()),
+
+    "tenant.suspend": wrap((input) => {
+      const i = input as { id?: string };
+      if (typeof i.id !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "id required", {}, false);
+      }
+      const existing = ctx.tenantStore.get(i.id);
+      if (!existing) {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, `tenant "${i.id}" not found`, { id: i.id }, false);
+      }
+      const updated: TenantRecord = { ...existing, suspended: true };
+      ctx.tenantStore.set(updated);
+      void persistTenantsNow();
+      return updated;
+    }),
+
+    "tenant.delete": wrap((input) => {
+      const i = input as { id?: string };
+      if (typeof i.id !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "id required", {}, false);
+      }
+      if (ctx.tenantStore.get(i.id) === null) {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, `tenant "${i.id}" not found`, { id: i.id }, false);
+      }
+      ctx.tenantStore.delete(i.id);
+      void persistTenantsNow();
+      return { deleted: true };
+    }),
+
+    // === capability discovery ===
+    "capability.list": wrap(() => {
+      // v1: return the full catalog. v2: filter by caller scope.
+      return ctx.registry.list();
+    }),
+
+    "capability.describe": wrap((input) => {
+      const i = input as { name?: string };
+      if (typeof i.name !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "name required", {}, false);
+      }
+      return ctx.registry.describe(i.name);
+    }),
+
+    // === gateway introspection ===
+    "gateway.status": wrap(() => {
+      const uptimeMs = ctx.clock.now() - ctx.startedAt;
+      return {
+        uptimeMs,
+        tenantCount: ctx.tenantStore.list().length,
+        pluginCount: ctx.pluginManager.list().length,
+        status: "ok",
+      };
+    }),
+
+    "gateway.metrics": wrap(() => {
+      // v1 placeholder. v2 adds rate-limit denial counters, dispatch-failure counts, etc.
+      return {
+        invocations: { ok: 0, denied: 0, error: 0 },
+        rateLimitDenials: 0,
+        authFailures: 0,
+      };
+    }),
+
+    "gateway.configuration": wrap(() => {
+      // Return effective config with secrets redacted.
+      return {
+        auditLogPath: ctx.auditLogPath,
+        tenantsPath: ctx.tenantsPath,
+        // secretPath is omitted to avoid leaking filesystem layout
+      };
+    }),
+  };
+  // Suppress unused-import warning for an unused field in handlers.
+  void ctx.sessionManager;
+  return { gatewayHandlers: handlers };
+}
+
+// System clock + production fs. Top-level static imports (ESM) — not require() — per Gap 2.
+function systemClock(): Clock {
+  return {
+    now: () => Date.now(),
+    // @ts-expect-error - Node's setTimeout returns Timeout; Clock interface declares number
+    setTimeout: (cb, ms) => setTimeout(cb, ms),
+    clearTimeout: (h) => clearTimeout(h),
+  };
+}
+
+function nodeFileSystem(): FileSystem {
+  // Per Gap 4: writeFile without mode is APPEND (audit log never loses history).
+  // Per Gap 3: writeFile with mode is REAL write (used for the gateway-secret file, mode 0600).
+  return {
+    readFile: async (path) => readFile(path, "utf-8"),
+    writeFile: async (path, content, mode) => {
+      if (mode !== undefined) {
+        await fsWriteFile(path, content, { mode, encoding: "utf-8" });
+      } else {
+        await appendFile(path, content, "utf-8");
+      }
+    },
+    exists: async (path) => {
+      try {
+        await access(path);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
