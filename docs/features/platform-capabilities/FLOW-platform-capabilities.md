@@ -254,10 +254,11 @@ An agent calls `plugin.install` with `source: "./missing.yaml"` (file does not e
 - [ ] Using that token, invoke `plugin.install` with a valid manifest → `InstallRecord` returned. [AC-3]
 - [ ] `agentide plugin list` shows the installed plugin. [AC-3]
 - [ ] Invoke `plugin.list` instead → returns the same data via the registry. [AC-3]
-- [ ] Invoke `plugin.disable <id>` → returns `{id, enabled: false}`. [AC-3]
-- [ ] Invoke `plugin.enable <id>` → returns `{id, enabled: true}`. [AC-3]
-- [ ] Invoke `plugin.reload <id>` → returns `{id, version, reloadedAt}`. [AC-3]
-- [ ] Invoke `plugin.uninstall <id>` → returns `{uninstalled: true}`. [AC-3]
+- [ ] Invoke `plugin.install <source>` → returns full `InstallRecord` (`{id, version, type, source, installedAt, enabled}`). [AC-3]
+- [ ] Invoke `plugin.disable <id>` → returns full `InstallRecord` (handler is a thin wrapper; superset of `{id, enabled: false}`). [AC-3]
+- [ ] Invoke `plugin.enable <id>` → returns full `InstallRecord`. [AC-3]
+- [ ] Invoke `plugin.reload <id>` → returns full `InstallRecord`. [AC-3]
+- [ ] Invoke `plugin.uninstall <id>` → returns `{uninstalled: true, id: <id>}`. [AC-3]
 
 ### System introspection (AC-4)
 

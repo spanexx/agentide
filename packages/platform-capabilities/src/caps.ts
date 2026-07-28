@@ -59,7 +59,7 @@ export const SESSION_CAPS: readonly CapabilityRecord[] = [
   cap("session.resume", "session-manager", ["platform.session.write"], "Resume a session"),
   cap("session.destroy", "session-manager", ["platform.session.write"], "Destroy a session and cleanup resources"),
   cap("session.touch", "session-manager", ["platform.session.write"], "Reset a session's idle timer"),
-  cap("session.list", "session-manager", ["platform.session.read"], "List sessions in the caller's tenant"),
+  cap("session.list", "session-manager", ["platform.session.read"], "List sessions in the caller's tenant (returns [] in v1; SessionManager.listSessions() ships in v2)"),
 ];
 
 // CID:caps-003 - CAPABILITY_CAPS

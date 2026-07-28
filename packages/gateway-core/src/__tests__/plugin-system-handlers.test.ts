@@ -62,7 +62,7 @@ async function setup() {
   });
   // Auto-seed the "default" tenant (matches the makeToken's tenantId).
   await gateway.createTenant({ id: "default", name: "Default Test Tenant" });
-  return { gateway, clock, sessionManager };
+  return { gateway, clock, sessionManager, fs };
 }
 
 function makeToken(clock: FakeClock, scope: readonly string[]): string {
@@ -106,6 +106,30 @@ describe("plugin.* handlers", () => {
     expect("error" in result).toBe(true);
     if ("error" in result) {
       expect(result.error.code).toBe("GATEWAY_INVALID_REQUEST");
+    }
+  });
+
+  it("plugin.install happy path: end-to-end returns InstallRecord (AC-3)", async () => {
+    const { gateway, clock, sessionManager, fs } = await setup();
+    // Pre-seed a valid manifest in the in-memory fs.
+    fs.files.set("/tmp/valid-plugin.yaml",
+      "runtime:\n  id: browser\nversion: \"1.0\"\ncapabilities:\n  - browser.navigate\n");
+    const session = sessionManager.create({ ownerId: "test", adapterType: "mcp" });
+    const result = await gateway.handleInvocation({
+      token: makeToken(clock, ["platform.plugin.write"]),
+      caller: { tenantId: "default", callerId: "test", scope: ["platform.plugin.write"] },
+      capability: { name: "plugin.install" },
+      input: { source: "/tmp/valid-plugin.yaml" },
+      sessionId: session.id,
+    });
+    expect("output" in result).toBe(true);
+    if ("output" in result) {
+      const record = result.output as { id: string; version: string; type: string; enabled: boolean; source: string };
+      expect(record.id).toBe("browser");
+      expect(record.version).toBe("1.0");
+      expect(record.type).toBe("runtime");
+      expect(record.enabled).toBe(true);
+      expect(record.source).toBe("/tmp/valid-plugin.yaml");
     }
   });
 

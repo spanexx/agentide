@@ -155,11 +155,11 @@ Six new entries in `buildGatewayHandlers`'s `gatewayHandlers` map. Each handler 
 | Handler | PluginManager call | Input contract | Output contract |
 |---|---|---|---|
 | `plugin.list` | `pluginManager.list()` | `{}` | `readonly InstallRecord[]` |
-| `plugin.install` | `pluginManager.install(source)` | `{source: string}` | `{id, version, type, installedAt, enabled}` |
-| `plugin.uninstall` | `pluginManager.uninstall(id)` | `{id: string}` | `{uninstalled: true}` |
-| `plugin.enable` | `pluginManager.enable(id)` | `{id: string}` | `{id, enabled: true}` |
-| `plugin.disable` | `pluginManager.disable(id)` | `{id: string}` | `{id, enabled: false}` |
-| `plugin.reload` | `pluginManager.reload(id)` | `{id: string}` | `{id, version, reloadedAt}` |
+| `plugin.install` | `pluginManager.install(source)` | `{source: string}` | `InstallRecord` |
+| `plugin.uninstall` | `pluginManager.uninstall(id)` | `{id: string}` | `{uninstalled: true, id}` |
+| `plugin.enable` | `pluginManager.enable(id)` | `{id: string}` | `InstallRecord` |
+| `plugin.disable` | `pluginManager.disable(id)` | `{id: string}` | `InstallRecord` |
+| `plugin.reload` | `pluginManager.reload(id)` | `{id: string}` | `InstallRecord` |
 
 All six handlers are owner=`"plugin-manager"`. Dispatch already routes `plugin-manager` to `gatewayHandlers` (`packages/gateway-core/src/dispatch.ts:50`). No dispatch change needed.
 
