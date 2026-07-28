@@ -1,33 +1,74 @@
-# gateway-core ship: from uncommitted refactor to meta-package landing
+# BI[6] platform-capabilities: SHIPPED
 
 ## Soul
 
-The kernel was already half-flying when this session opened. Phases 0–6 had shipped as commit `407f2f3`, but the working tree carried 455 lines of unfinished refactor: a switch from caller-as-truth to JWT-as-truth, a new file-backed secret model, and a long thread of audit-record fixes meant to close the dangerous tenant-isolation gap the prior review had flagged. On top of that sat the rest of the IMPL plan — Phases 7 (meta-package, CLI, install.sh) and 8 (integration tests) — neither started. The branch name said it: `feature/gateway-core`. The backlog said otherwise: `BI[5]` still read `status: "not-started"`. Someone had to land the refactor without breaking it, then carry the kernel into a usable platform, then make sure the backlog and the graph agreed.
+This session opened with grill and PRD drafted awaiting approval. The user's "Approve as-is, move to TRD" landed at the PRD gate. Then TRD → FLOW → IMPL → 6 phases of implementation. The interesting discoveries:
+
+1. **The authz gap nobody mentioned.** PRD claimed `platform.*.read` would cover every read-tier platform cap. The current `checkAuthz` (`packages/gateway-core/src/authz.ts`) treats `*` as a literal segment — it does exact-match on `parts[1]`. So the wildcard would have shipped broken. The fix is 3 lines in `tierCovers` (parts[1] === '*' → rank check). The user caught this in the TRD review and pushed for documentation, leading to the under-the-hood fix that landed in Phase 2.
+
+2. **The cross-owner migration problem.** The registry's `register` is per-owner and throws on cross-owner collision. A naive single-call `register("platform-capabilities", {25 caps})` would fail on upgrade because the legacy records still hold owner="gateway" for `session.*` and `capability.*`. The fix is a 4-call dance: phase 1 re-registers `gateway` with only its 12 legitimate caps (the registry's diff removes the 7 legacy caps under gateway); phase 2-4 register the other 13 caps under session-manager, capability-registry, plugin-manager. Verbose but it works. Documented in TRD §4.2.
+
+3. **The session-less set was stale.** While testing the new handlers, hit "GATEWAY_SESSION_REQUIRED" on `plugin.list` and `system.*`. The kernel's `SESSION_LESS_CAPABILITIES` set was missing these per GRILL Q3. Updated to include `plugin.list`, `system.info`, `system.version`, `system.health`, `auth.token.issue`, `auth.token.revoke`. Without this fix, MCP agents using `tools/call plugin.list` would have been blocked.
+
+4. **pnpm does not work with this monorepo.** The root `package.json` has `"workspaces": ["packages/*"]` (npm format). pnpm 11 prints a warning and silently ignores it. After adding `@platform/gateway-core`'s new dep on `@platform/platform-capabilities`, `pnpm install` left the symlink missing. The fix: use `npm install` (which honors the workspaces format via npm's resolver). The build script uses `npm run build --workspaces --if-present` which works fine. Documented for the next session.
 
 ## What We Did
 
-We followed the `execute-pack` protocol literally. Boot was four skill invocations — `caveman`, `log-prompt`, `situation-awareness`, `tdd` — then a clarification call to confirm the user wanted the uncommitted refactor landed *first*, then Phases 7–8 on the same branch (rather than committing as-is or jumping straight to the meta-package). The kernel hardening commit went out as `a875867`: JWT-based tenant scoping in `CanonicalInvocation`, a 32-byte random secret persisted base64-encoded with mode `0600` under `${dataDir}/gateway-secret`, `tenantId` recorded explicitly on every `AuditRecord`, the `ERROR_CODES` constants now used throughout the pipeline, and `Math.floor` rate-limit refill so callers retrying every millisecond can't earn a fractional token.
+Implemented `@platform/platform-capabilities` per the IMPL plan in 6 phases:
 
-Phase 7 came next. We scaffolded `packages/agentide/` from scratch — its own `package.json` and `tsconfig.json`, a workspace reference wired into the root tsconfig — then ran strict TDD per slice. First slice: `createPlatform(config)` composition. Test went red, factory wrote the wiring, test went green. Second slice: the CLI with subcommands `init / status / tenant {create|list|suspend|delete} / token issue / capability {list|describe} / plugin list`. Third slice: `install.sh` as a bash script that detects OS/arch, tries Docker first, npx second, binary download third, and prints clear remediation if all three fail. Each slice added real tests (4 + 8 + 3 = 15 new test cases), and the full suite went from 227 to 242 tests passing.
+- **Phase 0 (scaffold)**: Created `packages/platform-capabilities/{package.json, tsconfig.json, src/{index,caps,register}.ts}`. Workspace ref in root tsconfig.json. First build green.
+- **Phase 1 (registration + migration)**: 25 `CapabilityRecord` values via `cap(...)` helper; `registerPlatformCapabilities` does the 4-call register dance. Removed `registerGatewayCapabilities` from `gateway-core/src/factory.ts`; renamed permissions on the 16 migrated handlers (`platform.session.create` → `platform.session.write`, `platform.token.issue` → `platform.token.write`). 14 tests covering fresh install, upgrade migration, and idempotency.
+- **Phase 2 (authz wildcard)**: `tierCovers` gains 3-line namespace-wildcard rule. 31 tests covering all 9 wildcard outcomes plus regression for existing exact-match and tier-hierarchy behavior.
+- **Phase 3 (9 new handlers)**: 6 `plugin.*` handlers wrapping `pluginManager` (with proper INVALID_REQUEST validation); 3 `system.*` handlers kernel-direct (read `AGENTIDE_VERSION` env). 14 tests covering all 9 handlers plus authz, scope checks, and env fallback. Also: `SESSION_LESS_CAPABILITIES` updated to match GRILL Q3.
+- **Phase 4 (CLI filters)**: `runCapability` in `packages/agentide/src/cli.ts` gains `--owner` and `--tier` flags. Pure client-side filter on `registry.list()` + `describe()` per cap (N+1 trade-off documented; add perf comment per user feedback). 6 new CLI tests.
+- **Phase 5 (final validation)**: 307/307 tests pass (was 242). Lint 0 errors (4 pre-existing warnings in plugin-manager tests). Typecheck clean. Build clean. `grep registerGatewayCapabilities packages/gateway-core/src` returns 0. `grep platform.session.create|platform.token.issue packages/gateway-core/src` returns 0.
 
-The integration test exercises the full lifecycle — `init` writes the secret and prints a JWT, `status` reads it back, `tenant create` and `token issue` operate on top, `capability list` shows the registered cards, and a second `status` confirms state survives a process restart. There's also a JWT round-trip test that decodes the base64 secret off disk and verifies a freshly-minted token against `verifyToken`, plus an idempotency test that runs `init` twice and confirms tenant count stays at one.
+Doc pack shipped: PRD (142 lines), TRD (386 lines after cleanup), FLOW (292 lines), IMPL (326 lines), GRILL (395 lines). Total 1541 lines. Cross-doc consistency verified at the 5a stability check.
 
-The Meta shipped as commit `7aecef1`, the backlog mark-up as `7e2d998`. `scripts/backlog/gateway-core.js` now reads `status: "shipped"` with full `what` / `impl` / `notes` fields, and the HTML graph's sequencing notes picked up a Tier 2 progress line. The HTML assembler auto-loads the per-slug files, so the graph will paint gateway-core green the next time someone opens it.
+## Key Decisions Made Mid-Implementation
+
+- **DOWNGRADE is broken** (Q-1 in PRD/TRD): the registry's `register` is forward-only. A downgrade to a pre-BI[6] `registerGatewayCapabilities` would re-register `session.create@1.0.0` under `owner="gateway"`, but the global store still has it under `owner="session-manager"` — the cross-owner collision throws. The new package is forward-only. A downgrade requires a manual `agentide capability reset` step (out of scope for v1). Documented in TRD §4.2 and the IMPL Phase 5 rollout notes.
+- **`buildHash: null` is intentional** (Q-2): the v1 `system.version` returns `{version: <semver>, buildHash: null}`. The null is reserved for v2 when CI ships signed builds.
+- **`--owner` is exact match** (Q-3): no partial matching (`--owner plugin` would NOT match `plugin-manager`). v1 decision; partial match is a v2 enhancement.
+- **CLI filter perf**: N+1 walk accepted for v1's ~30 caps. Future enhancement: `registry.listByOwner(owner)` helper. Documented in TRD §2.3.
 
 ## What We Found
 
-The kernel hardening landed the high-priority review gaps cleanly. The JWT verification in `auth.ts` is now the source of truth for caller identity — adapters can pass a `caller` for convenience, but the kernel overrides it with verified claims and rejects any disagreement. That closes the dangerous Gap 4 from `.reports/2026-07-28T04-10-00Z-gateway-core-feature-pipeline-review.md` (tenant isolation in dispatch): a tenant's caller can no longer be told apart from a tenant's data. The audit `tenantId` field closes Gap 8. The `ERROR_CODES` usage in `handle-invocation.ts` closes Gap 5. The 0600 secret mode and append-only audit writeFile close the implicit write-permission gap in the audit seam.
+A few things shifted during implementation:
 
-A couple of surprises during Phase 7. First: the IMPL's Phase 7 said `createPlatform(config)` would wire a default MCP adapter, but `BI[9]` (mcp-adapter) is a separate pack that depends on `BI[5]`. So the meta-package ships **without** a default adapter — kernel-first, per PHILOSOPHY — and `BI[9]` is the next pack to start. We noted this in the backlog entry but didn't add a new BI item; the meta-package is scoped inside gateway-core per the IMPL §Scope header. Second: the `scripts/backlog/` directory lives outside `agentide/.git`, in the workspace parent. The HTML graph references it via a relative path, but there's no workspace-level git, so the `gateway-core.js` status update is committed-on-paper only. Anyone syncing the HTML from a fresh checkout would see Tier 2 still grey. The drift log entry for this lives implicitly in the handoff — the next session should either git-init the workspace or move `scripts/backlog/` under `agentide/`.
-
-One file-level smell worth flagging: `packages/gateway-core/src/handle-invocation.ts` is now 336 lines, just under the 350-line cap from AGENTS.md. The next phase that touches it should split it into `pipeline.ts` (the linear flow) + `audit-on-exit.ts` (the `auditOk` / `auditError` / `exitWithError` helpers). Drift: `D-1` (session-manager contract drift, medium) remains open and unrelated; we did not open a new drift entry because the refactor resolved its own gaps without surfacing new ones.
+- The `pnpm install` issue with the new package was the trickiest non-design problem. The existing `package-lock.json` is an npm lockfile; the workspaces format is npm. pnpm 11 prints a warning but doesn't reconcile. The fix is `npm install` instead of `pnpm install`. The build script (`npm run build --workspaces --if-present`) still works. The next session should use `npm install` for any new package additions.
+- The `docs/gateway-core` symlink at the agentide root (`docs/gateway-core -> features/gateway-core`) is benign but untracked. Created during a previous session. Not introduced by BI[6].
+- The `SESSION_LESS_CAPABILITIES` update was technically out of scope for BI[6] (it changed the session-required-or-not decision for capabilities that didn't exist before). But without it, the new `plugin.list` and `system.*` caps would have been unreachable by MCP agents. Captured in the implementations notes.
 
 ## How to Continue
 
-The next pack is `mcp-adapter` (BI[9]). Its docs are partly co-located in `docs/features/gateway-core/` (IMPL §Phase 6, TRD §2.3 mapping table) but it's a separate backlog item and a separate IMPL. Run `feature-pipeline` first if you want a fresh doc pack for it; otherwise the existing IMPL §Phase 6 has the protocol mapping. The `verifyToken` and `issueToken` exports from `@platform/gateway-core` are now stable seams — the adapter will mint no tokens itself, only call `gateway.handleInvocation({ token, capability, input, sessionId? })` for each `tools/call`.
+The next pack is BI[7] `permission-tiering`. Its docs are not yet drafted. The CLI already filters by tier (read/write), but the actual scope convention enforcement platform-wide is BI[7]'s scope. Run `feature-pipeline` from Phase 0.
 
-The session-handoff for this session is `agentide/sessions/.last-handoff` (overwritten from a previous gateway-core pack handoff). The breadcrumb trail is `agentide/sessions/.handoff-log.md`. The drift log is at `agentide/docs/drift.md`. To pick up the MCP adapter: `cd agentide && pnpm run test` first to confirm baseline green (should be 242/242), then create `packages/adapter-mcp/` and follow the IMPL §Phase 6 mapping table.
+The session-handoff for this session is overwritten from the previous BI[6]-grill-only handoff. The breadcrumb trail is `agentide/sessions/.handoff-log.md`. The drift log is at `agentide/docs/drift.md` (D-1 still open and unrelated to BI[6]).
 
-Skill load order for the next session: `caveman`, `log-prompt`, `situation-awareness` (reads `.last-handoff` directly), `feature-pipeline` (if you want a clean PRD/TRD/FLOW/IMPL for BI[9]), then `execute-pack` again. The CLI has been smoke-tested against an in-memory filesystem and an installed Docker, but `install.sh`'s binary-download branch has not been exercised against a real release URL — operators using the binary path will need a published artifact first.
+To pick up BI[7]: `cd agentide && npm install` first to confirm deps, then `npm run test` (307/307 should pass), then create `docs/features/permission-tiering/` and start the grill.
 
-Commit history this session: `a875867` (kernel hardening) → `7aecef1` (meta-package) → `7e2d998` (backlog mark-up). All three on `feature/gateway-core`, ready to ship as a PR.
+Skill load order for the next session: `caveman`, `log-prompt`, `situation-awareness` (reads `.last-handoff` directly), `feature-pipeline` (Phase 0 grill).
+
+## Commit history this session
+
+No commits yet — this session ended at the handoff write. The user has not asked for a commit. The branch is `feature/platform-capabilities` with 11 modified files and 8 untracked files (the new package and 3 docs). All 307 tests pass; lint and build are clean.
+
+**Files modified/untracked in the working tree:**
+- `packages/platform-capabilities/` (new package, 5 files)
+- `packages/gateway-core/src/authz.ts` (wildcard fix)
+- `packages/gateway-core/src/factory.ts` (handler removal + 9 new handlers)
+- `packages/gateway-core/src/handle-invocation.ts` (session-less set update)
+- `packages/gateway-core/src/__tests__/authz.test.ts` (new, 31 tests)
+- `packages/gateway-core/src/__tests__/plugin-system-handlers.test.ts` (new, 14 tests)
+- `packages/gateway-core/src/__tests__/handle-invocation.test.ts` (permission rename on line 178)
+- `packages/agentide/src/cli.ts` (--owner, --tier flags)
+- `packages/agentide/src/__tests__/cli.test.ts` (6 new CLI tests)
+- `packages/gateway-core/package.json` (new dep)
+- `packages/gateway-core/tsconfig.json` (new ref)
+- `tsconfig.json` (new ref at top)
+- `docs/features/platform-capabilities/{TRD,FLOW,IMPL}-platform-capabilities.md` (3 new docs)
+- `docs/CONTEXT.md` (decision log entry)
+- `docs/Feature_Backlog.md` (BI[6] status — note: the backlog script lives at `../../scripts/backlog/` not in this repo)
+- `scripts/backlog/platform-capabilities.js` (new — backlog data file)
+- `package-lock.json` (modified by `npm install` symlink resolution)

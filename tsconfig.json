@@ -3,6 +3,9 @@
   "files": [],
   "references": [
     {
+      "path": "packages/platform-capabilities"
+    },
+    {
       "path": "packages/event-bus"
     },
     {

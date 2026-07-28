@@ -43,6 +43,9 @@ function rank(scope: string): number | null {
 // CID:authz-001 - checkAuthz
 // Purpose: tier-hierarchy permission check (Q4 decision)
 //   Wildcard: a scope of "*" covers every required permission (bootstrap operator token).
+//   Namespace wildcard: a scope of "platform.*.<tier>" covers every read/write cap in the platform
+//     namespace (e.g. "platform.*.read" covers "platform.session.read", "platform.tenant.read", etc.)
+//     The wildcard does NOT cross kind (platform.*.read does NOT cover runtime.*.read).
 //   Runtime caps: read < act < destructive (higher covers lower); namespace-scoped.
 //   Platform caps: read < write (higher covers lower); namespace-scoped (the "namespace" for platform
 //     is the next segment, e.g., "plugin" in "platform.plugin.write"; "platform.plugin.write" does NOT
@@ -80,6 +83,11 @@ function tierCovers(grantedScope: string, requiredScope: string): boolean {
   if (grantedParts.length < 2 || requiredParts.length < 2) return false;
   // Same kind (runtime vs platform) — first segment must match.
   if (grantedParts[0] !== requiredParts[0]) return false;
+  // Namespace wildcard: grantedParts[1] === "*" matches any required namespace.
+  // This is what makes "platform.*.read" cover "platform.session.read", "platform.tenant.read", etc.
+  if (grantedParts[1] === "*") {
+    return gr >= req;
+  }
   // For both runtime and platform, scope the comparison to (kind, namespace):
   //   runtime: kind="runtime", namespace=parts[1], tier=last
   //   platform: kind="platform", namespace=parts[1], tier=last  (e.g., "platform.plugin.write" → ns="plugin", tier="write")

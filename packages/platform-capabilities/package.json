@@ -1,8 +1,8 @@
 {
-  "name": "@platform/gateway-core",
+  "name": "@platform/platform-capabilities",
   "version": "0.0.0",
   "private": true,
-  "description": "In-process control-plane component that authenticates callers, authorizes capability invocations, manages sessions, dispatches to capability handlers, audits every invocation, applies rate limits, and enforces tenant isolation.",
+  "description": "Single source of truth for all 25 platform-capability registrations (16 migrated from gateway-core + 9 new). Pure registration seam — no handlers, no state.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,11 +21,7 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/capability-registry": "0.0.0",
-    "@platform/event-bus": "0.0.0",
-    "@platform/platform-capabilities": "0.0.0",
-    "@platform/plugin-manager": "0.0.0",
-    "@platform/session-manager": "0.0.0"
+    "@platform/capability-registry": "0.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
