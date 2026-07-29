@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BI[8b) gateway-sdk-dispatch — pre-impl simulation</title>
+<style>
+  :root {
+    --bg: #0f1419; --bg-elevated: #1a1f2e; --card: #232938; --border: #2d3344;
+    --fg: #e6e6e6; --muted: #8b95a7; --accent: #6ee7b7; --accent-dim: #34d399;
+    --warn: #fbbf24; --error: #f87171; --info: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, system-ui, sans-serif; font-size: 13px; }
+  body { display: flex; flex-direction: column; }
+  header { padding: 10px 16px; background: var(--bg-elevated); border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+  header .sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .panel h2 { margin: 0 0 8px 0; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em; }
+  .section { margin-bottom: 12px; }
+  .row { display: flex; gap: 6px; align-items: center; padding: 4px 6px; background: var(--card);
+    border-radius: 3px; margin-bottom: 3px; font-size: 11px; font-family: ui-monospace, monospace; }
+  .row .id { color: var(--accent); }
+  .row .app { color: var(--info); }
+  .row .status { margin-left: auto; padding: 1px 6px; border-radius: 2px; font-size: 9px; }
+  .row .status.ok { background: var(--accent-dim); color: var(--bg); }
+  .row .status.err { background: var(--error); color: var(--bg); }
+  .empty { color: var(--muted); font-style: italic; padding: 4px; font-size: 11px; }
+  textarea, input[type=text] {
+    background: var(--bg); border: 1px solid var(--border); color: var(--fg);
+    font-family: ui-monospace, monospace; font-size: 11px; padding: 6px;
+    border-radius: 3px; width: 100%; resize: vertical;
+  }
+  textarea { min-height: 80px; }
+  button {
+    background: var(--accent); color: var(--bg); border: none; padding: 6px 12px;
+    border-radius: 3px; font-weight: 600; cursor: pointer; font-size: 11px;
+  }
+  button:hover { background: var(--accent-dim); }
+  button.secondary { background: var(--card); color: var(--fg); border: 1px solid var(--border); }
+  .trace { flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 6px; font-family: ui-monospace, monospace; font-size: 10px; min-height: 0; }
+  .hop { padding: 4px 6px; margin-bottom: 4px; border-radius: 3px; border-left: 3px solid var(--border); }
+  .hop.mcp { border-left-color: var(--info); }
+  .hop.adapter { border-left-color: var(--warn); }
+  .hop.dispatch { border-left-color: var(--accent); }
+  .hop.runtime { border-left-color: var(--accent-dim); }
+  .hop.sdk { border-left-color: var(--error); }
+  .hop .label { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+  .hop .payload { color: var(--fg); white-space: pre-wrap; word-break: break-all; margin-top: 3px; }
+  .hop.ok { background: rgba(110, 231, 183, 0.08); }
+  .hop.err { background: rgba(248, 113, 113, 0.08); border-left-color: var(--error); }
+  .hop.err .label { color: var(--error); }
+  .controls { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .controls button { padding: 4px 8px; font-size: 10px; }
+  .hint { color: var(--muted); font-size: 10px; margin-top: 4px; font-style: italic; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BI[8b) gateway-sdk-dispatch — pre-impl simulation</h1>
+  <div class="sub">Design-time demo. No code exists yet. Hardcoded state. Goal: surface issues the GRILL missed.</div>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Backend Runtime state (mock)</h2>
+
+    <div class="section">
+      <div><b>WebSocket connections</b> <span id="conn-count" style="color:var(--muted);">(0)</span></div>
+      <div id="conn-list"></div>
+    </div>
+
+    <div class="section">
+      <div><b>Capability Registry — business.* entries</b></div>
+      <div id="cap-list"></div>
+    </div>
+
+    <div class="section">
+      <div><b>SDK app inventory (mock)</b></div>
+      <div class="hint">Pre-loaded with one app: customer-app (3 handlers). Click "Connect new SDK" to attach.</div>
+      <div id="sdk-list"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>MCP client terminal (mock — also pre-impl)</h2>
+    <div class="hint">Type JSON-RPC 2.0 messages. The mock MCP adapter routes them through gateway.handleInvocation → dispatch → Backend Runtime → SDK wire protocol.</div>
+
+    <textarea id="req" placeholder='{"jsonrpc":"2.0","id":1,"method":"tools/list"}'>{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"customer.read","arguments":{"id":"c-042"}}}</textarea>
+
+    <div class="controls">
+      <button onclick="send('tools/list')">Send tools/list</button>
+      <button onclick="send('tools/call', {name:'customer.read', arguments:{id:'c-042'}})">Send tools/call customer.read</button>
+      <button onclick="send('tools/call', {name:'customer.delete', arguments:{id:'c-042'}})">Send tools/call customer.delete</button>
+      <button onclick="send('tools/call', {name:'customer.refund', arguments:{}})">Send tools/call customer.refund (not registered)</button>
+      <button onclick="send('prompts/list')">Send prompts/list (should -32601)</button>
+      <button class="secondary" onclick="reset()">Reset state</button>
+    </div>
+
+    <div class="hint">Trace shows every hop: MCP wire → MCP adapter → canonical invocation → dispatch → Backend Runtime → SDK wire → handler.</div>
+    <div class="trace" id="trace"></div>
+  </div>
+</main>
+
+<script>
+// ============================================================
+// BI[8b) PRE-IMPL SIMULATION
+// ============================================================
+// This is a DESIGN-TIME tool. No code exists. Every "hop" is
+// a hardcoded mock that demonstrates the contract shape the
+// implementation will need to satisfy.
+//
+// Goal: surface design issues the GRILL missed. Run scenarios
+// and watch how the state changes. If anything looks wrong,
+// that's feedback for the PRD-TRD.
+// ============================================================
+
+// Mock SDK app: customer-app with 3 handlers
+const mockApp = {
+  appId: 'customer-app',
+  handlers: {
+    'customer.read': async (input) => ({ id: input.id, name: `Customer ${input.id}`, email: `${input.id}@example.com` }),
+    'customer.delete': async (input) => ({ deleted: true, id: input.id, at: Date.now() }),
+    'customer.list': async () => ([{id:'c-001'},{id:'c-002'},{id:'c-042'}]),
+  },
+};
+
+let connId = 0;
+const connections = [];
+const caps = [];
+const trace = [];
+
+function uid() { return 'c' + (++connId); }
+
+function render() {
+  document.getElementById('conn-count').textContent = `(${connections.length})`;
+  const cl = document.getElementById('conn-list');
+  cl.innerHTML = connections.length === 0
+    ? '<div class="empty">no SDKs connected</div>'
+    : connections.map(c => `<div class="row"><span class="id">${c.id}</span> appId=<span class="app">${c.appId}</span><span class="status ok">${c.status}</span></div>`).join('');
+
+  const capl = document.getElementById('cap-list');
+  capl.innerHTML = caps.length === 0
+    ? '<div class="empty">no business caps registered</div>'
+    : caps.map(c => `<div class="row"><span class="id">${c.name}</span> owner=<span class="app">${c.owner}</span> tier=${c.tier ?? 'null'}</div>`).join('');
+
+  const sdkl = document.getElementById('sdk-list');
+  sdkl.innerHTML = `<div class="row"><span class="id">${mockApp.appId}</span><span style="color:var(--muted)">${Object.keys(mockApp.handlers).length} handlers</span></div>`;
+
+  const t = document.getElementById('trace');
+  t.innerHTML = trace.map(h => {
+    const status = h.ok ? 'ok' : 'err';
+    const code = h.ok ? '' : ` [${h.code ?? 'ERR'}]`;
+    return `<div class="hop ${h.stage} ${status}"><div class="label">${h.stage}${code}</div><div class="payload">${escapeHtml(JSON.stringify(h.payload, null, 2))}</div></div>`;
+  }).join('');
+  t.scrollTop = t.scrollHeight;
+}
+
+function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function hop(stage, payload, opts = {}) {
+  trace.push({ stage, payload, ok: opts.ok !== false, code: opts.code });
+  render();
+}
+
+async function connectSdk() {
+  const id = uid();
+  hop('runtime', { event: 'ws.open', connectionId: id });
+
+  // Step 1: SDK sends sdk.auth
+  const auth = { type: 'sdk.auth', token: 'mock-jwt-<customer-app>' };
+  hop('sdk', { wire: 'OUT', msg: auth });
+  hop('runtime', { event: 'jwt.verify', ok: true, appId: mockApp.appId });
+
+  // Step 2: SDK sends sdk.capability.register for each handler
+  const newCaps = [];
+  for (const [name, fn] of Object.entries(mockApp.handlers)) {
+    const reg = { type: 'sdk.capability.register', name, description: `${name} handler`, version: '1.0.0', permissions: 'customer.read,customer.write', tier: '' };
+    hop('sdk', { wire: 'OUT', msg: reg });
+    const cap = { name, owner: `backend-sdk-${mockApp.appId}`, tier: null };
+    newCaps.push(cap);
+    caps.push(cap);
+    hop('runtime', { event: 'registry.register', cap, replacesPrevious: caps.filter(c => c.name === name).length > 1 });
+  }
+
+  hop('runtime', { event: 'bus.publish', topic: 'sdk.connection.accepted', payload: { appId: mockApp.appId, latencyMs: 12 } });
+  connections.push({ id, appId: mockApp.appId, status: 'connected' });
+  render();
+  return id;
+}
+
+async function disconnectSdk() {
+  if (connections.length === 0) return;
+  const conn = connections.pop();
+  hop('runtime', { event: 'ws.close', connectionId: conn.id, reason: 'explicit' });
+  hop('runtime', { event: 'registry.unregister', owner: `backend-sdk-${conn.appId}` });
+  // Remove that owner's caps
+  for (let i = caps.length - 1; i >= 0; i--) {
+    if (caps[i].owner === `backend-sdk-${conn.appId}`) caps.splice(i, 1);
+  }
+  hop('runtime', { event: 'bus.publish', topic: 'sdk.connection.closed', payload: { appId: conn.appId, reason: 'explicit' } });
+  render();
+}
+
+// Wire protocol: gateway → SDK over WebSocket
+async function invokeOverWire(connId, callId, name, input, sessionId) {
+  hop('runtime', { event: 'ws.send', connectionId: connId, msg: { type: 'sdk.invoke', callId, name, input, sessionId } });
+  // Simulate handler latency
+  await new Promise(r => setTimeout(r, 50));
+  const handler = mockApp.handlers[name];
+  if (!handler) {
+    hop('sdk', { wire: 'IN', msg: { type: 'sdk.invoke.error', callId, code: 'HANDLER_NOT_FOUND', message: `no handler for '${name}'` } });
+    return { ok: false, code: 'GATEWAY_CAPABILITY_NOT_FOUND' };
+  }
+  try {
+    const output = await handler(input);
+    hop('sdk', { wire: 'IN', msg: { type: 'sdk.invoke.result', callId, payload: output } });
+    return { ok: true, output };
+  } catch (err) {
+    hop('sdk', { wire: 'IN', msg: { type: 'sdk.invoke.error', callId, code: 'HANDLER_ERROR', message: err.message } });
+    return { ok: false, code: 'GATEWAY_INTERNAL_ERROR' };
+  }
+}
+
+async function dispatchBusiness(capability, input, sessionId) {
+  // Find the connection owning this cap
+  const cap = caps.find(c => c.name === capability);
+  if (!cap) return { ok: false, code: 'GATEWAY_CAPABILITY_NOT_FOUND' };
+  const conn = connections.find(c => c.appId === cap.owner.slice('backend-sdk-'.length));
+  if (!conn) return { ok: false, code: 'GATEWAY_SDK_UNREACHABLE' };
+  hop('dispatch', { stage: 'route-by-owner', owner: cap.owner, capability });
+  const callId = 'call-' + Math.random().toString(36).slice(2, 10);
+  return await invokeOverWire(conn.id, callId, capability, input, sessionId);
+}
+
+// MCP adapter: parse JSON-RPC, translate to canonical invocation
+async function mcpAdapterTranslate(req) {
+  const { id, method, params } = req;
+  if (method === 'tools/list') {
+    hop('adapter', { translate: 'tools/list → capability.list', ok: true });
+    // For demo: simulate successful capability.list filter — all SDK caps visible to bootstrap
+    const tools = caps.map(c => ({ name: c.name, description: `${c.name} (mock)`, inputSchema: { type: 'object' } }));
+    return { jsonrpc: '2.0', id, result: { tools } };
+  }
+  if (method === 'tools/call') {
+    const { name, arguments: args } = params ?? {};
+    hop('adapter', { translate: `tools/call → handleInvocation({capability: {name: "${name}"}, input: ${JSON.stringify(args)}})` });
+    const result = await dispatchBusiness(name, args ?? {}, 'sess-mock');
+    if (result.ok) {
+      return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(result.output) }], structuredContent: result.output } };
+    }
+    // Error code mapping per PRD-gateway-core.md:213
+    const codeMap = {
+      'GATEWAY_CAPABILITY_NOT_FOUND': -32001,
+      'GATEWAY_INSUFFICIENT_SCOPE': -32002,
+      'GATEWAY_RATE_LIMIT_EXCEEDED': -32003,
+      'GATEWAY_PLUGIN_DISABLED': -32004,
+      'GATEWAY_SDK_UNREACHABLE': -32005,
+      'GATEWAY_INTERNAL_ERROR': -32006,
+      'GATEWAY_HANDLER_TIMEOUT': -32007,
+    };
+    return { jsonrpc: '2.0', id, error: { code: codeMap[result.code] ?? -32603, message: result.code } };
+  }
+  // Per MCP spec: -32601 method not found
+  return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } };
+}
+
+async function send(method, params) {
+  const req = { jsonrpc: '2.0', id: Math.floor(Math.random() * 1000), method, params };
+  document.getElementById('req').value = JSON.stringify(req, null, 2);
+  hop('mcp', { wire: 'OUT', msg: req });
+  const res = await mcpAdapterTranslate(req);
+  hop('mcp', { wire: 'IN', msg: res });
+}
+
+function reset() {
+  connections.length = 0; caps.length = 0; trace.length = 0;
+  render();
+}
+
+// Auto-connect the mock SDK on load so the first scenarios work
+(async () => {
+  await connectSdk();
+  document.getElementById('hint-auto') && (document.getElementById('hint-auto').textContent = 'SDK auto-connected on load.');
+})();
+</script>
+
+</body>
+</html>

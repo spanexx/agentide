@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BI[9] mcp-adapter — pre-impl simulation</title>
+<style>
+  :root {
+    --bg: #0f1419; --bg-elevated: #1a1f2e; --card: #232938; --border: #2d3344;
+    --fg: #e6e6e6; --muted: #8b95a7; --accent: #6ee7b7; --accent-dim: #34d399;
+    --warn: #fbbf24; --error: #f87171; --info: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, system-ui, sans-serif; font-size: 13px; }
+  body { display: flex; flex-direction: column; }
+  header { padding: 10px 16px; background: var(--bg-elevated); border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+  header .sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .panel h2 { margin: 0 0 8px 0; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em; }
+  textarea, input[type=text] {
+    background: var(--bg); border: 1px solid var(--border); color: var(--fg);
+    font-family: ui-monospace, monospace; font-size: 11px; padding: 6px;
+    border-radius: 3px; width: 100%; resize: vertical;
+  }
+  textarea { min-height: 70px; }
+  button {
+    background: var(--accent); color: var(--bg); border: none; padding: 5px 10px;
+    border-radius: 3px; font-weight: 600; cursor: pointer; font-size: 10px;
+  }
+  button:hover { background: var(--accent-dim); }
+  button.secondary { background: var(--card); color: var(--fg); border: 1px solid var(--border); }
+  .controls { display: flex; gap: 5px; margin: 8px 0; flex-wrap: wrap; }
+  .out { flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 6px; font-family: ui-monospace, monospace; font-size: 10px;
+    min-height: 0; white-space: pre-wrap; word-break: break-all; }
+  .out .ok { color: var(--accent); }
+  .out .err { color: var(--error); }
+  .out .label { color: var(--muted); }
+  table { width: 100%; font-size: 10px; border-collapse: collapse; margin-top: 6px; }
+  th, td { padding: 3px 6px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; text-transform: uppercase; }
+  td.code { color: var(--accent); font-family: ui-monospace, monospace; }
+  .hint { color: var(--muted); font-size: 10px; margin-top: 4px; font-style: italic; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BI[9] mcp-adapter — pre-impl simulation (focused: MCP protocol)</h1>
+  <div class="sub">Design-time. No code exists. Mock adapter with 25 platform caps + 3 mock SDK caps. Demonstrates the JSON-RPC ↔ canonical invocation translation.</div>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>MCP wire (client ↔ adapter, port 7100)</h2>
+
+    <textarea id="req" placeholder='{"jsonrpc":"2.0","id":1,"method":"tools/list"}'>{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"customer.read","arguments":{"id":"c-042"}},"_meta":{"io.modelcontextprotocol/protocolVersion":"2025-11-25","io.modelcontextprotocol/clientCapabilities":{"tools":{}},"dev.agentide/sessionId":"sess-001"}}}</textarea>
+
+    <div class="controls">
+      <button onclick="req('tools/list')">tools/list (no _meta)</button>
+      <button onclick="req('tools/list', {_meta:{'io.modelcontextprotocol/protocolVersion':'2025-11-25','io.modelcontextprotocol/clientCapabilities':{tools:{}}}})">tools/list (with _meta)</button>
+      <button onclick="req('tools/call', {name:'customer.read', arguments:{id:'c-042'}, _meta:{'io.modelcontextprotocol/protocolVersion':'2025-11-25','io.modelcontextprotocol/clientCapabilities':{tools:{}},'dev.agentide/sessionId':'sess-001'}})">tools/call customer.read</button>
+      <button onclick="req('tools/call', {name:'customer.delete', arguments:{id:'c-042'}, _meta:{'io.modelcontextprotocol/protocolVersion':'2025-11-25','io.modelcontextprotocol/clientCapabilities':{tools:{}}}})">tools/call customer.delete</button>
+      <button onclick="req('tools/call', {name:'customer.refund', arguments:{}, _meta:{'io.modelcontextprotocol/protocolVersion':'2025-11-25','io.modelcontextprotocol/clientCapabilities':{tools:{}}}})">tools/call customer.refund (not registered)</button>
+      <button onclick="req('prompts/list', {_meta:{'io.modelcontextprotocol/protocolVersion':'2025-11-25','io.modelcontextprotocol/clientCapabilities':{tools:{}}}})">prompts/list (with _meta, should -32601)</button>
+      <button onclick="req('resources/list', {_meta:{'io.modelcontextprotocol/protocolVersion':'2025-11-25','io.modelcontextprotocol/clientCapabilities':{tools:{}}}})">resources/list (with _meta, should -32601)</button>
+      <button onclick="req('tools/call', {name:'customer.read', arguments:{id:'c-042'}})">tools/call WITHOUT _meta (missing protocolVersion → -32602)</button>
+      <button class="secondary" onclick="clearOut()">clear</button>
+    </div>
+
+    <div class="hint">MCP wire response (JSON-RPC envelope)</div>
+    <div class="out" id="out"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Canonical invocation (what the adapter sends to gateway.handleInvocation)</h2>
+
+    <div class="hint">Token extracted from <code>Authorization: Bearer &lt;jwt&gt;</code> (simulated as 'mock-jwt'). For tools/list, capability name is <code>capability.list</code>. For tools/call, capability name = <code>params.name</code>.</div>
+
+    <div class="out" id="canonical"></div>
+
+    <h2 style="margin-top:12px">Error code mapping (PRD-gateway-core.md:213)</h2>
+    <table>
+      <thead><tr><th>Gateway error</th><th>JSON-RPC code</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>GATEWAY_CAPABILITY_NOT_FOUND</td><td class="code">-32001</td><td>cap not in registry</td></tr>
+        <tr><td>GATEWAY_INSUFFICIENT_SCOPE</td><td class="code">-32002</td><td>tier check failed</td></tr>
+        <tr><td>GATEWAY_RATE_LIMIT_EXCEEDED</td><td class="code">-32003</td><td>token bucket empty</td></tr>
+        <tr><td>GATEWAY_PLUGIN_DISABLED</td><td class="code">-32004</td><td>runtime plugin paused</td></tr>
+        <tr><td>GATEWAY_SDK_UNREACHABLE</td><td class="code">-32005</td><td>no SDK connection for owner</td></tr>
+        <tr><td>GATEWAY_INTERNAL_ERROR</td><td class="code">-32006</td><td>handler threw</td></tr>
+        <tr><td>GATEWAY_HANDLER_TIMEOUT</td><td class="code">-32007</td><td>handler exceeded timeoutMs</td></tr>
+        <tr><td>missing protocolVersion in _meta</td><td class="code">-32602</td><td>JSON-RPC invalid params</td></tr>
+        <tr><td>unknown method (e.g. prompts/*)</td><td class="code">-32601</td><td>JSON-RPC method not found</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+// ============================================================
+// BI[9) MCP-ADAPTER — PRE-IMPL SIMULATION (focused)
+// ============================================================
+// This is a DESIGN-TIME tool. No code exists. The mock
+// adapter here demonstrates the JSON-RPC ↔ canonical
+// invocation translation that the real adapter must perform.
+// ============================================================
+
+// Mock catalog: 25 platform caps + 3 SDK caps
+const catalog = [
+  { name: 'tenant.list', tier: 'read', owner: 'gateway', permissions: ['platform.tenant.read'] },
+  { name: 'tenant.create', tier: 'write', owner: 'gateway', permissions: ['platform.tenant.write'] },
+  { name: 'session.create', tier: 'write', owner: 'session-manager', permissions: ['platform.session.write'] },
+  { name: 'plugin.list', tier: 'read', owner: 'plugin-manager', permissions: ['platform.plugin.read'] },
+  { name: 'plugin.install', tier: 'write', owner: 'plugin-manager', permissions: ['platform.plugin.write'] },
+  { name: 'capability.list', tier: 'read', owner: 'capability-registry', permissions: ['platform.capability.read'] },
+  { name: 'system.info', tier: 'read', owner: 'gateway', permissions: ['platform.system.read'] },
+  // SDK caps (business type, owner: backend-sdk-customer-app)
+  { name: 'customer.read', tier: null, owner: 'backend-sdk-customer-app', permissions: ['customer.read'] },
+  { name: 'customer.delete', tier: null, owner: 'backend-sdk-customer-app', permissions: ['customer.write'] },
+  { name: 'customer.list', tier: null, owner: 'backend-sdk-customer-app', permissions: ['customer.read'] },
+];
+
+const mockHandlers = {
+  'customer.read': (input) => ({ id: input.id, name: `Customer ${input.id}`, email: `${input.id}@example.com` }),
+  'customer.delete': (input) => ({ deleted: true, id: input.id, at: Date.now() }),
+  'customer.list': () => ([{id:'c-001'},{id:'c-002'},{id:'c-042'}]),
+};
+
+const errorMap = {
+  'GATEWAY_CAPABILITY_NOT_FOUND': -32001,
+  'GATEWAY_INSUFFICIENT_SCOPE': -32002,
+  'GATEWAY_RATE_LIMIT_EXCEEDED': -32003,
+  'GATEWAY_PLUGIN_DISABLED': -32004,
+  'GATEWAY_SDK_UNREACHABLE': -32005,
+  'GATEWAY_INTERNAL_ERROR': -32006,
+  'GATEWAY_HANDLER_TIMEOUT': -32007,
+};
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function log(prefix, payload, cls = '') {
+  const out = document.getElementById('out');
+  out.innerHTML += `<div class="${cls}"><span class="label">${prefix}</span>\n${esc(JSON.stringify(payload, null, 2))}</div>\n`;
+  out.scrollTop = out.scrollHeight;
+}
+
+function renderCanonical(req, capability, input, sessionId, token) {
+  const canonical = {
+    token: token || 'mock-jwt-<caller>',
+    capability: { name: capability },
+    input,
+    sessionId,
+  };
+  const c = document.getElementById('canonical');
+  c.innerHTML = `<span class="label">→ gateway.handleInvocation(req)</span>\n${esc(JSON.stringify(canonical, null, 2))}`;
+}
+
+async function translateMcp(req) {
+  // _meta validation per MCP spec
+  const meta = req.params?._meta ?? {};
+  const proto = meta['io.modelcontextprotocol/protocolVersion'];
+  const caps = meta['io.modelcontextprotocol/clientCapabilities'];
+  const sessionId = meta['dev.agentide/sessionId'];
+  if (!proto || !caps) {
+    return { ok: false, response: { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: 'Missing required _meta.io.modelcontextprotocol/protocolVersion or clientCapabilities' } } };
+  }
+
+  // Bearer token (would be extracted from Authorization header in real adapter)
+  const token = 'mock-jwt-bootstrap';
+
+  if (req.method === 'tools/list') {
+    const tools = catalog.map(c => ({
+      name: c.name,
+      description: `${c.name} capability`,
+      inputSchema: { type: 'object' },
+      annotations: { tier: c.tier },
+    }));
+    renderCanonical(req, 'capability.list', {}, sessionId, token);
+    return { ok: true, response: { jsonrpc: '2.0', id: req.id, result: { tools } } };
+  }
+
+  if (req.method === 'tools/call') {
+    const { name, arguments: args } = req.params ?? {};
+    renderCanonical(req, name, args ?? {}, sessionId, token);
+    const cap = catalog.find(c => c.name === name);
+    if (!cap) {
+      return { ok: false, response: { jsonrpc: '2.0', id: req.id, error: { code: -32001, message: `capability '${name}' not found` } } };
+    }
+    // Mock: simulate SDK dispatch for backend-sdk-* owners
+    if (cap.owner.startsWith('backend-sdk-')) {
+      const handler = mockHandlers[name];
+      if (!handler) {
+        return { ok: false, response: { jsonrpc: '2.0', id: req.id, error: { code: -32005, message: 'SDK_UNREACHABLE' } } };
+      }
+      try {
+        const output = handler(args ?? {});
+        return { ok: true, response: { jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: JSON.stringify(output) }], structuredContent: output } } };
+      } catch (err) {
+        return { ok: false, response: { jsonrpc: '2.0', id: req.id, error: { code: -32006, message: err.message } } };
+      }
+    }
+    // Mock: simulate success for platform caps (skipped for brevity)
+    return { ok: true, response: { jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: `mock ${name} ok` }], structuredContent: { mock: true, name } } } };
+  }
+
+  // -32601 for everything else (per MCP Q6 decision)
+  return { ok: false, response: { jsonrpc: '2.0', id: req.id, error: { code: -32601, message: `Method not found: ${req.method}` } } };
+}
+
+async function req(method, params) {
+  const r = { jsonrpc: '2.0', id: Math.floor(Math.random() * 1000), method, params };
+  document.getElementById('req').value = JSON.stringify(r, null, 2);
+  log('MCP→adapter (wire OUT)', r);
+  const result = await translateMcp(r);
+  log(result.ok ? 'MCP←adapter (wire IN, OK)' : 'MCP←adapter (wire IN, ERROR)', result.response, result.ok ? 'ok' : 'err');
+}
+
+function clearOut() {
+  document.getElementById('out').innerHTML = '';
+  document.getElementById('canonical').innerHTML = '';
+}
+</script>
+
+</body>
+</html>

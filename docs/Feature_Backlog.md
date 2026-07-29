@@ -34,18 +34,29 @@ each genuinely blocks the next.
 |---|---|---|---|---|
 | 5 | `gateway-core` | Auth, session creation, capability discovery, routing to a runtime — no execution logic | Tier 1 complete | Agentide → Section 9; Terminology → Control Plane |
 | 6 | `platform-capabilities` | Expose `session.*`, `plugin.*`, `runtime.*`, `gateway.*`, `capability.*`, `system.*` as invocable capabilities with the read/write permission split | `gateway-core` | Platform Capabilities |
-| 7 | `permission-tiering` | Implement the `read`/`act`/`destructive` scope convention platform-wide (not just documented) | `gateway-core`, `platform-capabilities` | Runtime Capabilities → Permissions and Risk Tiers; Goals → Security by Default |
+| 7 | `permission-tiering` | Implement the `read`/`act`/`destructive` scope convention platform-wide (not just documented). **SHIPPED 2026-07-29** — see [`docs/features/permission-tiering/`](features/permission-tiering/) and source in five packages: `packages/capability-registry/src/{types,validate}.ts` (tier field on `CapabilityRecord`/`CapabilityCard`, validateRecord tier rules, deriveTier helper); `packages/plugin-manager/src/{tier-convention,lifecycle-helpers}.ts` (verb lookup + TIER_REQUIRED error); `packages/platform-capabilities/src/caps.ts` (explicit `tier:` on all 25 caps); `packages/gateway-core/src/authz.ts` + `factory.ts:383-399` (tier-hierarchy checkAuthz + tier-aware `capability.list` filter); `packages/agentide/src/cli.ts:213-235` (`--tier` filter and tier column). 394 behaviour tests pass across 37 vitest files (was 383; +11 tier-convention tests); build/lint/typecheck/check-banned-types clean. Drift review verdict "Minor Drift" — 7 gaps all resolved this session (see `docs/drift.md` D-14 through D-27). Unblocks Tier 4 (`browser-runtime` tier-aware authz) and Tier 5 (`dashboard-core` tier badges). | `gateway-core`, `platform-capabilities` | Runtime Capabilities → Permissions and Risk Tiers; Goals → Security by Default |
 
 ## Tier 3 — Getting an application connected
 
 | # | Topic slug | Scope | Depends on | Source doc |
 |---|---|---|---|---|
-| 8 | `sdk-node` | Register Business Capabilities via a Capability Manifest, connect to Gateway, execute handlers, emit lifecycle events. Package: `@platform/sdk-node` (Backend SDK role, Node/TypeScript — first implementation) | `gateway-core`, `capability-registry` | Business Capabilities; Agentide → Section 6, Phase 3 |
+| 8 | `sdk-node` | Register Business Capabilities via a Capability Manifest, connect to Gateway, execute handlers, emit lifecycle events. Package: `@platform/sdk-node` (Backend SDK role, Node/TypeScript — first implementation). **SHIPPED 2026-07-29** — see [`packages/sdk-node/`](../../packages/sdk-node) and [`docs/features/sdk-node/`](features/sdk-node/). 55 behaviour tests pass across 7 vitest files (lifecycle.test.ts covers 30s reconnect backoff cap with ±20% jitter; register.test.ts covers async-rejection via 8th event `sdk.capability.rejected`); build/lint/typecheck/check-banned-types clean. Public surface: `createSdk(config)` → `SdkInstance` with `connect()`, `register()`, `invoke()`, `disconnect()`, `reset()`, `state()`. 8 lifecycle events on the bus (`sdk.connected`, `sdk.disconnected`, `sdk.capability.{registered,unregistered,rejected}`, `sdk.invoke.{started,completed,failed}`). Browser sim at `docs/features/sdk-node/simulate.html` drives the real SDK via a `ws→globalThis.WebSocket` shim and a dropper callback so the reconnect path is observable without a real Gateway. Drift review verdict "Minor Drift" — 5 gaps all resolved this session (see `docs/drift.md` D-2 → D-9). Not yet wired to Gateway dispatch — `gateway-sdk-dispatch` (BI[8b) follows. | `gateway-core`, `capability-registry` | Business Capabilities; Agentide → Section 6, Phase 3 |
 | 9 | `mcp-adapter` | Translate MCP protocol messages into Gateway requests — first way an agent can actually reach a connected app | `gateway-core` | Agentide → Section 8 |
 | 10 | `rest-adapter` | REST adapter for non-MCP integrations | `gateway-core` | Agentide → Section 8 |
 
 *(CLI and WebSocket adapters slot in here too, same dependency — order between the four is
 mostly a priority call, not a technical blocker.)*
+
+## Tier 2.5 — Gateway execution destubbing
+
+**Why this tier exists.** `gateway-core` already implements the kernel pipeline (authn → rate-limit → session check → authz → version resolve → dispatch → audit). The missing work is *not* new connectivity — adapters (#9, #10) and SDKs (#8) are the connectivity layer, and they already cover how the gateway reaches the outside world. The gap is the inverse: the gateway can authenticate a request and route it to a handler, but the two real execution paths inside `dispatch()` are still stubs.
+
+| # | Topic slug | Scope | Depends on | Source doc |
+|---|---|---|---|---|
+| 8a | `gateway-plugin-dispatch` | Replace the `MANAGER_UNAVAILABLE` stub in `packages/gateway-core/src/dispatch.ts` for `owner.startsWith("plugin:")`. Add a `handleInvocation(owner, capability, input)` seam to `@platform/plugin-manager`. Wire the runtime plugin handler registry (currently absent) so that registered runtime plugins can actually serve their declared capabilities end-to-end. | `gateway-core`, `plugin-manager` | Runtime Capabilities → Runtime Registration; BI[6] plugin dispatch gap |
+| 8b | `gateway-sdk-dispatch` | Replace the `SDK_UNREACHABLE` stub for `owner.startsWith("backend-sdk-")`. Promote `@platform/sdk-node`'s WebSocket connection into a first-class Backend Runtime component owned by the gateway. Define the `backend-sdk-*` owner routing so the gateway can invoke a registered SDK handler by owner prefix. | `gateway-core`, `sdk-node` | Business Capabilities; Agentide → Section 6, Phase 3 |
+
+Without 8a and 8b, the kernel works but only for the 25 platform caps — runtime plugin capabilities and remote SDK capabilities are unreachable no matter how many adapters are wired. Everything in Tier 3 (adapters, SDKs) is only *genuinely* usable once 8a and 8b land.
 
 ## Tier 4 — Browser-native capability
 

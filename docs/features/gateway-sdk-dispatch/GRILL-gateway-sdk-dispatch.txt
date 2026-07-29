@@ -1,0 +1,65 @@
+Gateway SDK Dispatch - Grill Notes
+
+Status: Locked
+Date: 2026-07-29
+Source: BI[8b) from scripts/backlog/, referenced in Feature_Backlog.md:56-57; sibling pack sdk-node (BI[8]) shipped 2026-07-29; sibling pack gateway-core (BI[5]) shipped 2026-07-28 with Q5 dispatch decision locked
+
+What this feature is about
+
+- Wires @platform/sdk-node into gateway-core so a Node/TypeScript app's business capabilities can be invoked end-to-end
+- Today: gateway-core/src/dispatch.ts throws GATEWAY_SDK_UNREACHABLE for any owner starting with "backend-sdk-" (lines 90-97)
+- After this pack: the gateway owns a WebSocket listener that accepts sdk-node connections, tracks them by appId, and routes business.* invocations to the right connection
+- Does NOT: replace the SDK's wire protocol (sdk-node's contract is frozen)
+- Does NOT: implement SDK-side reconnect/backoff (already in sdk-node client.ts:206-218)
+- Does NOT: add per-instance load balancing (single owner per appId; multi-pod scenarios land in a follow-up pack)
+- Scope clarifications: the Backend Runtime is an in-process component of the gateway, not a separate deployable
+
+Questions and answers locked so far
+
+1. Where does the Backend Runtime live — new @platform/backend-runtime package, or inside gateway-core/src/backend-runtime/?
+Answer:
+- New package @platform/backend-runtime
+- Composed by @platform/agentide/createPlatform() when the operator sets config.backendRuntimePort (default 9100)
+
+Why:
+- Backend Runtime has its own start()/stop() lifecycle and connection bookkeeping — that's a real component surface, not a kernel detail
+- Scenario A: 6 months from now, debugging a stale-connection leak. With the new package, `pnpm test --filter @platform/backend-runtime` reproduces in isolation. Inside-kernel shape requires standing up session-manager + plugin-manager + capability-registry just to debug.
+- Scenario B: building BI[9] mcp-adapter, the adapter has zero knowledge of the Backend Runtime — it just calls gateway.handleInvocation() and trusts business caps work. Inside-kernel shape would require every adapter to know to mock the new field.
+- Rules out: the kernel cannot grow any SDK-related surface. dispatch.ts still has three owner-prefix paths (gateway/plugin: /backend-sdk-), not four. Connection bookkeeping (UUIDs, timeouts, retry counters) lives entirely in the new package.
+- Source: PHILOSOPHY.md "Nothing Is Special" + "Tiny Kernel"; IMPL-gateway-core.md:260-293 already sketches the Backend Runtime as a separate component; GRILL Q5 (gateway-core/GRILL-gateway-core.txt:139-163) locked: "Gateway never holds SDK connections itself."
+
+2. Connection ownership model — one backend-sdk-<appId> owner shared across multiple SDK instances of the same app, OR unique per-connection (e.g. backend-sdk-<appId>-<uuid>)?
+Answer:
+- Shared by appId
+- Every SDK instance for the same appId registers under the same backend-sdk-<appId> owner
+- Re-registration on reconnect atomically replaces the previous caps
+
+Why:
+- Scenario A: developer running a customer-app SDK, gateway restarts, SDK reconnects via 30s backoff. New connection, same appId. With shared ownership, the second register replaces the first cleanly. With per-connection ownership, you'd accumulate dead entries with UUIDs in the owner string and dispatch would route to whichever connected last.
+- Scenario B: operator with the same customer-app deployed across 5 pods. With shared ownership, one registry entry; if one pod drops, its caps become un-routable until reconnect. Per-connection ownership would require a Backend-Runtime-side fan-out / load-balancing layer that doesn't exist today.
+- Rules out: per-connection ownership until a real multi-instance dispatch story exists.
+- Source: sdk-node/src/index.ts:81 (appId is the persistent identifier); CapabilityRegistry.register() semantics at capability-registry/src/types.ts:110-113 give replace-by-owner for free.
+
+3. Auth handshake response — explicit sdk.auth.accepted ack from the gateway back to the SDK, OR keep it implicit (clean WebSocket open after sdk.auth send = success)?
+Answer:
+- Implicit
+- No wire-protocol change
+
+Why:
+- Scenario A: developer upgrading sdk-node. With explicit ack, BI[8b) breaks every existing sdk-node install until they upgrade too. The browser sim at docs/features/sdk-node/simulate.html works against the implicit handshake; adding an ack means the sim has to learn to wait for it. That's a wire-protocol change shipped across two packs, harder to roll back.
+- Scenario B: operator with auth failures. Today a bad token means the socket closes a few ms after sdk.auth; SDK logs "WebSocket closed during connect" and starts the 30s backoff retry. An explicit sdk.auth.rejected { reason } ack would let the SDK distinguish bad-token from TCP-drop — but that's a v2 nice-to-have, not a v1 blocker.
+- Rules out: adding sdk.auth.accepted / sdk.auth.rejected in this pack. If ever needed, lands as a wire-protocol v2 with sdk-node upgrade.
+- Source: sdk-node/src/client.ts:111-118 (current implicit handshake); sdk-node lifecycle.test.ts:57-92 (tests already mock the implicit path); CONTEXT.md Decisions Log 2026-07-29 sdk-node ship (wire contract is stable).
+
+4. Heartbeat / keep-alive — application-level ping/pong over the WebSocket, OR rely on TCP keep-alive defaults?
+Answer:
+- TCP defaults for v1
+- No application-level ping/pong
+
+Why:
+- Scenario A: long-running customer-app SDK idle for an hour. TCP defaults let intermediate firewalls/NAT silently kill the socket after ~5min silence; SDK's 30s backoff reconnect kicks in, re-registers caps, all good. Explicit ping/pong would detect half-dead sockets earlier (e.g. 30s ping, 3 missed pongs = dead) but the reconnect path is the same.
+- Scenario B: high-throughput SDK doing 100 invokes/sec. Every wire frame is a heartbeat. TCP socket is never idle; ping/pong is dead weight.
+- Rules out: building a custom heartbeat layer in this pack. If ever added, it's a separate feature-pipeline pack with a wire-protocol bump (sdk.ping / sdk.pong).
+- Source: sdk-node/src/client.ts:206-218 (existing backoff reconnect, tested at lifecycle.test.ts:1554ms simulated drop); CONTEXT.md PHILOSOPHY: simplest mechanism that meets the requirement.
+
+No remaining open questions

@@ -1,0 +1,47 @@
+MCP Adapter - Grill Notes
+
+Status: Locked
+Date: 2026-07-29
+Source: BI[9] from scripts/backlog/mcp-adapter.js; sibling pack gateway-core (BI[5]) shipped 2026-07-28; sibling pack gateway-sdk-dispatch (BI[8b]) GRILL locked same day; CONTEXT.md PHI/OSOPHY "Nothing Is Special"; IMPL-gateway-core.md:270-293 (Phase 6 MCP sketch)
+
+What this feature is about
+
+- First external adapter: translates MCP (Model Context Protocol) messages into canonical gateway.handleInvocation() calls
+- After this pack: an AI agent anywhere on the network can reach the platform over Streamable HTTP on port 7100
+- Today: zero adapters exist; the kernel's Adapter interface (gateway-core/src/types.ts:161-167) is declared but no implementation ships
+- Does NOT: implement prompts/* or resources/* (out of v1 scope; -32601 returned for non-tool methods)
+- Does NOT: implement server-initiated notifications/* / sampling / elicitation (deferred to v2)
+- Does NOT: bundle the SDK connection inside the MCP adapter — that's gateway-sdk-dispatch's job; the MCP adapter calls handleInvocation and trusts the kernel
+- Scope clarifications: agentide meta-package auto-registers this adapter by default on platform startup; can be disabled via config.adapterMcp = false
+
+Questions and answers locked so far
+
+1. MCP transport library — use @modelcontextprotocol/typescript-sdk, OR hand-roll Streamable HTTP for the adapter?
+Answer:
+- @modelcontextprotocol/typescript-sdk
+- Use server.tool() + WebStandardStreamableHTTPServerTransport
+- One new dependency on the adapter package
+
+Why:
+- Scenario A: MCP spec evolves. Spec draft 2025-11-25 today, monthly drafts likely. With the official SDK, `pnpm update @modelcontextprotocol/typescript-sdk` gives spec-compliance for free. Hand-rolled means reading every spec diff and rewriting JSON-RPC envelope handling — and being late.
+- Scenario B: MCP clients in the wild (Claude Desktop, Continue, Cursor, custom agents) all built against the official SDK. They'll send messages in shapes we don't anticipate (notifications, subscriptions, sampling). With the official SDK those arrive already-typed and we just route them. Hand-rolled server: unknown message types crash the request handler.
+- Rules out: hand-rolling JSON-RPC 2.0 envelopes and Streamable HTTP framing. The MCP spec is detailed enough that re-implementing it correctly is multiple days of work and a permanent maintenance burden — we'd be maintaining a JSON-RPC 2.0 server, not just an MCP adapter.
+- Source: IMPL-gateway-core.md:273 already prescribes "@modelcontextprotocol/typescript-sdk (server.tool() + WebStandardStreamableHTTPServerTransport)"; IMPL-gateway-core.md:588 references spec 2025-11-25.
+
+2. MCP surface scope — tools/list + tools/call only, OR also stub prompts/list + resources/list so older / curious clients don't crash?
+Answer:
+- Tools only
+- Other methods (prompts/*, resources/*, subscriptions/listen, sampling, elicitation) return JSON-RPC -32601 (method not found) per MCP spec
+- No stub data, no crash
+
+Why:
+- Scenario A: MCP client asks prompts/list because it always does on connect. With tools-only, client gets a clean -32601 response, logs it, moves on; agent continues via tools/call. With stubs returning empty arrays, client thinks "this server supports prompts but has none configured" — confusing future debugging.
+- Scenario B: operator monitoring/debugging. With -32601 logged on the gateway side, `grep "method not found" audit.log` shows exactly which MCP surfaces are in use. With stubs, every method looks supported and usage data is muddied.
+- Rules out: implementing prompts/resources today. CONTEXT.md Glossary doesn't define these concepts; the Capability System docs are tools-only. If a future pack adds prompt/resource capabilities, the MCP adapter grows prompts/list then.
+- Source: PRD-gateway-core.md:38 "Not in v1 scope: prompts/*, resources/*, server-initiated notifications/*, subscriptions/listen, sampling, elicitation"; MCP spec mandates -32601 for method not found and clients are required to handle it gracefully.
+
+No remaining open questions
+
+Cross-pack dependencies:
+- Requires gateway-sdk-dispatch (BI[8b]) to be functional: every business.* invocation depends on the Backend Runtime being live. Without BI[8b), the MCP adapter successfully translates requests but every business.* call returns GATEWAY_SDK_UNREACHABLE to the agent.
+- Could be built against the dispatch stub for testing purposes, but won't be useful end-to-end until BI[8b) lands.
