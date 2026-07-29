@@ -31,9 +31,15 @@ import WebSocket from "ws";
 
 export type WsClientEvent = "open" | "close" | "error" | "reconnect_scheduled" | "message";
 
+/** A primitive value type used in wire-format messages.
+ *  Avoids `unknown` per project banned-types rule.
+ */
+export type WirePrimitive = string | number | boolean | null;
+export type WireObject = { readonly [key: string]: WirePrimitive | WireObject | WirePrimitive[] | WireObject[] };
+
 export type WsClientMessage = {
   readonly type: string;
-  readonly [key: string]: string | number | boolean | null;
+  readonly [key: string]: WirePrimitive | WireObject | readonly WirePrimitive[] | readonly WireObject[];
 };
 
 export type WsClientEventPayload =
@@ -144,7 +150,7 @@ export class WsClient {
   }
 
   /** Send a JSON message to the Gateway. */
-  send(message: Record<string, string | number | boolean | null>): void {
+  send(message: Record<string, WirePrimitive | WireObject | readonly WirePrimitive[] | readonly WireObject[]>): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error("WsClient: cannot send, socket not open");
     }

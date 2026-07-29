@@ -19,6 +19,11 @@ import type {
   Phase,
 } from "./types.js";
 import { WsClient } from "./client.js";
+import { resolveManifest, resolveHandlers, matchCapabilities } from "./register.js";
+import type { Handler } from "./types.js";
+import { dispatchIncoming as _dispatchIncoming, invokeHandler, makeHandlerContext, makeCallContext, makeLogger } from "./invoke.js";
+// _dispatchIncoming will be wired in Phase 6 to handle inbound messages.
+void _dispatchIncoming;
 
 /**
  * Create an SDK instance from the developer's config.
@@ -56,11 +61,53 @@ export function createSdk(config: SdkConfig): SdkInstance {
     },
 
     async register(): Promise<void> {
-      throw new Error("sdk-node: register() not yet implemented (Phase 4)");
+      if (client === null) {
+        throw new Error("sdk-node: register() requires connect() first");
+      }
+      // Resolve manifest (path or inline) + handlers (path or inline map).
+      const manifest = await resolveManifest(
+        config.manifest as string | Record<string, import("./manifest.js").ManifestValue> | import("./manifest.js").ParsedManifest,
+      );
+      const handlers: Record<string, Handler> = await resolveHandlers(
+        config.handlers as string | Record<string, Handler>,
+      );
+
+      // Match manifest capabilities to handlers; throws on mismatch.
+      const matched = matchCapabilities(manifest, handlers);
+
+      // Send each capability registration to the Gateway.
+      for (const { cap } of matched) {
+        client.send({
+          type: "sdk.capability.register",
+          name: cap.name,
+          description: cap.description,
+          version: cap.version,
+          permissions: cap.permissions.join(","),  // serialize for the wire format
+          tier: cap.tier ?? "",
+        });
+        capabilities[cap.name] = { tier: cap.tier ?? null, registered: true };
+      }
+
+      phase.value = "registered";
     },
 
-    async invoke<I = unknown, O = unknown>(_name: string, _input: I): Promise<O> {
-      throw new Error("sdk-node: invoke() not yet implemented (Phase 5)");
+    async invoke<I = unknown, O = unknown>(name: string, input: I): Promise<O> {
+      if (client === null) {
+        throw new Error("sdk-node: invoke() requires connect() first");
+      }
+      const handlers: Record<string, Handler> = await resolveHandlers(
+        config.handlers as string | Record<string, Handler>,
+      );
+      const handler = handlers[name];
+      if (handler === undefined) {
+        throw new Error(`sdk-node: no handler for '${name}'`);
+      }
+      const ctx = makeHandlerContext(
+        config.app,
+        makeCallContext(`local-${Date.now()}`, name, "local"),
+        makeLogger(false),
+      );
+      return invokeHandler(handler, input, ctx) as Promise<O>;
     },
 
     async disconnect(): Promise<void> {

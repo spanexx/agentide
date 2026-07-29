@@ -13,13 +13,13 @@
 export type Phase = "init" | "connected" | "registered" | "disconnected";
 
 /** Logger surface handed to handlers via HandlerContext.
- *  Meta is restricted to scalar primitives (avoiding `unknown`); complex
- *  values should be serialized to JSON before passing in.
+ *  Meta is scalar-only (avoiding `unknown` and `any`). For structured
+ *  meta, serialize to JSON first and pass the resulting string.
  */
 export interface Logger {
-  info(message: string, meta?: Record<string, string | number | boolean>): void;
-  warn(message: string, meta?: Record<string, string | number | boolean>): void;
-  error(message: string, meta?: Record<string, string | number | boolean>): void;
+  info(message: string, meta?: Record<string, string | number | boolean | null>): void;
+  warn(message: string, meta?: Record<string, string | number | boolean | null>): void;
+  error(message: string, meta?: Record<string, string | number | boolean | null>): void;
 }
 
 /** Configuration for a handler invocation. */

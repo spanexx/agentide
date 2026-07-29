@@ -223,8 +223,8 @@ Mark each phase inline as it completes:
 ### Phase 1: skeleton + types — ✅ Complete
 ### Phase 2: manifest parser — ✅ Complete (manifest.test.ts, 11 tests)
 ### Phase 3: WebSocket client + connect — ✅ Complete (client.test.ts, 6 tests)
-### Phase 4: register() — ⏳ Pending
-### Phase 5: invoke() — ⏳ Pending
+### Phase 4: register() — ✅ Complete (register.test.ts, 4 tests)
+### Phase 5: invoke() — ✅ Complete (invoke.test.ts, 8 tests)
 ### Phase 6: lifecycle integration — ⏳ Pending
 ### Phase 7: post-impl sim — ⏳ Pending
 ### Phase 8: drift check — ⏳ Pending
