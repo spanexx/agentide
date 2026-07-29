@@ -411,3 +411,33 @@ feature-pipeline skill. Documented here so the next agent doesn't accidentally
 delete it as cruft.
 
 **Refs:** docs/features/permission-tiering/{simulate.ts,archive/simulate-pre.ts}
+
+---
+
+## #14 — Gateway token refresh flow not implemented; SaaS-ready auth requires a separate pack
+
+**Discovery:** 2026-07-29 (sdk-node GRILL session)
+
+**What drifted / what's missing:** The Gateway mints JWTs with an `exp` claim via
+`auth.token.issue`. There is no token-refresh endpoint, no refresh-token rotation,
+no "extend session" path. An SDK holding a long-lived connection will silently go
+unauthenticated after the token's `expiresInMs` (default 1 hour per the auth tests).
+The architecture (`docs/architecture/Agentide.md` §9) describes a SaaS-ready Gateway
+that uses JWTs for tenant + caller identification, so this gap blocks any SaaS
+deployment.
+
+**Why this matters:** Before sdk-node can be production-ready for a hosted SaaS
+Gateway, the SDK needs either (a) a refresh-token flow the SDK calls before
+expiry, (b) very long-lived tokens with server-side revocation, or (c) a websocket
+keepalive that re-authenticates inline. None of these exist today.
+
+**Resolution:** DEFERRED. The Gateway is architecturally SaaS-ready (token model,
+tenant model, audit log, rate limiting, storage abstraction all support it) but
+the refresh flow is a separate pack that needs its own GRILL — likely tied to the
+dashboard-core or a future "gateway-saas" pack. Logged here so sdk-node v1 can
+stay scoped to "localhost / on-prem / co-located" without claiming SaaS support.
+
+**Refs:**
+- `packages/gateway-core/src/auth.ts` (issueToken, no refresh)
+- `docs/architecture/Agentide.md` §9 (JWT-based auth model)
+- sdk-node GRILL session, this conversation
