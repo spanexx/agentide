@@ -30,10 +30,18 @@
  */
 
 import type { EventBus } from "@platform/event-bus";
+import type { CapabilityTier } from "@platform/capability-registry";
 
 // CID:types-001 - PluginType
 // Purpose: discriminator union — the top-level key in a manifest names the type
 export type PluginType = "runtime" | "service" | "developer";
+
+/**
+ * One entry in a plugin manifest's `capabilities` list.
+ * Either a plain string ("browser.navigate") or an object with explicit tier
+ * ("browser.screenshot" has no convention, so author declares tier: read).
+ */
+export type ManifestCapability = string | { readonly name: string; readonly tier: CapabilityTier };
 
 // CID:types-002 - PluginManifest
 // Purpose: parsed YAML shape — exactly one of the three type keys per valid manifest
@@ -43,7 +51,7 @@ export interface PluginManifest {
   readonly service?: { readonly id: string };
   readonly developer?: { readonly id: string };
   readonly version: string;
-  readonly capabilities?: readonly string[];
+  readonly capabilities?: readonly ManifestCapability[];
   readonly metadata?: Readonly<Record<string, string>>;
 }
 

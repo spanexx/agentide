@@ -13,7 +13,7 @@ Usage:
   agentide status  [--data-dir <path>]
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
   agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--data-dir <path>]
-  agentide capability {list|describe --name <name>} [--owner <string>] [--tier <read|write>] [--data-dir <path>]
+  agentide capability {list|describe --name <name>} [--owner <string>] [--tier <read|write|act|destructive>] [--data-dir <path>]
   agentide plugin  {list} [--data-dir <path>]
   agentide --help
 
@@ -211,7 +211,7 @@ async function runCapability(
   try {
     if (sub === "list") {
       const ownerFilter = getFlag(flags, "owner", "");
-      const tierFilter = getFlag(flags, "tier", "") as "read" | "write" | "";
+      const tierFilter = getFlag(flags, "tier", "") as "read" | "act" | "destructive" | "write" | "";
       const cards = platform.capabilityRegistry.list();
       // Perf note: N×M filter walks the registry once per filter check.
       // v1 has ~30 caps; this is sub-millisecond. A registry.listByOwner() helper
@@ -229,7 +229,10 @@ async function runCapability(
         }
         return true;
       });
-      const lines = filtered.map(({ card }) => `- ${card.name}\t${card.version}\t${card.description}`);
+      const lines = filtered.map(({ card }) => {
+        const tier = card.tier ?? "-";
+        return `- ${card.name}\t${card.version}\t${tier}\t${card.description}`;
+      });
       return result(lines.join("\n") + "\n");
     }
     if (sub === "describe") {

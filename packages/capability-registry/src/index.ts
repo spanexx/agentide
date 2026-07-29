@@ -20,6 +20,7 @@ import { Store } from "./store.js";
 import { validateRecord } from "./validate.js";
 
 export * from "./types.js";
+export { deriveTier } from "./validate.js";
 
 function makeKey(name: string, version: string): string {
   return `${name}\x1F${version}`;

@@ -29,6 +29,15 @@
 // CID:types-001 - CapabilityType
 export type CapabilityType = "business" | "platform" | "runtime";
 
+// CID:types-001a - CapabilityTier
+// Purpose: risk tier for a capability — drives scope semantics and catalog filtering
+// Values: "read" (observe), "act" (mutate, reversible), "destructive" (irreversible), "write" (legacy platform tier)
+export type CapabilityTier = "read" | "act" | "destructive" | "write";
+
+export const RUNTIME_TIERS: readonly CapabilityTier[] = ["read", "act", "destructive"];
+export const PLATFORM_TIERS: readonly CapabilityTier[] = ["read", "write"];
+export const ALL_TIERS: readonly CapabilityTier[] = ["read", "act", "destructive", "write"];
+
 // CID:types-002 - CapabilityRecord
 // Purpose: full discovery record for one capability in the catalog
 export interface CapabilityRecord {
@@ -40,15 +49,17 @@ export interface CapabilityRecord {
   readonly outputSchema?: Readonly<object>;
   readonly permissions: readonly string[];
   readonly owner: string;
+  readonly tier?: CapabilityTier | null;
 }
 
 // CID:types-003 - CapabilityCard
-// Purpose: compact card returned by list() and search()
+// Purpose: compact card returned by list() and search results
 export interface CapabilityCard {
   readonly name: string;
   readonly version: string;
   readonly type: CapabilityType;
   readonly description: string;
+  readonly tier: CapabilityTier | null;
 }
 
 // CID:types-004 - DescribeResult

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plugin Manager — Simulation</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2d3148;
+    --muted: #6b7280;
+    --fg: #e5e7eb;
+    --primary: #6366f1;
+    --success: #22c55e;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: ui-monospace, monospace; min-height: 100vh; }
+
+  .container { max-width: 800px; margin: 0 auto; padding: 2rem; }
+
+  header { margin-bottom: 2rem; }
+  header h1 { font-size: 1.1rem; color: var(--primary); margin-bottom: 0.25rem; }
+  header p { font-size: 0.75rem; color: var(--muted); }
+
+  /* ── install form ─────────────────────────────────────── */
+  .install-form { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; }
+  .install-form h2 { font-size: 0.85rem; color: var(--muted); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .install-form textarea {
+    width: 100%; height: 120px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--fg); font-family: ui-monospace, monospace;
+    font-size: 0.8rem; padding: 0.6rem; resize: vertical; outline: none;
+  }
+  .install-form textarea:focus { border-color: var(--primary); }
+  .install-form .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.6rem; }
+  .btn { padding: 0.4rem 1rem; border-radius: 4px; border: none; cursor: pointer; font-size: 0.8rem; font-family: inherit; transition: opacity 0.15s; }
+  .btn:hover { opacity: 0.85; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-secondary { background: var(--border); color: var(--fg); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-success { background: var(--success); color: #fff; }
+
+  /* ── plugin list ──────────────────────────────────────── */
+  .plugin-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+  .plugin-list-header h2 { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .plugin-list-header span { font-size: 0.75rem; color: var(--muted); }
+
+  .empty-state { text-align: center; padding: 3rem; color: var(--muted); font-size: 0.85rem; border: 1px dashed var(--border); border-radius: 8px; }
+
+  .plugin-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1rem; margin-bottom: 0.75rem;
+    display: grid; grid-template-columns: 1fr auto; gap: 0.75rem; align-items: center;
+  }
+  .plugin-card.error-state { border-color: var(--danger); }
+  .plugin-card.disabled-state { opacity: 0.6; }
+
+  .plugin-info .plugin-id { font-size: 0.9rem; color: var(--fg); display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+  .plugin-id .badge { font-size: 0.65rem; padding: 0.15rem 0.45rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .badge-runtime { background: #3730a3; color: #a5b4fc; }
+  .badge-service { background: #064e3b; color: #6ee7b7; }
+  .badge-developer { background: #78350f; color: #fcd34d; }
+  .badge-enabled { background: #14532d; color: var(--success); }
+  .badge-disabled { background: #1f2937; color: var(--muted); }
+  .badge-error { background: #450a0a; color: var(--danger); }
+
+  .plugin-meta { font-size: 0.75rem; color: var(--muted); display: flex; gap: 1rem; flex-wrap: wrap; }
+  .plugin-error-msg { font-size: 0.72rem; color: var(--danger); margin-top: 0.3rem; }
+
+  .plugin-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; justify-content: flex-end; }
+  .plugin-actions .btn { padding: 0.3rem 0.7rem; font-size: 0.72rem; }
+
+  /* ── log / event log ──────────────────────────────────── */
+  .event-log { margin-top: 1.5rem; }
+  .event-log h2 { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+  .log-entries { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; max-height: 200px; overflow-y: auto; }
+  .log-entry { font-size: 0.72rem; padding: 0.2rem 0; border-bottom: 1px solid var(--border); display: flex; gap: 0.75rem; }
+  .log-entry:last-child { border-bottom: none; }
+  .log-time { color: var(--muted); min-width: 85px; }
+  .log-event { color: var(--primary); min-width: 160px; }
+  .log-detail { color: var(--fg); }
+  .log-entry.success .log-event { color: var(--success); }
+  .log-entry.error .log-event { color: var(--danger); }
+  .log-entry.info .log-event { color: #60a5fa; }
+
+  /* ── install result modal ─────────────────────────────── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 100; }
+  .modal-overlay.active { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; width: 480px; max-width: 90vw; }
+  .modal h3 { font-size: 0.9rem; margin-bottom: 1rem; }
+  .modal pre { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; font-size: 0.75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin-bottom: 1rem; }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+  .install-progress { display: none; margin-top: 1rem; }
+  .install-progress.active { display: block; }
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 0.5rem; }
+  .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s ease; }
+  .progress-step { font-size: 0.72rem; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ── Header ──────────────────────────────────────────── -->
+  <header>
+    <h1>// Plugin Manager</h1>
+    <p>Install, enable, disable, reload, and uninstall platform plugins.</p>
+  </header>
+
+  <!-- ── Install form ───────────────────────────────────── -->
+  <div class="install-form">
+    <h2>Install / Update Plugin</h2>
+    <textarea id="manifest-input" placeholder="Paste a Plugin Manifest YAML here...&#10;&#10;Example:&#10;runtime:&#10;  id: browser&#10;  version: 1.0.0&#10;  source: ./browser.yaml"></textarea>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="clearManifest()">Clear</button>
+      <button class="btn btn-primary" onclick="runInstall()">Install / Update</button>
+    </div>
+    <div class="install-progress" id="install-progress">
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+      <div class="progress-step" id="progress-step">Parsing manifest...</div>
+    </div>
+  </div>
+
+  <!-- ── Plugin list ─────────────────────────────────────── -->
+  <div class="plugin-list-header">
+    <h2>Installed Plugins</h2>
+    <span id="plugin-count">0 plugins</span>
+  </div>
+  <div id="plugin-list">
+    <div class="empty-state" id="empty-state">
+      No plugins installed.<br>Install one using the form above.
+    </div>
+  </div>
+
+  <!-- ── Event log ─────────────────────────────────────── -->
+  <div class="event-log">
+    <h2>Event Log</h2>
+    <div class="log-entries" id="log-entries">
+      <div class="log-entry info">
+        <span class="log-time">—</span>
+        <span class="log-event">system.ready</span>
+        <span class="log-detail">Plugin Manager initialized. 0 plugins loaded.</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Result modal ───────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h3 id="modal-title">Install Result</h3>
+    <pre id="modal-body"></pre>
+    <div class="actions">
+      <button class="btn btn-primary" onclick="closeModal()">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Simulated state ────────────────────────────────────────
+  let plugins = [];
+  let eventLog = [];
+
+  // Fake plugin data to pre-populate for demonstration
+  const DEMO_PLUGINS = [
+    { id: "browser", type: "runtime", version: "1.2.0", source: "./browser.yaml", installedAt: Date.now() - 86400000 * 3, enabled: true, lastError: null },
+    { id: "logger",  type: "service", version: "0.9.1", source: "./logger.yaml", installedAt: Date.now() - 86400000, enabled: false, lastError: { code: "PLUGIN_INIT_FAILED", message: "cannot bind to port 9090", at: Date.now() - 3600000 } },
+  ];
+
+  function init() {
+    plugins = [...DEMO_PLUGINS];
+    renderPlugins();
+    log("system.boot", "Plugin Manager ready.", "info");
+  }
+
+  // ── Rendering ──────────────────────────────────────────────
+  function renderPlugins() {
+    const list = document.getElementById("plugin-list");
+    const count = document.getElementById("plugin-count");
+    count.textContent = `${plugins.length} plugin${plugins.length !== 1 ? "s" : ""}`;
+
+    if (plugins.length === 0) {
+      list.innerHTML = `<div class="empty-state">No plugins installed.<br>Install one using the form above.</div>`;
+      return;
+    }
+
+    list.innerHTML = plugins.map(p => {
+      const typeBadge = `<span class="badge badge-${p.type}">${p.type}</span>`;
+      const statusBadge = p.lastError
+        ? `<span class="badge badge-error">error</span>`
+        : `<span class="badge badge-${p.enabled ? "enabled" : "disabled"}">${p.enabled ? "enabled" : "disabled"}</span>`;
+
+      const metaItems = [
+        `v${p.version}`,
+        `source: ${p.source}`,
+        `installed: ${timeAgo(p.installedAt)}`,
+      ].join(" · ");
+
+      const errorMsg = p.lastError
+        ? `<div class="plugin-error-msg">[${p.lastError.code}] ${p.lastError.message}</div>`
+        : "";
+
+      const actionLabel = p.enabled ? "Disable" : "Enable";
+      const actionClass = p.enabled ? "btn-secondary" : "btn-success";
+
+      const cardClass = [
+        "plugin-card",
+        p.lastError ? "error-state" : "",
+        !p.enabled && !p.lastError ? "disabled-state" : "",
+      ].filter(Boolean).join(" ");
+
+      return `
+      <div class="${cardClass}" id="card-${p.id}">
+        <div class="plugin-info">
+          <div class="plugin-id">
+            ${p.id}  ${typeBadge}  ${statusBadge}
+          </div>
+          <div class="plugin-meta">${metaItems}</div>
+          ${errorMsg}
+        </div>
+        <div class="plugin-actions">
+          <button class="btn ${actionClass}" onclick="togglePlugin('${p.id}')">${actionLabel}</button>
+          <button class="btn btn-secondary" onclick="reloadPlugin('${p.id}')">Reload</button>
+          <button class="btn btn-secondary" onclick="updatePlugin('${p.id}')">Update</button>
+          <button class="btn btn-danger" onclick="uninstallPlugin('${p.id}')">Uninstall</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function timeAgo(ts) {
+    const diff = Date.now() - ts;
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    if (mins > 0) return `${mins}m ago`;
+    return "just now";
+  }
+
+  function now() {
+    return new Date().toLocaleTimeString("en-US", { hour12: false });
+  }
+
+  function log(event, detail, type = "info") {
+    const el = document.getElementById("log-entries");
+    const entry = document.createElement("div");
+    entry.className = `log-entry ${type}`;
+    entry.innerHTML = `<span class="log-time">${now()}</span><span class="log-event">${event}</span><span class="log-detail">${detail}</span>`;
+    el.prepend(entry);
+  }
+
+  // ── Operations ─────────────────────────────────────────────
+  async function runInstall() {
+    const input = document.getElementById("manifest-input").value.trim();
+    if (!input) {
+      showModal("Error", "No manifest provided. Paste a YAML manifest above.");
+      return;
+    }
+
+    const progress = document.getElementById("install-progress");
+    const fill = document.getElementById("progress-fill");
+    const step = document.getElementById("progress-step");
+    progress.classList.add("active");
+
+    // Step 1: parse
+    fill.style.width = "20%";
+    step.textContent = "Parsing manifest...";
+    await sleep(400);
+
+    const parsed = tryParseYaml(input);
+    if (!parsed) {
+      fill.style.width = "100%";
+      step.textContent = "Parse failed.";
+      log("plugin.install", "Failed: malformed YAML manifest.", "error");
+      showModal("Parse Error", "The manifest is not valid YAML.\n\nCheck indentation and key-value format.");
+      await sleep(800);
+      progress.classList.remove("active");
+      fill.style.width = "0%";
+      return;
+    }
+
+    // Extract plugin type + id
+    const type = Object.keys(parsed)[0]; // runtime | service | developer
+    const pluginDef = parsed[type];
+    if (!pluginDef || !pluginDef.id) {
+      log("plugin.install", "Failed: manifest has no top-level type key or missing 'id'.", "error");
+      showModal("Validation Error", `Manifest must have a top-level type key (runtime:, service:, developer:) with an 'id' field.\n\nGot: ${JSON.stringify(Object.keys(parsed))}`);
+      progress.classList.remove("active");
+      fill.style.width = "0%";
+      return;
+    }
+
+    // Step 2: validate
+    fill.style.width = "45%";
+    step.textContent = "Validating manifest...";
+    await sleep(500);
+
+    // Step 3: check for existing
+    const existing = plugins.find(p => p.id === pluginDef.id);
+    const isUpdate = !!existing;
+
+    // Step 4: register caps
+    fill.style.width = "70%";
+    step.textContent = "Registering capabilities...";
+    await sleep(400);
+
+    if (isUpdate) {
+      log("plugin.updated", `${pluginDef.id} → v${pluginDef.version || "?"} (was v${existing.version})`, "success");
+    } else {
+      log("plugin.installed", `${pluginDef.id} (${type}) installed at v${pluginDef.version || "?"}`, "success");
+    }
+
+    // Step 5: persist
+    fill.style.width = "90%";
+    step.textContent = "Persisting install record...";
+    await sleep(350);
+
+    // Simulate persist
+    fill.style.width = "100%";
+    step.textContent = isUpdate ? "Update complete." : "Install complete.";
+    await sleep(300);
+
+    const newRecord = {
+      id: pluginDef.id,
+      type,
+      version: pluginDef.version || "0.0.1",
+      source: pluginDef.source || input.split("\n")[0],
+      installedAt: Date.now(),
+      enabled: true,
+      lastError: null,
+    };
+
+    if (isUpdate) {
+      const idx = plugins.findIndex(p => p.id === pluginDef.id);
+      plugins[idx] = newRecord;
+    } else {
+      plugins.push(newRecord);
+    }
+
+    // Fire events
+    bus.publish(isUpdate ? "plugin.updated" : "plugin.installed", {
+      id: newRecord.id,
+      type: newRecord.type,
+      version: newRecord.version,
+    });
+
+    document.getElementById("manifest-input").value = "";
+    progress.classList.remove("active");
+    fill.style.width = "0%";
+    renderPlugins();
+  }
+
+  async function togglePlugin(id) {
+    const p = plugins.find(p => p.id === id);
+    if (!p) return;
+    p.enabled = !p.enabled;
+    p.lastError = null;
+    const event = p.enabled ? "plugin.enabled" : "plugin.disabled";
+    log(event, `${id} → ${p.enabled ? "enabled" : "disabled"}`, "success");
+    bus.publish(event, { id, enabled: p.enabled });
+    renderPlugins();
+  }
+
+  async function reloadPlugin(id) {
+    const progress = document.getElementById("install-progress");
+    const fill = document.getElementById("progress-fill");
+    const step = document.getElementById("progress-step");
+    progress.classList.add("active");
+    fill.style.width = "0%";
+
+    fill.style.width = "30%"; step.textContent = "Deregistering capabilities...";
+    await sleep(350);
+    fill.style.width = "65%"; step.textContent = "Re-reading manifest...";
+    await sleep(400);
+    fill.style.width = "100%"; step.textContent = "Reload complete.";
+    await sleep(300);
+
+    log("plugin.reloaded", `${id} reloaded`, "success");
+    bus.publish("plugin.reloaded", { id });
+    progress.classList.remove("active");
+    fill.style.width = "0%";
+  }
+
+  async function updatePlugin(id) {
+    showModal("Update Plugin", `To update "${id}", paste the new manifest in the Install form above and click Install.\n\nThe Plugin Manager will detect the existing id and perform an in-place update.`);
+  }
+
+  async function uninstallPlugin(id) {
+    if (!confirm(`Uninstall "${id}"? This fires plugin.cleanup and removes the install record.`)) return;
+
+    const progress = document.getElementById("install-progress");
+    const fill = document.getElementById("progress-fill");
+    const step = document.getElementById("progress-step");
+    progress.classList.add("active");
+    fill.style.width = "0%";
+
+    fill.style.width = "20%"; step.textContent = "Firing plugin.cleanup...";
+    await sleep(500);
+    fill.style.width = "50%"; step.textContent = "Waiting for plugin.cleanup.confirm...";
+    await sleep(600);
+    fill.style.width = "75%"; step.textContent = "Deregistering capabilities...";
+    await sleep(400);
+    fill.style.width = "100%"; step.textContent = "Uninstall complete.";
+    await sleep(300);
+
+    log("plugin.uninstalled", `${id} removed`, "success");
+    bus.publish("plugin.uninstalled", { id });
+    plugins = plugins.filter(p => p.id !== id);
+    progress.classList.remove("active");
+    fill.style.width = "0%";
+    renderPlugins();
+  }
+
+  // ── Helpers ────────────────────────────────────────────────
+  function clearManifest() {
+    document.getElementById("manifest-input").value = "";
+  }
+
+  function showModal(title, body) {
+    document.getElementById("modal-title").textContent = title;
+    document.getElementById("modal-body").textContent = body;
+    document.getElementById("modal-overlay").classList.add("active");
+  }
+
+  function closeModal() {
+    document.getElementById("modal-overlay").classList.remove("active");
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  function tryParseYaml(str) {
+    // Minimal YAML parser for demo: top-level type: { id, version, source }
+    try {
+      const lines = str.split("\n");
+      const result = {};
+      let currentKey = null;
+      let currentObj = {};
+      let inObj = false;
+
+      for (const line of lines) {
+        const rootMatch = line.match(/^(runtime|service|developer):\s*$/);
+        if (rootMatch) {
+          if (currentKey) result[currentKey] = currentObj;
+          currentKey = rootMatch[1];
+          currentObj = {};
+          inObj = true;
+          continue;
+        }
+        if (inObj) {
+          const kvMatch = line.match(/^\s+(\w+):\s*(.*)/);
+          if (kvMatch) {
+            currentObj[kvMatch[1]] = kvMatch[2].trim().replace(/^['"]|['"]$/g, "");
+          } else if (line.trim() === "" || !line.startsWith(" ")) {
+            inObj = false;
+          }
+        }
+      }
+      if (currentKey) result[currentKey] = currentObj;
+      return Object.keys(result).length > 0 ? result : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // ── Simulated event bus ─────────────────────────────────────
+  const bus = {
+    handlers: {},
+    subscribe(event, fn) {
+      if (!this.handlers[event]) this.handlers[event] = [];
+      this.handlers[event].push(fn);
+    },
+    publish(event, payload) {
+      (this.handlers[event] || []).forEach(fn => fn({ name: event, payload, id: crypto.randomUUID ? crypto.randomUUID() : Date.now() }));
+    }
+  };
+
+  bus.subscribe("plugin.installed",   (e) => log("plugin.installed",   `${e.payload.id} (${e.payload.type}) installed`, "success"));
+  bus.subscribe("plugin.updated",    (e) => log("plugin.updated",    `${e.payload.id} → v${e.payload.version}`, "success"));
+  bus.subscribe("plugin.enabled",    (e) => log("plugin.enabled",    `${e.payload.id} enabled`, "success"));
+  bus.subscribe("plugin.disabled",   (e) => log("plugin.disabled",   `${e.payload.id} disabled`, "success"));
+  bus.subscribe("plugin.reloaded",   (e) => log("plugin.reloaded",   `${e.payload.id} reloaded`, "success"));
+  bus.subscribe("plugin.uninstalled",(e) => log("plugin.uninstalled", `${e.payload.id} removed`, "error"));
+
+  // Boot
+  init();
+</script>
+</body>
+</html>

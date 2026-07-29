@@ -14,6 +14,7 @@
  * Quick lookup: rg -n "CID:store-" packages/capability-registry/src/store.ts
  */
 import { type CapabilityRecord, type CapabilityCard, type DescribeResult } from "./types.js";
+import { deriveTier } from "./validate.js";
 
 function makeKey(name: string, version: string): string {
   return `${name}\x1F${version}`;
@@ -21,7 +22,7 @@ function makeKey(name: string, version: string): string {
 
 // CID:store-001 - Store
 // Purpose: in-memory owner-partitioned catalog of capability records
-// Uses: CapabilityRecord, CapabilityCard, DescribeResult
+// Uses: CapabilityRecord, CapabilityCard, DescribeResult, deriveTier
 // Used by: index.ts createCapabilityRegistry factory
 export class Store {
   private owners = new Map<string, Map<string, CapabilityRecord>>();
@@ -53,6 +54,7 @@ export class Store {
 
   // CID:store-005 - allCards
   // Purpose: returns CapabilityCard[] for list()
+  // BI[7]: each card includes the derived tier field
   allCards(): CapabilityCard[] {
     const cards: CapabilityCard[] = [];
     for (const [, ownerMap] of this.owners) {
@@ -62,6 +64,7 @@ export class Store {
           version: record.version,
           type: record.type,
           description: record.description,
+          tier: deriveTier(record),
         });
       }
     }
@@ -70,6 +73,7 @@ export class Store {
 
   // CID:store-006 - search
   // Purpose: returns matching CapabilityCard[] for search()
+  // BI[7]: each card includes the derived tier field
   search(query: string): CapabilityCard[] {
     if (!query) return [];
     const lower = query.toLowerCase();
@@ -85,6 +89,7 @@ export class Store {
             version: record.version,
             type: record.type,
             description: record.description,
+            tier: deriveTier(record),
           });
         }
       }

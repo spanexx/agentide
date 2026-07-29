@@ -13,7 +13,7 @@
 import type { PluginError, YamlValue } from "./types.js";
 
 // CID:errors-001 - ERROR_CODES
-// Purpose: 16 stable string identifiers used across every Plugin Manager error path
+// Purpose: stable string identifiers used across every Plugin Manager error path
 // Used by: parseManifest, validateManifest, install/update/reload/disable/enable/uninstall, factory
 export const ERROR_CODES = {
   SOURCE_NOT_FOUND: "PLUGIN_SOURCE_NOT_FOUND",
@@ -26,6 +26,7 @@ export const ERROR_CODES = {
   ID_ALREADY_INSTALLED: "PLUGIN_ID_ALREADY_INSTALLED",
   CAPABILITY_NAME_INVALID: "PLUGIN_CAPABILITY_NAME_INVALID",
   CAPABILITY_COLLISION: "PLUGIN_CAPABILITY_COLLISION",
+  TIER_REQUIRED: "PLUGIN_TIER_REQUIRED",
   NOT_INSTALLED: "PLUGIN_NOT_INSTALLED",
   SOURCE_CHANGED: "PLUGIN_SOURCE_CHANGED",
   ALREADY_DISABLED: "PLUGIN_ALREADY_DISABLED",

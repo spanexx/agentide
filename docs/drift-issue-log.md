@@ -268,8 +268,13 @@ item #8.
 
 ## Open questions carried forward (not yet resolved)
 
-None of the original nine drift items remain unresolved. Everything below is follow-up work
-surfaced *by* a resolution, not a gap in the original review:
+- **Tenant-scoped listing deferred from BI[6] to BI[14]** — see #11. `capability.list` and
+  `plugin.list` filtering by caller's tenant requires a per-tenant model that doesn't exist
+  yet. Punted from BI[6] PRD to BI[7] in BI[6]'s GRILL, then re-punted from BI[7] to BI[14]
+  in BI[7]'s grill. BI[14] (Tenant design) doesn't exist on the backlog yet; it's an open
+  item in `CONTEXT.md` under "Tenant design — multi-tenancy isolation semantics beyond the
+  plugin-permission split above are not fully specified." A new backlog row should be created
+  when this pack is scheduled.
 
 - Which specific ownership track (core-team / community / customer-built) does each future
   runtime (Docker, Git, File, Kubernetes, Database) actually get assigned to? (follow-up to #6)
@@ -316,3 +321,93 @@ existed.
 **Remaining follow-up:** none — this was fully mechanical once the naming convention was
 picked. Future SDKs (if a "Kotlin SDK" or similar is ever added) should follow the same
 `platform-sdk-<language>` pattern by default.
+
+---
+
+## 11. Tenant-scoped listing deferred from BI[6] to BI[14] — DEFERRED
+
+**Where:** `docs/features/platform-capabilities/PRD-platform-capabilities.md` §Out of Scope
+("Tenant-scoped plugin list — punted to BI[7] permission-tiering") × BI[7] grill Q4
+(2026-07-28) × `CONTEXT.md` Open Items ("Tenant design — multi-tenancy isolation
+semantics beyond the plugin-permission split above are not fully specified").
+
+**Found this session**, while grilling BI[7] permission-tiering. The BI[6] PRD punted
+"Tenant-scoped plugin list" to BI[7] assuming BI[7] would naturally own it. On closer
+inspection during BI[7] grill, this is a structural punt waiting to happen:
+
+- **Plugins are global** — `installed-plugins.json` lives at the platform root, not per-tenant.
+  `InstallRecord` (`packages/plugin-manager/src/types.ts:53`) has no `tenantId` field.
+- **Capabilities are global** — `CapabilityRecord` (`packages/capability-registry/src/types.ts:34`)
+  has no `tenantId` field. Caps register with the Capability Registry at startup, not
+  per-tenant.
+- **Tenants** exist for `tenant.*` operations and token scoping (the `caller.tenantId` field
+  on `TokenClaims`), but the install/capability layer is single-tenant-by-platform.
+
+To "filter by tenant" we'd need a per-tenant model: per-tenant install records, per-tenant
+capability visibility, possibly a tenant-internal `Capability Registry` namespace. That's
+an architectural decision, not a feature delta.
+
+**Resolution (this pass):**
+- BI[7] desc narrowed to: "Tier field on CapabilityRecord + tier-aware capability.list +
+  wildcard scope tests." The "tenant-scoped listing" surface is dropped from this pack.
+- BI[7] still unblocks the Tier 3 packs (browser-runtime, docker-runtime) — those need tier
+  enforcement, not tenant scoping.
+- The original BI[6] punt is now a `DEFERRED` drift item, not silent. Path forward:
+  - **BI[14] (Tenant design)** needs to be created on the backlog. It's currently an open
+    item in `CONTEXT.md` only.
+  - When BI[14] ships, it should produce the per-tenant model (install records scoped,
+    capability visibility policy, tenant-scoped listing semantics).
+  - BI[7] does NOT need to be re-opened — its tier-aware listing is tenant-agnostic by
+    design. Adding tenant filtering on top of tier filtering is a multi-axis query that
+    BI[14] owns.
+
+**Punt trail (chronological):**
+- 2026-07-28 — BI[6] GRILL, original punt: "Tenant-scoped plugin list — punted to BI[7]."
+- 2026-07-28 — BI[7] grill Q4, re-punt: "Out of scope. Awaits BI[14] (Tenant design)."
+
+**Remaining follow-up:** Create BI[14] on the backlog. Tag it as gating Tier 3-5 packs
+that touch installation or capability visibility.
+
+---
+
+## #12 — Reconciled `simulate.ts` Step 4 banner should mention `GATEWAY_SESSION_REQUIRED`
+
+**Discovery:** 2026-07-29 (BI[7] sub-agent drift check)
+
+**What drifted:** The reconciled simulation's Step 4 invokes `gateway.handleInvocation`
+without a session token. The real `handleInvocation` pipeline runs session-check
+*before* scope-check, so the actual denial code is `GATEWAY_SESSION_REQUIRED`,
+not `GATEWAY_INSUFFICIENT_SCOPE` (which PRD-TRD Scenario 2 anticipated assuming
+a session was already present).
+
+**Why this matters:** A future reader of the sim will see the unexpected error code
+and wonder if the tier enforcement is broken. The sim itself handles both branches
+correctly; only the banner copy is misleading.
+
+**Resolution:** ACCEPTED drift. The sim step is illustrative. If someone wants to
+demonstrate the scope-denial path, the next iteration of `simulate.ts` should call
+`gateway.createSession()` first (or read the audit log to surface the right
+denial). Logged here for future iteration.
+
+**Refs:** docs/features/permission-tiering/simulate.ts Step 4
+
+---
+
+## #13 — `archive/simulate-pre.ts` retained (not deleted) per IMPL Phase 8
+
+**Discovery:** 2026-07-29 (BI[7] sub-agent drift check)
+
+**What drifted:** IMPL Phase 8 said: "Delete `simulate-pre.sh` / `.html` (or move to
+`docs/features/<slug>/archive/`)". The implementation chose the archive option,
+keeping the pre-impl simulation (953 lines, hardcoded catalog) as a reference
+alongside the canonical reconciled `simulate.ts` (371 lines, real packages).
+
+**Why this matters:** Future readers may not realize the archived sim still works
+and shows the *design* vs the *reality* side-by-side. The skill's reconcile phase
+explicitly archives rather than deletes to preserve this comparison.
+
+**Resolution:** ACCEPTED drift. The archive/ folder is intentional per the
+feature-pipeline skill. Documented here so the next agent doesn't accidentally
+delete it as cruft.
+
+**Refs:** docs/features/permission-tiering/{simulate.ts,archive/simulate-pre.ts}
