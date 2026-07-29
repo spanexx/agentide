@@ -220,9 +220,9 @@ Migration story: none. This is the first SDK release. Future major versions of t
 Mark each phase inline as it completes:
 
 ```
-### Phase 1: skeleton + types — ✅ Complete (335/335 tests pass, typecheck + lint + banned-types clean)
-### Phase 2: manifest parser — ⏳ Pending
-### Phase 3: WebSocket client + connect — ⏳ Pending
+### Phase 1: skeleton + types — ✅ Complete
+### Phase 2: manifest parser — ✅ Complete (manifest.test.ts, 11 tests)
+### Phase 3: WebSocket client + connect — ✅ Complete (client.test.ts, 6 tests)
 ### Phase 4: register() — ⏳ Pending
 ### Phase 5: invoke() — ⏳ Pending
 ### Phase 6: lifecycle integration — ⏳ Pending

@@ -1,14 +1,15 @@
 /*
  * Code Map: sdk-node public entry point
  *
- * createSdk is the factory. Phase 1 returns a stub that satisfies the
- * SdkInstance shape but throws on every method except state(). Subsequent
- * phases replace each method with real behavior:
+ * createSdk is the factory. Phase 1: typed stub. Phases 3-6 wire real
+ * behavior. This file orchestrates the lifecycle; the heavy lifting
+ * happens in client.ts, manifest.ts, lifecycle.ts.
  *
- *   Phase 3: connect() opens WebSocket
- *   Phase 4: register() reads manifest + handlers, registers caps
- *   Phase 5: invoke() dispatches calls + returns results
- *   Phase 6: disconnect() + reconnect-with-reregister
+ *   Phase 1: state() + reset() work; everything else throws
+ *   Phase 3: connect() opens WebSocket via WsClient
+ *   Phase 4: register() reads manifest, registers capabilities
+ *   Phase 5: invoke() dispatches calls
+ *   Phase 6: disconnect() + auto-reconnect-with-reregister
  */
 
 import type {
@@ -17,11 +18,10 @@ import type {
   SdkState,
   Phase,
 } from "./types.js";
+import { WsClient } from "./client.js";
 
 /**
  * Create an SDK instance from the developer's config.
- *
- * Phase 1: returns a typed stub. Phases 3-6 wire up the real lifecycle.
  */
 export function createSdk(config: SdkConfig): SdkInstance {
   // Validate config shape early — fail fast on bad input.
@@ -39,13 +39,20 @@ export function createSdk(config: SdkConfig): SdkInstance {
   }
 
   // Mutable internal state — kept private.
-  // (Internal type is mutable; the public state() returns a readonly view.)
   const phase: { value: Phase } = { value: "init" };
   const capabilities: Record<string, { tier: string | null; registered: boolean }> = {};
 
+  // The WebSocket client is created lazily on first connect(); held here for
+  // later phases (register, invoke, disconnect) and for cleanup on reset.
+  let client: WsClient | null = null;
+
   return {
     async connect(): Promise<void> {
-      throw new Error("sdk-node: connect() not yet implemented (Phase 3)");
+      if (client === null) {
+        client = new WsClient({ url: config.gateway.url, token: config.gateway.token });
+      }
+      await client.open();
+      phase.value = "connected";
     },
 
     async register(): Promise<void> {
@@ -57,15 +64,21 @@ export function createSdk(config: SdkConfig): SdkInstance {
     },
 
     async disconnect(): Promise<void> {
-      throw new Error("sdk-node: disconnect() not yet implemented (Phase 6)");
+      if (client !== null) {
+        await client.close();
+        client = null;
+      }
+      phase.value = "disconnected";
     },
 
     reset(): void {
-      // Reset is allowed even in Phase 1 — it just clears local state.
+      // Reset is allowed in any phase — it just clears local state.
       phase.value = "init";
       for (const k of Object.keys(capabilities)) {
         delete capabilities[k];
       }
+      // Note: we don't close the client; the developer should call
+      // disconnect() explicitly if they want the WebSocket closed.
     },
 
     state(): SdkState {
