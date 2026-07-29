@@ -11,7 +11,7 @@
 **Build:**
 - `agentide/packages/backend-runtime/package.json` — name `@platform/backend-runtime`, dep `ws`
 - `agentide/packages/backend-runtime/tsconfig.json` — extends root `tsconfig.base.json` with `composite: true`, `outDir: dist`
-- `src/types.ts` — `BackendRuntimeConfig`, `BackendRuntime`, `BackendConnection`, `RegisteredCapability`, `WireMessage` (subset of sdk-node's wire types we send/receive)
+- `src/types.ts` — `BackendRuntimeConfig`, `BackendRuntime`, `BackendConnection`, `RegisteredCapability`, `BackendValue` (recursive value type; replaces the planned `WireMessage` to avoid cross-package type coupling on `@platform/sdk-node` — see drift review D-29 for rationale), `ConnectionAcceptedPayload`, `ConnectionClosedPayload`, `Clock` (per-package timer abstraction matching the pattern in `@platform/gateway-core`, `@platform/session-manager`, `@platform/plugin-manager`)
 - `src/index.ts` — `createBackendRuntime(config): Promise<BackendRuntime>` stub returning a no-op
 
 **Verify:**

@@ -416,4 +416,51 @@ describe("CapabilityRegistry", () => {
     ).rejects.toThrow();
     expect(events).toHaveLength(0);
   });
+
+  it("removeByOwner returns and clears every cap owned by the owner", async () => {
+    const bus = createEventBus();
+    const registry = createCapabilityRegistry(bus);
+    await registry.register("acme", {
+      owner: "acme",
+      capabilities: [cap("order.create"), cap("order.read")],
+    });
+    await registry.register("other", {
+      owner: "other",
+      capabilities: [cap("payment.charge")],
+    });
+    const removed = await registry.removeByOwner("acme");
+    expect(removed.map((r) => r.name).sort()).toEqual(["order.create", "order.read"]);
+    // acme caps are gone; other's remain
+    expect(registry.list()).toHaveLength(1);
+    expect(registry.list()[0]?.name).toBe("payment.charge");
+  });
+
+  it("removeByOwner is idempotent — second call returns empty", async () => {
+    const bus = createEventBus();
+    const registry = createCapabilityRegistry(bus);
+    await registry.register("acme", { owner: "acme", capabilities: [cap("a.b")] });
+    const first = await registry.removeByOwner("acme");
+    const second = await registry.removeByOwner("acme");
+    expect(first).toHaveLength(1);
+    expect(second).toEqual([]);
+  });
+
+  it("removeByOwner emits capability.removed per dropped record", async () => {
+    const bus = createEventBus();
+    const registry = createCapabilityRegistry(bus);
+    await registry.register("acme", {
+      owner: "acme",
+      capabilities: [cap("order.create"), cap("order.read")],
+    });
+    const events: Array<{ name: string; payload: { capability: { name: string } } }> = [];
+    bus.subscribe<{ capability: { name: string } }>("capability.removed", (e) => {
+      events.push({ name: e.name, payload: e.payload });
+    });
+    await registry.removeByOwner("acme");
+    expect(events).toHaveLength(2);
+    expect(events.map((e) => e.payload.capability.name).sort()).toEqual([
+      "order.create",
+      "order.read",
+    ]);
+  });
 });

@@ -101,5 +101,13 @@ export function createCapabilityRegistry(eventBus: EventBus): CapabilityRegistry
     describe(name: string, version?: string): DescribeResult {
       return store.describe(name, version);
     },
+
+    async removeByOwner(owner: string): Promise<readonly CapabilityRecord[]> {
+      const removed = store.removeByOwner(owner);
+      for (const record of removed) {
+        await eventBus.publish("capability.removed", { capability: record });
+      }
+      return removed;
+    },
   };
 }
