@@ -220,7 +220,7 @@ Migration story: none. This is the first SDK release. Future major versions of t
 Mark each phase inline as it completes:
 
 ```
-### Phase 1: skeleton + types — ⏳ Pending
+### Phase 1: skeleton + types — ✅ Complete (335/335 tests pass, typecheck + lint + banned-types clean)
 ### Phase 2: manifest parser — ⏳ Pending
 ### Phase 3: WebSocket client + connect — ⏳ Pending
 ### Phase 4: register() — ⏳ Pending

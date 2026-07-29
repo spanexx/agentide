@@ -22,6 +22,9 @@
     },
     {
       "path": "packages/agentide"
+    },
+    {
+      "path": "packages/sdk-node"
     }
   ]
 }
