@@ -1,9 +1,9 @@
 /*
  * Code Map: event bus integration tests (Phase 7)
  *
- * Verifies all 7 PRD-TRD events fire on the @platform/event-bus:
+ * Verifies all 8 PRD-TRD events fire on the @platform/event-bus:
  *   sdk.connected, sdk.disconnected,
- *   sdk.capability.{registered,unregistered},
+ *   sdk.capability.{registered,unregistered,rejected},
  *   sdk.invoke.{started,completed,failed}.
  *
  * Each test stands up an SDK, captures events on a bus, and asserts the
@@ -21,6 +21,7 @@ import type {
   SdkDisconnectedPayload,
   SdkCapabilityRegisteredPayload,
   SdkCapabilityUnregisteredPayload,
+  SdkCapabilityRejectedPayload,
   SdkInvokeStartedPayload,
   SdkInvokeCompletedPayload,
   SdkInvokeFailedPayload,
@@ -68,6 +69,7 @@ interface EventLog {
   disconnected: PlatformEvent<SdkDisconnectedPayload>[];
   registered: PlatformEvent<SdkCapabilityRegisteredPayload>[];
   unregistered: PlatformEvent<SdkCapabilityUnregisteredPayload>[];
+  rejected: PlatformEvent<SdkCapabilityRejectedPayload>[];
   invokeStarted: PlatformEvent<SdkInvokeStartedPayload>[];
   invokeCompleted: PlatformEvent<SdkInvokeCompletedPayload>[];
   invokeFailed: PlatformEvent<SdkInvokeFailedPayload>[];
@@ -79,6 +81,7 @@ function capture(bus: EventBus): EventLog {
     disconnected: [],
     registered: [],
     unregistered: [],
+    rejected: [],
     invokeStarted: [],
     invokeCompleted: [],
     invokeFailed: [],
@@ -87,6 +90,7 @@ function capture(bus: EventBus): EventLog {
   bus.subscribe<SdkDisconnectedPayload>("sdk.disconnected", (e) => { log.disconnected.push(e); });
   bus.subscribe<SdkCapabilityRegisteredPayload>("sdk.capability.registered", (e) => { log.registered.push(e); });
   bus.subscribe<SdkCapabilityUnregisteredPayload>("sdk.capability.unregistered", (e) => { log.unregistered.push(e); });
+  bus.subscribe<SdkCapabilityRejectedPayload>("sdk.capability.rejected", (e) => { log.rejected.push(e); });
   bus.subscribe<SdkInvokeStartedPayload>("sdk.invoke.started", (e) => { log.invokeStarted.push(e); });
   bus.subscribe<SdkInvokeCompletedPayload>("sdk.invoke.completed", (e) => { log.invokeCompleted.push(e); });
   bus.subscribe<SdkInvokeFailedPayload>("sdk.invoke.failed", (e) => { log.invokeFailed.push(e); });
