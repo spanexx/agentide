@@ -1,0 +1,323 @@
+{
+  "active_token": "tok-1785299719161-2262",
+  "tokens": [
+    {
+      "id": "tok-1785299719150-1178",
+      "tenant": "acme",
+      "caller": "bootstrap",
+      "scope": [
+        "*"
+      ],
+      "issued": "2026-07-29T04:35:19.150Z"
+    },
+    {
+      "id": "tok-1785299719161-2262",
+      "tenant": "acme",
+      "caller": "dashboard-bot",
+      "scope": [
+        "platform.*.read"
+      ],
+      "issued": "2026-07-29T04:35:19.161Z"
+    },
+    {
+      "id": "tok-1785299719163-9762",
+      "tenant": "acme",
+      "caller": "agent-alpha",
+      "scope": [
+        "runtime.*.act"
+      ],
+      "issued": "2026-07-29T04:35:19.163Z"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "tenant.create",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.tenant.write"
+      ],
+      "tier": "write",
+      "description": "Create a tenant and bootstrap token"
+    },
+    {
+      "name": "tenant.list",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.tenant.read"
+      ],
+      "tier": "read",
+      "description": "List tenants visible to the caller"
+    },
+    {
+      "name": "tenant.suspend",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.tenant.write"
+      ],
+      "tier": "write",
+      "description": "Suspend a tenant (block new calls)"
+    },
+    {
+      "name": "tenant.delete",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.tenant.write"
+      ],
+      "tier": "write",
+      "description": "Delete a tenant (purge records)"
+    },
+    {
+      "name": "gateway.status",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.gateway.read"
+      ],
+      "tier": "read",
+      "description": "Gateway runtime status"
+    },
+    {
+      "name": "gateway.metrics",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.gateway.read"
+      ],
+      "tier": "read",
+      "description": "Gateway counters and metrics"
+    },
+    {
+      "name": "gateway.configuration",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.gateway.read"
+      ],
+      "tier": "read",
+      "description": "Effective configuration (with secrets redacted)"
+    },
+    {
+      "name": "auth.token.issue",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.token.write"
+      ],
+      "tier": "write",
+      "description": "Mint a JWT for a caller"
+    },
+    {
+      "name": "auth.token.revoke",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.token.write"
+      ],
+      "tier": "write",
+      "description": "Revoke a JWT (no-op in v1)"
+    },
+    {
+      "name": "system.info",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.system.read"
+      ],
+      "tier": "read",
+      "description": "Platform name and version"
+    },
+    {
+      "name": "system.version",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.system.read"
+      ],
+      "tier": "read",
+      "description": "Platform version (semver + nullable buildHash)"
+    },
+    {
+      "name": "system.health",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "gateway",
+      "permissions": [
+        "platform.system.read"
+      ],
+      "tier": "read",
+      "description": "Platform health status (always ok in v1)"
+    },
+    {
+      "name": "session.create",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "session-manager",
+      "permissions": [
+        "platform.session.write"
+      ],
+      "tier": "write",
+      "description": "Create a session"
+    },
+    {
+      "name": "session.resume",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "session-manager",
+      "permissions": [
+        "platform.session.write"
+      ],
+      "tier": "write",
+      "description": "Resume a session"
+    },
+    {
+      "name": "session.destroy",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "session-manager",
+      "permissions": [
+        "platform.session.write"
+      ],
+      "tier": "write",
+      "description": "Destroy a session and cleanup resources"
+    },
+    {
+      "name": "session.touch",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "session-manager",
+      "permissions": [
+        "platform.session.write"
+      ],
+      "tier": "write",
+      "description": "Reset a session's idle timer"
+    },
+    {
+      "name": "session.list",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "session-manager",
+      "permissions": [
+        "platform.session.read"
+      ],
+      "tier": "read",
+      "description": "List sessions in the caller's tenant (returns [] in v1)"
+    },
+    {
+      "name": "capability.list",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "capability-registry",
+      "permissions": [
+        "platform.capability.read"
+      ],
+      "tier": "read",
+      "description": "List registered capabilities"
+    },
+    {
+      "name": "capability.describe",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "capability-registry",
+      "permissions": [
+        "platform.capability.read"
+      ],
+      "tier": "read",
+      "description": "Describe one capability by name"
+    },
+    {
+      "name": "plugin.list",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "plugin-manager",
+      "permissions": [
+        "platform.plugin.read"
+      ],
+      "tier": "read",
+      "description": "List installed plugins"
+    },
+    {
+      "name": "plugin.install",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "plugin-manager",
+      "permissions": [
+        "platform.plugin.write"
+      ],
+      "tier": "write",
+      "description": "Install a plugin from local source"
+    },
+    {
+      "name": "plugin.uninstall",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "plugin-manager",
+      "permissions": [
+        "platform.plugin.write"
+      ],
+      "tier": "write",
+      "description": "Uninstall a plugin and cleanup resources"
+    },
+    {
+      "name": "plugin.enable",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "plugin-manager",
+      "permissions": [
+        "platform.plugin.write"
+      ],
+      "tier": "write",
+      "description": "Enable a previously disabled plugin"
+    },
+    {
+      "name": "plugin.disable",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "plugin-manager",
+      "permissions": [
+        "platform.plugin.write"
+      ],
+      "tier": "write",
+      "description": "Disable a plugin (in-flight finish)"
+    },
+    {
+      "name": "plugin.reload",
+      "version": "1.0.0",
+      "type": "platform",
+      "owner": "plugin-manager",
+      "permissions": [
+        "platform.plugin.write"
+      ],
+      "tier": "write",
+      "description": "Re-read a plugin's source from disk"
+    }
+  ],
+  "audit_log": [
+    {
+      "ts": "04:35:19",
+      "caller": "bootstrap",
+      "capability": "plugin.install",
+      "status": "ok"
+    },
+    {
+      "ts": "04:35:19",
+      "caller": "dashboard-bot",
+      "capability": "tenant.create",
+      "status": "denied"
+    }
+  ]
+}

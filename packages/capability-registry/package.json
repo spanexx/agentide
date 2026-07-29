@@ -31,6 +31,6 @@
     "@typescript-eslint/eslint-plugin": "^8.65.0"
   },
   "dependencies": {
-    "@platform/event-bus": "*"
+    "@platform/event-bus": "workspace:*"
   }
 }

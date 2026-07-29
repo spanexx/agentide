@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sdk-node simulation — post-impl (real SDK)</title>
+
+<style>
+  :root {
+    --bg: #0f1419;
+    --bg-elevated: #1a1f2e;
+    --card: #232938;
+    --border: #2d3344;
+    --fg: #e6e6e6;
+    --muted: #8b95a7;
+    --accent: #6ee7b7;
+    --accent-dim: #34d399;
+    --warn: #fbbf24;
+    --error: #f87171;
+    --info: #60a5fa;
+    --term-bg: #000;
+    --term-fg: #e6e6e6;
+    --term-prompt: #6ee7b7;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; }
+  header {
+    padding: 10px 16px; background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 12px; align-items: center;
+  }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+  header .badge {
+    background: var(--card); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 4px; color: var(--muted); font-size: 10px;
+  }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .panel {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px; display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel h2 {
+    margin: 0 0 8px 0; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .lc { display: flex; align-items: center; gap: 2px; padding: 8px 2px; }
+  .lc-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .lc-dot {
+    width: 14px; height: 14px; border-radius: 50%; background: var(--card);
+    border: 2px solid var(--border); transition: all 0.3s ease;
+  }
+  .lc-dot.a { background: var(--accent); border-color: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .lc-dot.d { background: var(--accent-dim); border-color: var(--accent-dim); }
+  .lc-line { flex: 1; height: 2px; background: var(--border); }
+  .lc-line.a { background: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .lc-line.d { background: var(--accent-dim); }
+  .lc-label { font-size: 9px; color: var(--muted); text-transform: uppercase; }
+  .lc-step.a .lc-label, .lc-step.d .lc-label { color: var(--accent); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  #cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
+  .cap-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-left: 3px solid var(--muted); border-radius: 3px;
+    padding: 8px; opacity: 0; transform: translateY(6px);
+    transition: opacity 0.3s, transform 0.3s, border-color 0.3s;
+    cursor: pointer;
+  }
+  .cap-card.shown { opacity: 1; transform: translateY(0); }
+  .cap-card.r { border-left-color: var(--accent); }
+  .cap-card.i { border-left-color: var(--info); }
+  .cap-card.f { border-left-color: var(--error); }
+  .cap-name { font-family: ui-monospace, monospace; font-weight: 600; color: var(--accent); font-size: 12px; }
+  .cap-tier { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 2px; margin-left: 4px; text-transform: uppercase; background: var(--accent); color: var(--bg); }
+  .cap-desc { color: var(--muted); font-size: 10px; margin: 3px 0; }
+  .empty { color: var(--muted); font-style: italic; padding: 6px; font-size: 11px; }
+  #evt-log {
+    flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 6px; font-family: ui-monospace, monospace; font-size: 10px;
+    min-height: 0; max-height: 200px;
+  }
+  .evt { padding: 1px 4px; margin-bottom: 1px; border-radius: 2px; opacity: 0; transform: translateX(15px); transition: opacity 0.25s, transform 0.25s; }
+  .evt.shown { opacity: 1; transform: translateX(0); }
+  .evt.c { color: var(--accent); } .evt.d { color: var(--warn); } .evt.r { color: var(--info); }
+  .evt.i { color: var(--accent-dim); } .evt.e { color: var(--error); background: rgba(248,113,113,0.08); }
+
+  /* Custom terminal: a scrollable log + an input that types into the log */
+  #term-box {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--term-bg); border-radius: 3px;
+    margin: 6px; padding: 8px; min-height: 0; overflow: hidden;
+  }
+  #term-log {
+    flex: 1; overflow-y: auto; color: var(--term-fg);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; line-height: 1.4; white-space: pre-wrap;
+    word-break: break-all;
+  }
+  #term-log .ok { color: var(--accent); }
+  #term-log .warn { color: var(--warn); }
+  #term-log .err { color: var(--error); }
+  #term-log .info { color: #60a5fa; }
+  #term-log .muted { color: var(--muted); }
+  #term-input-row {
+    display: flex; align-items: center; padding-top: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  }
+  #term-prompt { color: var(--term-prompt); margin-right: 4px; }
+  #term-input {
+    flex: 1; background: transparent; border: none; color: var(--term-fg);
+    font-family: inherit; font-size: inherit; outline: none;
+    caret-color: var(--accent);
+  }
+
+  .help { padding: 6px 12px; background: var(--bg-elevated); border-top: 1px solid var(--border); display: flex; gap: 10px; font-size: 10px; color: var(--muted); align-items: center; }
+  .help code { background: var(--card); padding: 1px 5px; border-radius: 2px; color: var(--accent); }
+  .help button { margin-left: auto; padding: 5px 12px; background: var(--accent); color: var(--bg); border: none; border-radius: 3px; font-weight: 600; cursor: pointer; font-size: 10px; }
+  .help button:hover { opacity: 0.85; }
+  .help button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>sdk-node</h1>
+  <span class="badge">POST-IMPL (real @platform/sdk-node)</span>
+</header>
+
+<main>
+  <div class="panel">
+    <div class="section">
+      <h2>Lifecycle</h2>
+      <div class="lc" id="lc">
+        <div class="lc-step" data-step="init"><div class="lc-dot"></div><div class="lc-label">init</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="connect"><div class="lc-dot"></div><div class="lc-label">connect</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="register"><div class="lc-dot"></div><div class="lc-label">register</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="invoke"><div class="lc-dot"></div><div class="lc-label">invoke</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="disconnect"><div class="lc-dot"></div><div class="lc-label">disconnect</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Capabilities</h2>
+      <div id="cap-grid"><div class="empty">No capabilities registered yet.</div></div>
+    </div>
+
+    <div class="section" style="flex:1; min-height:0;">
+      <h2>Events</h2>
+      <div id="evt-log"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="padding:0;">
+    <h2 style="padding:12px 12px 0 12px; margin:0;">Terminal</h2>
+    <div id="term-box">
+      <div id="term-log"></div>
+      <div id="term-input-row">
+        <span id="term-prompt">sdk@sim ~ $&nbsp;</span>
+        <input id="term-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="help">
+  <span><code>connect</code> · <code>register</code> · <code>invoke &lt;name&gt; [json]</code> · <code>disconnect</code> · <code>reset</code> · <code>help</code></span>
+  <button id="demo-btn">▶ Run full demo</button>
+</div>
+
+<script src="sdk-iife.js"></script>
+<script src="simulate-bundle.js"></script>
+<script>
+'use strict';
+
+// ─── DOM refs ────────────────────────────────────────────────────────
+const lcEl = document.getElementById('lc');
+const capGrid = document.getElementById('cap-grid');
+const evtLog = document.getElementById('evt-log');
+const demoBtn = document.getElementById('demo-btn');
+const termLog = document.getElementById('term-log');
+const termInput = document.getElementById('term-input');
+const termPrompt = document.getElementById('term-prompt');
+
+// ─── UI state ──────────────────────────────────────────────────────
+const ui = {
+  phase: 'init',
+  caps: {},
+  lastCaps: new Set(),
+};
+
+// ─── Lifecycle visual ──────────────────────────────────────────────
+const LC_STEPS = ['init', 'connect', 'register', 'invoke', 'disconnect'];
+
+// Engine state values → lifecycle step names. The engine reports phases
+// like 'connected', 'registered' (past tense); the lifecycle strip uses
+// verb forms ('connect', 'register'). This map lets the dot strip stay
+// in sync regardless of which verb tense the engine uses.
+const PHASE_TO_STEP = {
+  init: 'init',
+  connected: 'connect',
+  registered: 'register',
+  invoke: 'invoke',
+  disconnected: 'disconnect',
+};
+
+function setPhase(phase) {
+  const stepName = PHASE_TO_STEP[phase] ?? phase;
+  ui.phase = phase;
+  const idx = LC_STEPS.indexOf(stepName);
+  lcEl.querySelectorAll('.lc-step').forEach((el, i) => {
+    // CSS rules target .lc-dot.a / .lc-line.d (the inner elements), not
+    // the parent. Apply classes to both the parent (for label coloring
+    // via .lc-step.a .lc-label) and the child dot/line.
+    el.classList.remove('a', 'd');
+    const dot = el.querySelector('.lc-dot');
+    if (dot) dot.classList.remove('a', 'd');
+    if (i < idx) {
+      el.classList.add('d');
+      if (dot) dot.classList.add('d');
+    } else if (i === idx) {
+      el.classList.add('a');
+      if (dot) dot.classList.add('a');
+    }
+  });
+  lcEl.querySelectorAll('.lc-line').forEach((el, i) => {
+    el.classList.remove('a', 'd');
+    if (i < idx) el.classList.add('d');
+    else if (i === idx) el.classList.add('a');
+  });
+}
+
+// ─── Capability cards ──────────────────────────────────────────────
+function syncCards() {
+  const current = new Set(Object.keys(ui.caps));
+  for (const name of current) {
+    if (ui.lastCaps.has(name)) continue;
+    const c = ui.caps[name];
+    const card = document.createElement('div');
+    card.className = 'cap-card';
+    card.id = `card-${name}`;
+    card.innerHTML = `<div class="cap-name">${name}<span class="cap-tier">${c.tier || '?'}</span></div><div class="cap-desc">via @platform/sdk-node</div>`;
+    card.addEventListener('click', () => doCommand(`invoke ${name}`));
+    const empty = capGrid.querySelector('.empty');
+    if (empty) empty.remove();
+    capGrid.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('shown', 'r'));
+  }
+  for (const name of ui.lastCaps) {
+    if (current.has(name)) continue;
+    const el = document.getElementById(`card-${name}`);
+    if (el) el.remove();
+  }
+  ui.lastCaps = current;
+  if (current.size === 0) {
+    capGrid.innerHTML = '<div class="empty">No capabilities registered yet.</div>';
+  }
+}
+function flashCard(name, klass) {
+  const card = document.getElementById(`card-${name}`);
+  if (!card) return;
+  card.classList.add(klass);
+  setTimeout(() => card.classList.remove(klass), 1200);
+}
+
+// ─── Event log ──────────────────────────────────────────────────────
+function pushEvent(name, kind, payload) {
+  const t = new Date().toTimeString().slice(0, 8);
+  const el = document.createElement('div');
+  el.className = `evt ${kind}`;
+  el.innerHTML = `<span style="color:var(--muted);margin-right:4px;">${t}</span><span style="font-weight:600;">${name}</span>${payload ? ` — ${payload}` : ''}`;
+  evtLog.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('shown'));
+  el.scrollIntoView({ block: 'end' });
+}
+
+// ─── Custom terminal log ───────────────────────────────────────────
+function colorize(text, color) {
+  if (!color) return escapeHtml(text);
+  return `<span class="${color}">${escapeHtml(text)}</span>`;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function termWrite(text, color) {
+  const span = document.createElement('div');
+  span.innerHTML = colorize(text, color);
+  termLog.appendChild(span);
+  termLog.scrollTop = termLog.scrollHeight;
+}
+function termWriteln(text, color) {
+  termWrite((text == null ? '' : text) + '\n', color);
+}
+function showPrompt() {
+  // Prompt is the static <span> in the input row; nothing to do.
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ─── Engine ready check ───────────────────────────────────────────
+const engine = window.engine;
+if (!engine) {
+  termWriteln('FATAL: simulate-bundle.js did not load window.engine', 'err');
+  console.error('[sim] window.engine undefined');
+} else {
+  console.log('[sim] engine ready, methods:', Object.keys(engine).join(','));
+}
+
+// ─── doCommand: run engine + apply UI updates ──────────────────────
+async function doCommand(line) {
+  console.log('[sim] doCommand:', JSON.stringify(line));
+  // Echo the command into the log first
+  termWrite(`sdk@sim ~ $ ${line}\n`, 'muted');
+
+  // Run the engine, polling for state changes so long-running commands
+  // (like disconnect, which goes disconnected → connected → registered)
+  // animate the lifecycle strip in real time.
+  let result;
+  let lastPhase = null;
+  const pollHandle = setInterval(() => {
+    const s = engine.getState();
+    if (s.phase !== lastPhase) {
+      lastPhase = s.phase;
+      setPhase(s.phase);
+    }
+  }, 100);
+
+  try {
+    result = await engine.runCommand(line);
+  } catch (err) {
+    console.error('[sim] engine error:', err);
+    termWriteln(`error: ${err.message}`, 'err');
+    clearInterval(pollHandle);
+    return;
+  }
+  clearInterval(pollHandle);
+
+  // Final state sync (in case the last transition happened between polls)
+  ui.phase = engine.getState().phase;
+  ui.caps = engine.getState().caps;
+  setPhase(ui.phase);
+  syncCards();
+  // Print result text
+  if (result && result.text) {
+    const lines = String(result.text).split('\n');
+    for (const l of lines) termWriteln(l, result.color || null);
+  }
+  // Push events based on engine state changes
+  const ev = engine.getLastEvent();
+  if (ev) pushEvent(ev.name, ev.kind, ev.payload);
+}
+
+// ─── Input handler — REAL input box, chars always visible ─────────
+termInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const line = termInput.value.trim();
+    termInput.value = '';
+    if (!line) return;
+    await doCommand(line);
+  }
+});
+// Keep the input focused whenever the user clicks in the terminal area
+document.getElementById('term-box').addEventListener('click', () => termInput.focus());
+
+// ─── Demo button ────────────────────────────────────────────────────
+demoBtn.addEventListener('click', async () => {
+  demoBtn.disabled = true;
+  demoBtn.textContent = '⟳ running...';
+  try {
+    for (const line of ['connect', 'register', 'invoke customer.read {"customerId":"c-042"}', 'disconnect']) {
+      await doCommand(line);
+      await sleep(200);
+    }
+    termWriteln('─ demo complete ─', 'ok');
+  } finally {
+    demoBtn.disabled = false;
+    demoBtn.textContent = '▶ Run full demo';
+  }
+});
+
+// ─── Banner ────────────────────────────────────────────────────────
+function banner() {
+  termWriteln('sdk-node post-impl simulation (real @platform/sdk-node)');
+  termWriteln('Type a command and press Enter. Click ▶ Run full demo for a guided tour.');
+  termWriteln('');
+}
+banner();
+setPhase('init');
+termInput.focus();
+</script>
+
+</body>
+</html>

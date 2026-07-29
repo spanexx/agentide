@@ -55,6 +55,12 @@ export interface WsClientConfig {
   readonly token: string;
   readonly maxBackoffMs?: number;     // default 30_000
   readonly baseBackoffMs?: number;    // default 1_000
+  /** Random jitter applied to each backoff delay. Range [0, 1].
+   *  Default 0.2 per IMPL Risk Notes (jitter the backoff to avoid reconnect
+   *  storms). Pass 0 for deterministic test timing. */
+  readonly jitterRatio?: number;
+  /** Injectable randomness for testing. Default Math.random. */
+  readonly random?: () => number;
 }
 
 export class WsClient {
@@ -62,18 +68,27 @@ export class WsClient {
   private readonly token: string;
   private readonly maxBackoffMs: number;
   private readonly baseBackoffMs: number;
+  private readonly jitterRatio: number;
+  private readonly random: () => number;
 
   private ws: WebSocket | null = null;
   private handlers = new Map<WsClientEvent, Set<WsClientHandler>>();
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
+  /** Time at which the most recent open() started — used for latency. */
+  private openStartedAt = 0;
 
   constructor(config: WsClientConfig) {
     this.url = config.url;
     this.token = config.token;
     this.maxBackoffMs = config.maxBackoffMs ?? 30_000;
     this.baseBackoffMs = config.baseBackoffMs ?? 1_000;
+    // Clamp jitterRatio to [0, 1] — documented range. Values > 1 would
+    // produce negative factors and 0ms reconnect delays (infinite loop).
+    const rawJitter = config.jitterRatio ?? 0.2;
+    this.jitterRatio = Math.max(0, Math.min(1, rawJitter));
+    this.random = config.random ?? Math.random;
   }
 
   /**
@@ -84,6 +99,7 @@ export class WsClient {
    */
   async open(): Promise<void> {
     this.closed = false;
+    this.openStartedAt = Date.now();
     return new Promise<void>((resolve, reject) => {
       let settled = false;
       try {
@@ -189,10 +205,30 @@ export class WsClient {
   /**
    * Compute the backoff delay for retry N (1-indexed).
    * Exponential: base * 2^(n-1), capped at maxBackoffMs.
+   * Jitter: each delay is multiplied by (1 ± jitterRatio * random).
+   *   Pass jitterRatio=0 for deterministic timing (tests).
    */
   backoff(n: number): number {
     const raw = this.baseBackoffMs * Math.pow(2, n - 1);
-    return Math.min(raw, this.maxBackoffMs);
+    const capped = Math.min(raw, this.maxBackoffMs);
+    if (this.jitterRatio <= 0) return capped;
+    // Symmetric jitter: factor in [1 - ratio, 1 + ratio].
+    const factor = 1 + (this.random() * 2 - 1) * this.jitterRatio;
+    return Math.max(0, Math.round(capped * factor));
+  }
+
+  /**
+   * Latency of the most recent successful open(), in milliseconds.
+   * Used by the SDK to populate the `sdk.connected` event payload.
+   */
+  latencyMs(): number {
+    if (this.openStartedAt === 0) return 0;
+    return Date.now() - this.openStartedAt;
+  }
+
+  /** The Gateway URL this client was configured with. */
+  configuredUrl(): string {
+    return this.url;
   }
 
   /** Schedule the next reconnect attempt. */

@@ -21,11 +21,11 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/capability-registry": "0.0.0",
-    "@platform/event-bus": "0.0.0",
-    "@platform/platform-capabilities": "0.0.0",
-    "@platform/plugin-manager": "0.0.0",
-    "@platform/session-manager": "0.0.0"
+    "@platform/capability-registry": "workspace:*",
+    "@platform/event-bus": "workspace:*",
+    "@platform/platform-capabilities": "workspace:*",
+    "@platform/plugin-manager": "workspace:*",
+    "@platform/session-manager": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

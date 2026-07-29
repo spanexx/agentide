@@ -18,6 +18,8 @@ import { WsClient } from "../client.js";
 import { createSdk } from "../index.js";
 import type { WsClientMessage } from "../client.js";
 import { dispatchIncoming, makeLogger, makeCallContext, makeHandlerContext, invokeHandler } from "../invoke.js";
+import { SdkEventPublisher } from "../events.js";
+import { createEventBus } from "@platform/event-bus";
 import type { Handler } from "../types.js";
 
 /**
@@ -172,6 +174,7 @@ describe("lifecycle — connect → register → invoke (Phase 6)", () => {
       { app: { id: "inv-app", name: "Inv" }, token: "t" },
       { type: "sdk.invoke", callId: "call-1", name: "inv.echo", input: { msg: "hi" } } as unknown as WsClientMessage,
       makeLogger(false),
+      new SdkEventPublisher(createEventBus(), "inv-app"),
     );
 
     const resultMsg = gw.sentBySdk.find((m) => m.type === "sdk.invoke.result" && m.callId === "call-1");
@@ -202,6 +205,7 @@ describe("lifecycle — connect → register → invoke (Phase 6)", () => {
       { app: { id: "err-app", name: "Err" }, token: "t" },
       { type: "sdk.invoke", callId: "call-err", name: "err.boom", input: {} } as unknown as WsClientMessage,
       makeLogger(false),
+      new SdkEventPublisher(createEventBus(), "err-app"),
     );
 
     const errMsg = gw.sentBySdk.find((m) => m.type === "sdk.invoke.error" && m.callId === "call-err");
@@ -235,6 +239,7 @@ describe("lifecycle — connect → register → invoke (Phase 6)", () => {
       { app: { id: "nf-app", name: "NF" }, token: "t" },
       { type: "sdk.invoke", callId: "call-nf", name: "nf.missing", input: {} } as unknown as WsClientMessage,
       makeLogger(false),
+      new SdkEventPublisher(createEventBus(), "nf-app"),
     );
 
     const errMsg = gw.sentBySdk.find((m) => m.type === "sdk.invoke.error" && m.callId === "call-nf");
@@ -285,8 +290,8 @@ describe("lifecycle — disconnect + auto-reconnect (Phase 6)", () => {
   });
 
   it("backoff schedule: 1s, 2s, 4s, 8s, 16s, capped at 30s", () => {
-    // Pure function on the WsClient.
-    const c = new WsClient({ url: "ws://x", token: "t", baseBackoffMs: 1000, maxBackoffMs: 30000 });
+    // Pure function on the WsClient. jitterRatio: 0 → deterministic for tests.
+    const c = new WsClient({ url: "ws://x", token: "t", baseBackoffMs: 1000, maxBackoffMs: 30000, jitterRatio: 0 });
     expect(c.backoff(1)).toBe(1000);
     expect(c.backoff(2)).toBe(2000);
     expect(c.backoff(3)).toBe(4000);

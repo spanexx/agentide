@@ -41,8 +41,10 @@ The cost of leaving this unsolved: every developer who wants their app on Agenti
 ### Scenario 5: Gateway connection drops, SDK auto-reconnects
 
 **Given** capabilities are registered and the SDK is in steady state
-**When** the Gateway process dies (simulated by `disconnect` command)
-**Then** the SDK emits `sdk.disconnected`, schedules reconnect with exponential backoff (1s, 2s, 4s), reconnects, re-registers all capabilities automatically, emits `sdk.capability.registered` per capability (with `(reconnect)` suffix in the log), and returns to steady state. No operator intervention required.
+**When** the Gateway connection drops unexpectedly (e.g. Gateway process dies, network blip — *not* a developer-initiated `sdk.disconnect()`)
+**Then** the SDK emits `sdk.disconnected` (with `reason="simulated-drop"` for the test harness, or `reason="error"` for a real network close), schedules reconnect with exponential backoff (1s, 2s, 4s, ... capped at 30s with ±20% jitter), reconnects, re-registers all capabilities automatically, emits `sdk.capability.registered` per capability (with `reconnected: true` in the payload), and returns to steady state. No operator intervention required.
+
+> **Note on the sim's `disconnect` command:** The simulation's `disconnect` command does **not** call `sdk.disconnect()` directly — that would suppress auto-reconnect (per `disconnect()` contract above). Instead it triggers a mock close event via a dropper, simulating a Gateway crash so the reconnect path is observable. Use `reset` to actually tear down the SDK instance without reconnect.
 
 ### Scenario 6: developer resets the SDK
 
@@ -136,7 +138,7 @@ export function createSdk(config: SdkConfig): SdkInstance;
 export type SdkConfig = {
   gateway: { url: string; token: string };
   app: { id: string; name: string };
-  manifest: string;          // path to manifest.yaml or .json
+  manifest: string | ManifestObject;  // path to manifest.yaml/.json OR inline object (Phase 7)
   handlers: string | Record<string, Function>;  // path to module OR direct map
   observability?: { logger?: Logger };  // optional plug-in
 };
@@ -154,15 +156,16 @@ export type SdkInstance = {
 
 **`connect()`** — opens WebSocket, exchanges token, emits `sdk.connected`. Fails fast on unreachable Gateway (caller catches the error).
 
-**`register()`** — reads manifest, imports handlers, registers each capability with the Gateway. Throws on:
+**`register()`** — reads manifest, imports handlers, sends one `sdk.capability.register` per capability to the Gateway. Throws on (synchronous, local validation only):
 - Manifest not found
 - Manifest invalid (schema mismatch)
 - Handler not found for a manifest capability (mismatch)
-- Capability already registered by another app (collision)
+
+Gateway-level rejections (e.g. capability collision, unauthorized) are **asynchronous** and surfaced via the `sdk.capability.rejected` event on the event bus — `register()` itself always resolves successfully. The operator subscribes to that event to learn about a refusal. See `events.ts:177-187` and the inbound dispatch path in `invoke.ts:106-117`.
 
 **`invoke(name, input)`** — typically called by the SDK's WebSocket message handler, not by the developer. But exposed for testing and direct use.
 
-**`disconnect()`** — closes WebSocket, emits `sdk.disconnected`. Triggers auto-reconnect with backoff.
+**`disconnect()`** — closes WebSocket cleanly and emits `sdk.capability.unregistered` for every previously-registered capability, then `sdk.disconnected`. **No auto-reconnect** — explicit disconnect is a clean break. Auto-reconnect only fires on *unexpected* network close (e.g. Gateway process dies); see `client.ts:136-138, 177-178`.
 
 **`reset()`** — clears local state, no network calls.
 
@@ -179,6 +182,7 @@ All on the shared `@platform/event-bus`:
 | `sdk.invoke.started` | `{ appId, callId, capability, input }` | Before dispatching to handler |
 | `sdk.invoke.completed` | `{ appId, callId, capability, durationMs }` | After handler returns successfully |
 | `sdk.invoke.failed` | `{ appId, callId, capability, error }` | When handler throws |
+| `sdk.capability.rejected` | `{ appId, capability, reason }` | When Gateway refuses a `sdk.capability.register` (asynchronous — fired later via inbound dispatch) |
 
 ### Dependencies
 
@@ -193,26 +197,36 @@ Run `opensrc` if a new dep is added. For v1, no new deps are introduced.
 
 ### Architecture Notes
 
-**Module layout:**
+**Module layout** (Phase 7 — actual):
 
 ```
 packages/sdk-node/
 ├── src/
 │   ├── index.ts              # public API: createSdk, SdkConfig, SdkInstance
-│   ├── client.ts             # WebSocket client wrapper (reconnect, backoff)
-│   ├── manifest.ts           # parser + validator for the manifest file
-│   ├── handler-loader.ts     # dynamic import of the handlers module
-│   ├── events.ts             # event payload types
+│   ├── client.ts             # WebSocket client wrapper (reconnect, backoff + jitter)
+│   ├── manifest.ts           # parser + validator for the manifest file/object
+│   ├── register.ts           # manifest→handlers matching + send to Gateway
+│   ├── invoke.ts             # handler dispatch (inbound from Gateway)
+│   ├── lifecycle.ts          # WebSocket event wiring (open/close/message)
+│   ├── events.ts             # SdkEventPublisher + 8 event payload types (Phase 7)
 │   ├── types.ts              # SdkConfig, SdkInstance, HandlerContext
 │   └── __tests__/
-│       ├── connect.test.ts
+│       ├── client.test.ts
+│       ├── manifest.test.ts
 │       ├── register.test.ts
 │       ├── invoke.test.ts
-│       ├── reconnect.test.ts
-│       └── manifest.test.ts
+│       ├── lifecycle.test.ts
+│       ├── events.test.ts    # Phase 7: all 7 events
+│       └── skeleton.test.ts
 ├── package.json
 └── README.md
 ```
+
+**Note on the original layout** (PRD-TRD v1): the spec listed `handler-loader.ts`
+and `events.ts` as separate files. The handler-loader was merged into
+`register.ts` (`resolveHandlers()`) — a refactor with no behavior change.
+`events.ts` was added back in Phase 7 to hold the 8 event payload types and
+the `SdkEventPublisher` wrapper.
 
 **Connection lifecycle:**
 

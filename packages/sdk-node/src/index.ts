@@ -5,12 +5,16 @@
  *   - connect() opens a WebSocket via WsClient and attaches lifecycle handlers
  *   - register() reads the manifest + handlers, sends registrations
  *   - invoke() handles direct (developer-facing) calls
- *   - disconnect() closes the WebSocket
- *   - reset() clears local state
+ *   - disconnect() closes the WebSocket and emits unregistered events
+ *   - reset() clears local state and emits unregistered events
  *   - state() exposes phase + capabilities
  *
  * Phase 6 adds lifecycle.ts which keeps a Map of registered capabilities
  * so that on reconnect, every cap is re-registered automatically.
+ *
+ * Phase 7 wires @platform/event-bus — every PRD-TRD event is emitted here:
+ *   sdk.connected, sdk.disconnected, sdk.capability.{registered,unregistered},
+ *   sdk.invoke.{started,completed,failed}.
  */
 
 import type {
@@ -36,6 +40,8 @@ import {
   type LifecycleState,
   type RegisteredCapability,
 } from "./lifecycle.js";
+import { createEventBus, type EventBus } from "@platform/event-bus";
+import { SdkEventPublisher } from "./events.js";
 
 /**
  * Create an SDK instance from the developer's config.
@@ -68,6 +74,12 @@ export function createSdk(config: SdkConfig): SdkInstance {
   // inbound messages against the same client the lifecycle uses.
   const sdkInternal: { client: WsClient | null } = { client: null };
 
+  // Each SDK instance gets its own event bus so subscribers don't see
+  // events from unrelated SDKs in the same process. Tests can override
+  // via the `bus` field on SdkConfig (advanced; not on the public surface).
+  const bus: EventBus = (config as { bus?: EventBus }).bus ?? createEventBus();
+  const publisher = new SdkEventPublisher(bus, config.app.id);
+
   // Resolve handlers lazily — used by invoke() and the inbound dispatcher.
   let resolvedHandlers: Record<string, Handler> | null = null;
   async function getHandlers(): Promise<Record<string, Handler>> {
@@ -84,6 +96,7 @@ export function createSdk(config: SdkConfig): SdkInstance {
       client: c,
       state: lifecycleState,
       logger,
+      publisher,
       handlers: {
         onOpen: null,
         onClose: null,
@@ -97,6 +110,7 @@ export function createSdk(config: SdkConfig): SdkInstance {
             { app: config.app, token: config.gateway.token },
             msg,
             logger,
+            publisher,
           );
         },
       },
@@ -141,6 +155,8 @@ export function createSdk(config: SdkConfig): SdkInstance {
           permissions: cap.permissions,
           tier: cap.tier ?? null,
         });
+        // Phase 7: emit sdk.capability.registered on the event bus.
+        publisher.capabilityRegistered(cap.name, false);
       }
 
       phase.value = "registered";
@@ -165,6 +181,11 @@ export function createSdk(config: SdkConfig): SdkInstance {
 
     async disconnect(): Promise<void> {
       if (sdkInternal.client !== null) {
+        // Emit unregistered for every tracked capability before closing
+        // the connection (Gap 4 fix).
+        for (const capName of registered.keys()) {
+          publisher.capabilityUnregistered(capName);
+        }
         await sdkInternal.client.close();
         sdkInternal.client = null;
       }
@@ -173,6 +194,10 @@ export function createSdk(config: SdkConfig): SdkInstance {
 
     reset(): void {
       // Reset is allowed in any phase — it just clears local state.
+      // Emit unregistered for every tracked capability (Gap 4 fix).
+      for (const capName of registered.keys()) {
+        publisher.capabilityUnregistered(capName);
+      }
       phase.value = "init";
       clearRegistrations(lifecycleState);
     },
@@ -200,7 +225,7 @@ export function createSdk(config: SdkConfig): SdkInstance {
   return sdk;
 }
 
-export type {
+export {
   SdkConfig,
   SdkInstance,
   SdkState,
@@ -215,3 +240,16 @@ export type {
   ManifestSource,
   HandlerSource,
 } from "./types.js";
+
+export { WsClient } from "./client.js";
+
+export {
+  SdkEventPublisher,
+  type SdkConnectedPayload,
+  type SdkDisconnectedPayload,
+  type SdkCapabilityRegisteredPayload,
+  type SdkCapabilityUnregisteredPayload,
+  type SdkInvokeStartedPayload,
+  type SdkInvokeCompletedPayload,
+  type SdkInvokeFailedPayload,
+} from "./events.js";

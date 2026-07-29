@@ -10,6 +10,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { WsClientMessage } from "../client.js";
+import { createEventBus, type EventBus } from "@platform/event-bus";
+import { SdkEventPublisher, type SdkCapabilityRejectedPayload } from "../events.js";
+import { dispatchIncoming, makeLogger } from "../invoke.js";
 
 // Capture sends across tests; the WsClient constructor returns a stub.
 const sends: WsClientMessage[] = [];
@@ -118,5 +121,33 @@ describe("createSdk().register() — manifest + handlers (Phase 4)", () => {
       handlers: {},
     });
     await expect(sdk.register()).rejects.toThrow(/connect/);
+  });
+
+  it("publishes sdk.capability.rejected when Gateway rejects a register request (Phase 7)", async () => {
+    // The SDK's inbound dispatch detects `sdk.capability.register.error`
+    // and emits `sdk.capability.rejected` on the bus. Verify directly:
+    const bus: EventBus = createEventBus();
+    const rejected: SdkCapabilityRejectedPayload[] = [];
+    bus.subscribe<SdkCapabilityRejectedPayload>("sdk.capability.rejected", (e) => {
+      rejected.push(e.payload);
+    });
+
+    const stubClient = { send: vi.fn() };
+    await dispatchIncoming(
+      stubClient as unknown as Parameters<typeof dispatchIncoming>[0],
+      {},
+      { app: { id: "rej-app", name: "Rej" }, token: "t" },
+      { type: "sdk.capability.register.error", name: "rej.foo", reason: "unauthorized" } as unknown as WsClientMessage,
+      makeLogger(false),
+      new SdkEventPublisher(bus, "rej-app"),
+    );
+    // Allow the void'd publish promise to resolve.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.appId).toBe("rej-app");
+    expect(rejected[0]!.capability).toBe("rej.foo");
+    expect(rejected[0]!.reason).toBe("unauthorized");
+    // No sdk.invoke.error sent back (this is a registration message, not an invoke).
+    expect(stubClient.send).not.toHaveBeenCalled();
   });
 });

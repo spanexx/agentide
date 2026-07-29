@@ -16,10 +16,15 @@
  *    - Try/catch wraps the handler so a throw doesn't crash the SDK.
  *
  * Phase 6 wires dispatchIncoming to the WsClient's 'message' event.
+ * Phase 7 adds SdkEventPublisher so invoke events are emitted on the bus:
+ *   - sdk.invoke.started    before dispatch
+ *   - sdk.invoke.completed  on success
+ *   - sdk.invoke.failed     on handler throw
  */
 
 import type { Handler, HandlerContext, CallContext, Logger } from "./types.js";
 import type { WsClient, WsClientMessage } from "./client.js";
+import type { SdkEventPublisher } from "./events.js";
 
 /**
  * Build a CallContext for an invocation.
@@ -84,6 +89,11 @@ export async function invokeHandler<I = unknown, O = unknown>(
  *
  * The dispatch is fire-and-forget from the SDK's perspective; the Gateway
  * correlates callId to its original invocation.
+ *
+ * Emits:
+ *   - sdk.invoke.started   before handler call
+ *   - sdk.invoke.completed on success
+ *   - sdk.invoke.failed    on handler throw or missing handler
  */
 export async function dispatchIncoming(
   client: WsClient,
@@ -91,8 +101,21 @@ export async function dispatchIncoming(
   ctx: { app: { id: string; name: string }; token: string; sessionId?: string },
   msg: WsClientMessage,
   logger: Logger,
+  publisher: SdkEventPublisher,
 ): Promise<void> {
-  if (msg.type !== "sdk.invoke") return;
+  if (msg.type !== "sdk.invoke") {
+    // Gateway rejection for a previous sdk.capability.register. Surface it
+    // on the event bus so subscribers can react; the SDK does not retry.
+    if (msg.type === "sdk.capability.register.error") {
+      const capName = typeof msg.name === "string" ? msg.name : "";
+      const reason = typeof msg.reason === "string" ? msg.reason : "gateway rejected";
+      if (capName) {
+        logger.warn("dispatch: capability rejected by gateway", { capability: capName, reason });
+        publisher.capabilityRejected(capName, reason);
+      }
+    }
+    return;
+  }
 
   // The wire format carries callId/name as strings and input as a structured
   // payload (may be primitive or object). Coerce to the expected types at the
@@ -109,6 +132,7 @@ export async function dispatchIncoming(
   }
 
   if (handler === undefined) {
+    publisher.invokeFailed(callId, name, "HANDLER_NOT_FOUND", `no handler for '${name}'`);
     client.send({
       type: "sdk.invoke.error",
       callId,
@@ -127,12 +151,15 @@ export async function dispatchIncoming(
   // Pull the input payload from the message. WsClientMessage allows null,
   // so we default to an empty object.
   const input = msg.input ?? {};
+  const startedAt = Date.now();
+  publisher.invokeStarted(callId, name, input);
 
   try {
     const result = await invokeHandler(handler, input, handlerCtx);
     // JSON round-trip narrows result to the wire-format type without using
     // `unknown` in source.
     const jsonResult = JSON.parse(JSON.stringify(result ?? null)) as { readonly [key: string]: import("./client.js").WirePrimitive | import("./client.js").WireObject | import("./client.js").WirePrimitive[] | import("./client.js").WireObject[] };
+    publisher.invokeCompleted(callId, name, Date.now() - startedAt);
     client.send({
       type: "sdk.invoke.result",
       callId,
@@ -140,6 +167,7 @@ export async function dispatchIncoming(
     });
   } catch (err) {
     const e = err as Error;
+    publisher.invokeFailed(callId, name, "HANDLER_ERROR", e.message ?? String(err));
     client.send({
       type: "sdk.invoke.error",
       callId,

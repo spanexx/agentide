@@ -58,6 +58,8 @@
 - `packages/sdk-node/src/connect.ts` — `connect(sdk): Promise<void>` orchestrates client + emits `sdk.connected`
 - `packages/sdk-node/src/__tests__/connect.test.ts` — 5+ tests using a mock WebSocket server
 
+> **Module-layout note (post-impl):** `connect.ts` and `connect.test.ts` were consolidated into `index.ts` (connect logic inlined as the `connect()` method on the returned SdkInstance, ~index.ts:121-130) and `lifecycle.test.ts` (9 tests covering the full connect → register → invoke → disconnect → reconnect → reset lifecycle). See PRD-TRD §Architecture Notes for the final module layout. The `client.ts` WsClient class ships as planned.
+
 **Verify:**
 - [ ] Connect tests pass (mock server, real URL failure, auth failure)
 - [ ] Reconnect fires on close, with correct backoff timing (use fake timers)
@@ -226,7 +228,7 @@ Mark each phase inline as it completes:
 ### Phase 4: register() — ✅ Complete (register.test.ts, 4 tests)
 ### Phase 5: invoke() — ✅ Complete (invoke.test.ts, 8 tests)
 ### Phase 6: lifecycle integration — ✅ Complete (lifecycle.test.ts, 9 tests)
-### Phase 7: post-impl sim — ⏳ Pending
+### Phase 7: post-impl sim — ✅ Complete (simulate.html + simulate.js bundle)
 ### Phase 8: drift check — ⏳ Pending
 ### Phase 9: reconcile — ⏳ Pending
 ```

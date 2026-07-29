@@ -13,7 +13,14 @@
 import { describe, it, expect, vi } from "vitest";
 import type { WsClientMessage } from "../client.js";
 import { dispatchIncoming, invokeHandler, makeHandlerContext, makeCallContext, makeLogger } from "../invoke.js";
+import { SdkEventPublisher } from "../events.js";
+import { createEventBus } from "@platform/event-bus";
 import type { Handler, HandlerContext } from "../types.js";
+
+/** Build a noop-observing publisher for tests. */
+function makePublisher(): SdkEventPublisher {
+  return new SdkEventPublisher(createEventBus(), "test-app");
+}
 
 describe("invokeHandler() — direct invocation (Phase 5)", () => {
   it("calls the handler with input and context, returns the result", async () => {
@@ -64,6 +71,7 @@ describe("dispatchIncoming() — Gateway → SDK (Phase 5)", () => {
         input: { msg: "hello" },
       } as unknown as WsClientMessage,
       makeLogger(false),
+      makePublisher(),
     );
 
     expect(sends).toHaveLength(1);
@@ -87,6 +95,7 @@ describe("dispatchIncoming() — Gateway → SDK (Phase 5)", () => {
       { app: { id: "app", name: "App" }, token: "tok" },
       { type: "sdk.invoke", callId: "call-1", name: "test.fail", input: {} } as unknown as WsClientMessage,
       makeLogger(false),
+      makePublisher(),
     );
 
     expect(sends).toHaveLength(1);
@@ -105,6 +114,7 @@ describe("dispatchIncoming() — Gateway → SDK (Phase 5)", () => {
       { app: { id: "app", name: "App" }, token: "tok" },
       { type: "sdk.invoke", callId: "call-1", name: "test.missing", input: {} } as unknown as WsClientMessage,
       makeLogger(false),
+      makePublisher(),
     );
 
     expect(sends).toHaveLength(1);
@@ -122,6 +132,7 @@ describe("dispatchIncoming() — Gateway → SDK (Phase 5)", () => {
       { app: { id: "app", name: "App" }, token: "tok" },
       { type: "something.else", payload: "x" } as unknown as WsClientMessage,
       makeLogger(false),
+      makePublisher(),
     );
 
     expect(sends).toHaveLength(0);
@@ -143,6 +154,7 @@ describe("dispatchIncoming() — Gateway → SDK (Phase 5)", () => {
       { app: { id: "my-app", name: "My App" }, token: "my-token" },
       { type: "sdk.invoke", callId: "call-x", name: "test.capture", input: {} } as unknown as WsClientMessage,
       makeLogger(false),
+      makePublisher(),
     );
 
     expect(captured).toHaveLength(1);
