@@ -1,94 +1,72 @@
 /*
- * Code Map: WebSocket client + connect tests (Phase 3)
- * - open(url, token) connects and emits 'open' event
- * - close() closes cleanly and emits 'close' event
- * - on('event', handler) registers handlers
- * - auto-reconnect after close with exponential backoff (1s, 2s, 4s)
- * - reconnect emits 'reconnect_scheduled' then 'open' on success
- * - failed connect attempt emits 'error' and rejects the promise
- * - backoff caps at 30s
- * - connect() emits sdk.connected event on the bus
- * - connect() throws on unreachable URL
+ * Code Map: WebSocket client tests (Phase 3)
+ *
+ * Verifies the WsClient's behavior with real assertions on:
+ *  - backoff() pure function
+ *  - on/off handler registration
+ *  - open() rejects on unreachable URL (real network test)
  */
 
 import { describe, it, expect, vi } from "vitest";
 import { WsClient } from "../client.js";
 
-describe("WsClient — open/close (Phase 3)", () => {
-  it("emits 'open' event after connect", async () => {
-    // Use the EventTarget-style handler from the test
-    const client = new WsClient({ url: "ws://localhost:1", token: "t" });
-    const opened = vi.fn();
-    client.on("open", opened);
-    // We don't have a real server; just verify the handler registration works
-    client.close();
-    expect(typeof client.on).toBe("function");
-  });
-});
-
-describe("connect() — sdk.connected event (Phase 3)", () => {
-  it("createSdk.connect() emits sdk.connected when reaching the Gateway", async () => {
-    // Real connect() needs a Gateway. Phase 3 introduces the WebSocket client
-    // and connect() integration. For unit testing, we verify the wiring exists
-    // (the actual network round-trip is tested via lifecycle.test.ts in Phase 6).
-    const { createSdk } = await import("../index.js");
-    const sdk = createSdk({
-      gateway: { url: "ws://127.0.0.1:1", token: "t" },
-      app: { id: "x", name: "X" },
-      manifest: "./m.yaml",
-      handlers: "./h.js",
-    });
-    expect(typeof sdk.connect).toBe("function");
-    expect(sdk.state().phase).toBe("init");
-  });
-
-  it("connect() throws on unreachable URL", async () => {
-    const { createSdk } = await import("../index.js");
-    const sdk = createSdk({
-      gateway: { url: "ws://127.0.0.1:1", token: "t" },
-      app: { id: "x", name: "X" },
-      manifest: "./m.yaml",
-      handlers: "./h.js",
-    });
-    await expect(sdk.connect()).rejects.toThrow();
-  });
-});
-
 describe("WsClient — backoff schedule (Phase 3)", () => {
-  it("computes exponential backoff capped at 30s", () => {
-    // Pure function: given a retry number, returns the delay in ms.
-    const client = new WsClient({ url: "ws://x", token: "t" });
-    // Use the private method via type assertion (test-only).
-    const compute = (client as unknown as { backoff(n: number): number }).backoff.bind(client);
-    expect(compute(1)).toBe(1_000);
-    expect(compute(2)).toBe(2_000);
-    expect(compute(3)).toBe(4_000);
-    expect(compute(4)).toBe(8_000);
-    expect(compute(5)).toBe(16_000);
-    expect(compute(6)).toBe(30_000); // capped
-    expect(compute(10)).toBe(30_000);
+  it("computes exponential backoff capped at maxBackoffMs", () => {
+    const c = new WsClient({ url: "ws://x", token: "t", baseBackoffMs: 1000, maxBackoffMs: 30000 });
+    expect(c.backoff(1)).toBe(1000);
+    expect(c.backoff(2)).toBe(2000);
+    expect(c.backoff(3)).toBe(4000);
+    expect(c.backoff(4)).toBe(8000);
+    expect(c.backoff(5)).toBe(16000);
+    expect(c.backoff(6)).toBe(30000); // capped
+    expect(c.backoff(20)).toBe(30000);
   });
 
-  it("schedules reconnect on close", async () => {
-    const client = new WsClient({ url: "ws://127.0.0.1:1", token: "t" });
-    const scheduled = vi.fn();
-    client.on("reconnect_scheduled", scheduled);
-    // Triggering reconnect requires a real close event; we just verify the
-    // wiring exists.
-    client.close();
-    expect(typeof client.on).toBe("function");
+  it("respects custom baseBackoffMs", () => {
+    const c = new WsClient({ url: "ws://x", token: "t", baseBackoffMs: 500, maxBackoffMs: 10000 });
+    expect(c.backoff(1)).toBe(500);
+    expect(c.backoff(2)).toBe(1000);
+    expect(c.backoff(3)).toBe(2000);
+    expect(c.backoff(5)).toBe(8000);
+    expect(c.backoff(6)).toBe(10000); // capped at 10000
   });
 });
 
-describe("WsClient — public event surface (Phase 3)", () => {
-  it("supports on/off for open, close, error, reconnect_scheduled, message", () => {
+describe("WsClient — handler registration (Phase 3)", () => {
+  it("on() registers a handler that fires on the matching event", () => {
     const client = new WsClient({ url: "ws://x", token: "t" });
-    const noop = () => undefined;
-    expect(() => client.on("open", noop)).not.toThrow();
-    expect(() => client.on("close", noop)).not.toThrow();
-    expect(() => client.on("error", noop)).not.toThrow();
-    expect(() => client.on("reconnect_scheduled", noop)).not.toThrow();
-    expect(() => client.on("message", noop)).not.toThrow();
-    expect(() => client.off("open", noop)).not.toThrow();
+    const handler = vi.fn();
+    client.on("open", handler);
+
+    // Trigger the event by directly emitting — internal method.
+    (client as unknown as { emit(event: string, arg: unknown): void }).emit("open", undefined);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("off() unregisters a handler so it doesn't fire", () => {
+    const client = new WsClient({ url: "ws://x", token: "t" });
+    const handler = vi.fn();
+    client.on("open", handler);
+    client.off("open", handler);
+
+    (client as unknown as { emit(event: string, arg: unknown): void }).emit("open", undefined);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("supports handlers for all 5 event types", () => {
+    const client = new WsClient({ url: "ws://x", token: "t" });
+    const events = ["open", "close", "error", "reconnect_scheduled", "message"] as const;
+    for (const ev of events) {
+      const handler = vi.fn();
+      expect(() => client.on(ev, handler)).not.toThrow();
+      expect(() => client.off(ev, handler)).not.toThrow();
+    }
+  });
+});
+
+describe("WsClient — open() (Phase 3)", () => {
+  it("rejects when the URL is unreachable", async () => {
+    const client = new WsClient({ url: "ws://127.0.0.1:1", token: "t" });
+    await expect(client.open()).rejects.toThrow();
   });
 });

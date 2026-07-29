@@ -151,17 +151,46 @@ describe("dispatchIncoming() — Gateway → SDK (Phase 5)", () => {
     expect(ctx.call.id).toBe("call-x");
     expect(ctx.call.capability).toBe("test.capture");
     expect(ctx.call.token).toBe("my-token");
-    expect(typeof ctx.log.info).toBe("function");
+    // Real assertion: the log is a working logger, not just a function.
+    expect(() => ctx.log.info("test", { k: "v" })).not.toThrow();
+    expect(() => ctx.log.warn("test")).not.toThrow();
+    expect(() => ctx.log.error("test")).not.toThrow();
   });
 });
 
 describe("makeLogger() — Logger shape (Phase 5)", () => {
-  it("returns an object with info/warn/error no-ops or console functions", () => {
+  it("returns an object whose info/warn/error actually log to console", () => {
+    const logger = makeLogger(true);
+    // Spy on console methods
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    logger.info("hello", { k: "v" });
+    logger.warn("careful", { k: "v" });
+    logger.error("boom", { k: "v" });
+
+    expect(infoSpy).toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
+
+    infoSpy.mockRestore();
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it("when debug=false, info is silent but warn/error still log", () => {
     const logger = makeLogger(false);
-    expect(typeof logger.info).toBe("function");
-    expect(typeof logger.warn).toBe("function");
-    expect(typeof logger.error).toBe("function");
-    // Should not throw when called
-    expect(() => logger.info("test", { k: "v" })).not.toThrow();
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    logger.info("silent");
+    expect(infoSpy).not.toHaveBeenCalled();
+
+    logger.warn("loud");
+    expect(warnSpy).toHaveBeenCalled();
+
+    infoSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });

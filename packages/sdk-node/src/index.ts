@@ -1,15 +1,16 @@
 /*
  * Code Map: sdk-node public entry point
  *
- * createSdk is the factory. Phase 1: typed stub. Phases 3-6 wire real
- * behavior. This file orchestrates the lifecycle; the heavy lifting
- * happens in client.ts, manifest.ts, lifecycle.ts.
+ * createSdk is the factory. The full lifecycle is wired here:
+ *   - connect() opens a WebSocket via WsClient and attaches lifecycle handlers
+ *   - register() reads the manifest + handlers, sends registrations
+ *   - invoke() handles direct (developer-facing) calls
+ *   - disconnect() closes the WebSocket
+ *   - reset() clears local state
+ *   - state() exposes phase + capabilities
  *
- *   Phase 1: state() + reset() work; everything else throws
- *   Phase 3: connect() opens WebSocket via WsClient
- *   Phase 4: register() reads manifest, registers capabilities
- *   Phase 5: invoke() dispatches calls
- *   Phase 6: disconnect() + auto-reconnect-with-reregister
+ * Phase 6 adds lifecycle.ts which keeps a Map of registered capabilities
+ * so that on reconnect, every cap is re-registered automatically.
  */
 
 import type {
@@ -17,13 +18,24 @@ import type {
   SdkInstance,
   SdkState,
   Phase,
+  Handler,
 } from "./types.js";
 import { WsClient } from "./client.js";
 import { resolveManifest, resolveHandlers, matchCapabilities } from "./register.js";
-import type { Handler } from "./types.js";
-import { dispatchIncoming as _dispatchIncoming, invokeHandler, makeHandlerContext, makeCallContext, makeLogger } from "./invoke.js";
-// _dispatchIncoming will be wired in Phase 6 to handle inbound messages.
-void _dispatchIncoming;
+import {
+  dispatchIncoming,
+  invokeHandler,
+  makeHandlerContext,
+  makeCallContext,
+  makeLogger,
+} from "./invoke.js";
+import {
+  attachLifecycle,
+  trackRegistration,
+  clearRegistrations,
+  type LifecycleState,
+  type RegisteredCapability,
+} from "./lifecycle.js";
 
 /**
  * Create an SDK instance from the developer's config.
@@ -43,61 +55,102 @@ export function createSdk(config: SdkConfig): SdkInstance {
     throw new Error("sdk-node: config.handlers is required (path or inline map)");
   }
 
+  const logger = makeLogger(false);
+
   // Mutable internal state — kept private.
   const phase: { value: Phase } = { value: "init" };
-  const capabilities: Record<string, { tier: string | null; registered: boolean }> = {};
+  const registered = new Map<string, RegisteredCapability>();
 
-  // The WebSocket client is created lazily on first connect(); held here for
-  // later phases (register, invoke, disconnect) and for cleanup on reset.
-  let client: WsClient | null = null;
+  const lifecycleState: LifecycleState = { phase, registered };
 
-  return {
+  // The WebSocket client is created lazily on first connect().
+  // Exposed as a property on the returned object so tests can dispatch
+  // inbound messages against the same client the lifecycle uses.
+  const sdkInternal: { client: WsClient | null } = { client: null };
+
+  // Resolve handlers lazily — used by invoke() and the inbound dispatcher.
+  let resolvedHandlers: Record<string, Handler> | null = null;
+  async function getHandlers(): Promise<Record<string, Handler>> {
+    if (resolvedHandlers === null) {
+      resolvedHandlers = await resolveHandlers(
+        config.handlers as string | Record<string, Handler>,
+      );
+    }
+    return resolvedHandlers;
+  }
+
+  function attachLifecycleToClient(c: WsClient): void {
+    attachLifecycle({
+      client: c,
+      state: lifecycleState,
+      logger,
+      handlers: {
+        onOpen: null,
+        onClose: null,
+        onError: null,
+        onMessage: async (msg) => {
+          // Inbound message — dispatch as an invocation.
+          const handlers = await getHandlers();
+          await dispatchIncoming(
+            c,
+            handlers,
+            { app: config.app, token: config.gateway.token },
+            msg,
+            logger,
+          );
+        },
+      },
+    });
+  }
+
+  const sdk: SdkInstance & { client: WsClient | null } = {
     async connect(): Promise<void> {
-      if (client === null) {
-        client = new WsClient({ url: config.gateway.url, token: config.gateway.token });
+      if (sdkInternal.client === null) {
+        sdkInternal.client = new WsClient({ url: config.gateway.url, token: config.gateway.token });
+        attachLifecycleToClient(sdkInternal.client);
       }
-      await client.open();
-      phase.value = "connected";
+      await sdkInternal.client.open();
+      // Phase is set by the 'open' lifecycle handler. If registered.size > 0,
+      // it transitions to 'registered' after re-registration. Otherwise it
+      // stays at 'connected' until register() is called.
     },
 
     async register(): Promise<void> {
-      if (client === null) {
+      if (sdkInternal.client === null) {
         throw new Error("sdk-node: register() requires connect() first");
       }
-      // Resolve manifest (path or inline) + handlers (path or inline map).
       const manifest = await resolveManifest(
         config.manifest as string | Record<string, import("./manifest.js").ManifestValue> | import("./manifest.js").ParsedManifest,
       );
-      const handlers: Record<string, Handler> = await resolveHandlers(
-        config.handlers as string | Record<string, Handler>,
-      );
-
-      // Match manifest capabilities to handlers; throws on mismatch.
+      const handlers = await getHandlers();
       const matched = matchCapabilities(manifest, handlers);
 
-      // Send each capability registration to the Gateway.
       for (const { cap } of matched) {
-        client.send({
+        sdkInternal.client.send({
           type: "sdk.capability.register",
           name: cap.name,
           description: cap.description,
           version: cap.version,
-          permissions: cap.permissions.join(","),  // serialize for the wire format
+          permissions: cap.permissions.join(","),
           tier: cap.tier ?? "",
         });
-        capabilities[cap.name] = { tier: cap.tier ?? null, registered: true };
+        trackRegistration(lifecycleState, {
+          name: cap.name,
+          description: cap.description,
+          version: cap.version,
+          permissions: cap.permissions,
+          tier: cap.tier ?? null,
+        });
       }
 
       phase.value = "registered";
     },
 
     async invoke<I = unknown, O = unknown>(name: string, input: I): Promise<O> {
-      if (client === null) {
+      if (sdkInternal.client === null) {
         throw new Error("sdk-node: invoke() requires connect() first");
       }
-      const handlers: Record<string, Handler> = await resolveHandlers(
-        config.handlers as string | Record<string, Handler>,
-      );
+      const handlers = await getHandlers();
       const handler = handlers[name];
       if (handler === undefined) {
         throw new Error(`sdk-node: no handler for '${name}'`);
@@ -111,9 +164,9 @@ export function createSdk(config: SdkConfig): SdkInstance {
     },
 
     async disconnect(): Promise<void> {
-      if (client !== null) {
-        await client.close();
-        client = null;
+      if (sdkInternal.client !== null) {
+        await sdkInternal.client.close();
+        sdkInternal.client = null;
       }
       phase.value = "disconnected";
     },
@@ -121,21 +174,30 @@ export function createSdk(config: SdkConfig): SdkInstance {
     reset(): void {
       // Reset is allowed in any phase — it just clears local state.
       phase.value = "init";
-      for (const k of Object.keys(capabilities)) {
-        delete capabilities[k];
-      }
-      // Note: we don't close the client; the developer should call
-      // disconnect() explicitly if they want the WebSocket closed.
+      clearRegistrations(lifecycleState);
     },
 
     state(): SdkState {
       // Return a shallow copy so callers can't mutate our internal state.
-      return {
-        phase: phase.value,
-        capabilities: { ...capabilities },
-      };
+      const caps: Record<string, { tier: string | null; registered: boolean }> = {};
+      for (const [name, cap] of registered) {
+        caps[name] = { tier: cap.tier, registered: true };
+      }
+      return { phase: phase.value, capabilities: caps };
     },
+    // Exposed for tests so they can dispatch inbound messages against
+    // the same WsClient the lifecycle uses. Not part of the public API.
+    client: null,
   };
+
+  // Live reference so connect() can populate and tests can read.
+  Object.defineProperty(sdk, "client", {
+    get(): WsClient | null {
+      return sdkInternal.client;
+    },
+  });
+
+  return sdk;
 }
 
 export type {

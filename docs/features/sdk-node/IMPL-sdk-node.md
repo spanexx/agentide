@@ -225,7 +225,7 @@ Mark each phase inline as it completes:
 ### Phase 3: WebSocket client + connect — ✅ Complete (client.test.ts, 6 tests)
 ### Phase 4: register() — ✅ Complete (register.test.ts, 4 tests)
 ### Phase 5: invoke() — ✅ Complete (invoke.test.ts, 8 tests)
-### Phase 6: lifecycle integration — ⏳ Pending
+### Phase 6: lifecycle integration — ✅ Complete (lifecycle.test.ts, 9 tests)
 ### Phase 7: post-impl sim — ⏳ Pending
 ### Phase 8: drift check — ⏳ Pending
 ### Phase 9: reconcile — ⏳ Pending
