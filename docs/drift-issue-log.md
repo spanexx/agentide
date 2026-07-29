@@ -411,3 +411,140 @@ feature-pipeline skill. Documented here so the next agent doesn't accidentally
 delete it as cruft.
 
 **Refs:** docs/features/permission-tiering/{simulate.ts,archive/simulate-pre.ts}
+
+---
+
+## #14 — Gateway token refresh flow not implemented; SaaS-ready auth requires a separate pack
+
+**Discovery:** 2026-07-29 (sdk-node GRILL session)
+
+**What drifted / what's missing:** The Gateway mints JWTs with an `exp` claim via
+`auth.token.issue`. There is no token-refresh endpoint, no refresh-token rotation,
+no "extend session" path. An SDK holding a long-lived connection will silently go
+unauthenticated after the token's `expiresInMs` (default 1 hour per the auth tests).
+The architecture (`docs/architecture/Agentide.md` §9) describes a SaaS-ready Gateway
+that uses JWTs for tenant + caller identification, so this gap blocks any SaaS
+deployment.
+
+**Why this matters:** Before sdk-node can be production-ready for a hosted SaaS
+Gateway, the SDK needs either (a) a refresh-token flow the SDK calls before
+expiry, (b) very long-lived tokens with server-side revocation, or (c) a websocket
+keepalive that re-authenticates inline. None of these exist today.
+
+**Resolution:** DEFERRED. The Gateway is architecturally SaaS-ready (token model,
+tenant model, audit log, rate limiting, storage abstraction all support it) but
+the refresh flow is a separate pack that needs its own GRILL — likely tied to the
+dashboard-core or a future "gateway-saas" pack. Logged here so sdk-node v1 can
+stay scoped to "localhost / on-prem / co-located" without claiming SaaS support.
+
+**Refs:**
+- `packages/gateway-core/src/auth.ts` (issueToken, no refresh)
+- `docs/architecture/Agentide.md` §9 (JWT-based auth model)
+- sdk-node GRILL session, this conversation
+
+---
+
+## #15 — sdk-node post-impl drift: 4 doc gaps + 4 accepted design drifts (Minor Drift verdict) — RESOLVED
+
+**Where:** `docs/features/sdk-node/PRD-TRD-sdk-node.md` × `IMPL-sdk-node.md` ×
+`packages/sdk-node/src/events.ts` × `docs/features/sdk-node/{simulate.html,simulate-bundle.js}`
+
+**Found** by the `feature-pipeline-review` sub-agent on 2026-07-29 (full report at
+`.reports/2026-07-29-drift-sdk-node.md`). The implementation is behaviorally sound — all
+7 PRD-TRD scenarios are demonstrable and tested. The drifts are doc/code-text
+inaccuracies and intentional sim simplifications, not behavioral defects. **Verdict:**
+ship with minor doc fixes.
+
+### Doc gaps (resolved this pass)
+
+- **Gap 1 — 8th event not in events table.** PRD-TRD §Events emitted listed 7 events;
+  the code also emits `sdk.capability.rejected` via `SdkEventPublisher.capabilityRejected()`
+  (`packages/sdk-node/src/events.ts:177-187`), with a full payload interface
+  (`SdkCapabilityRejectedPayload`, `events.ts:87-95`) and a test
+  (`packages/sdk-node/src/__tests__/register.test.ts:126-152`). The `events.ts` code
+  map header also said "7 documented events" while listing 8 CIDs.
+
+  **Fix:** PRD-TRD events table now has 8 rows including `sdk.capability.rejected` with
+  payload `{ appId, capability, reason }` and an asynchronous "When" clause.
+  `events.ts` code map header updated to "8 documented events" with CID:events-009
+  added.
+
+- **Gap 2 — `register()` doc says throws on collision, code emits event.** PRD-TRD
+  §API Contracts described `register()` as throwing on "Capability already registered
+  by another app (collision)". Real code in `packages/sdk-node/src/index.ts:132-163`
+  sends all register messages and sets `phase.value = "registered"` synchronously
+  without waiting for Gateway ACKs. Rejection arrives later via
+  `dispatchIncoming` (`packages/sdk-node/src/invoke.ts:106-117`) which calls
+  `publisher.capabilityRejected()` and never throws.
+
+  **Fix:** PRD-TRD §API Contracts `register()` rewritten. Throws are now scoped to
+  local validation only (manifest missing/invalid, handler mismatch). Gateway-level
+  rejection explicitly routed through the `sdk.capability.rejected` event, with
+  file:line citations.
+
+- **Gap 3 — Scenario 5 conflates `disconnect()` with simulated drop.** PRD-TRD
+  §Scenario 5 said "the Gateway process dies (simulated by `disconnect` command)" and
+  expected auto-reconnect. Real `sdk.disconnect()` (`index.ts:182-193`) calls
+  `client.close()` which sets `closed = true` (`client.ts:178`); the close handler
+  at `client.ts:136` checks `if (!this.closed)` and does NOT schedule reconnect.
+  The sim's `cmdDisconnect` (`simulate-bundle.js:231-249`) bypasses this by firing
+  a mock close via a dropper callback.
+
+  **Fix:** PRD-TRD §Scenario 5 rewritten to read "the Gateway connection drops
+  unexpectedly ... *not* a developer-initiated `sdk.disconnect()`", with `reason`
+  values `"simulated-drop"` / `"error"` cited, the 30s backoff cap with ±20%
+  jitter, and the `reconnected: true` payload field. A new sim-note paragraph
+  explains the dropper shim and that `reset` is the real tear-down command.
+  PRD-TRD §API Contracts `disconnect()` also fixed — now correctly says
+  "**No auto-reconnect** — explicit disconnect is a clean break. Auto-reconnect
+  only fires on *unexpected* network close."
+
+### Execution gap (resolved this pass)
+
+- **Phase 3 references `connect.ts` and `connect.test.ts` that don't exist.** IMPL
+  Phase 3 listed both files as deliverables (`IMPL-sdk-node.md:58-59`). `grep` returns
+  0 matches in `src/`. `connect()` logic inlined in `index.ts:121-130`; 9 tests
+  for connect behavior in `lifecycle.test.ts` (lines 117, 129, 153, 185, 221, 264,
+  292, 318, 342).
+
+  **Fix:** IMPL Phase 3 has a module-layout note pointing readers to the actual
+  final structure.
+
+### Simulation gaps (minor, accepted)
+
+- **Scenario 4 (error invoke) not in demo button.** `simulate.html:379` hardcodes 4
+  commands; doesn't demo the error path. The engine supports it (`simulate-bundle.js:210-228`)
+  and there's a full lifecycle test (`lifecycle.test.ts:185-219`). **Accepted** —
+  manual testing works, error path is test-covered.
+- **Scenario 5 (reconnect) post-impl sim event log collapses events.** `SimEngine._emit()`
+  (`simulate-bundle.js:98-100`) stores only `this.lastEvent`; multiple events per command
+  show as one. Reconnect with N caps shows fewer `sdk.capability.registered` entries
+  than pre-impl sim. **Accepted** — simulation artifact, behavior correct.
+
+### Design drifts (accepted, no action)
+
+All 4 design drifts between pre-impl and post-impl sims are intentional simplifications
+or improvements. Logged to `drift.md` as D-10 through D-13 (Resolved, Accepted):
+
+- **D-10:** xterm.js → custom HTML terminal (no ANSI parsing, CSS classes for color).
+  Intentional — no CDN, faster load, browser-stable.
+- **D-11:** Hardcoded `await sleep()` → `setInterval` polling. Intentional — more
+  robust for real SDK timing.
+- **D-12:** Mock state → real `createSdk()` + dropper shim. Intentional — drives
+  actual SDK, dropper works around the deliberate `disconnect()=no-reconnect` design.
+- **D-13:** `ws` Node lib → `ws→globalThis.WebSocket` shim in `ws-shim.cjs` so the
+  IIFE bundle loads in the browser. Intentional — necessary browser adaptation.
+
+### Companion drift log entries
+
+`drift.md` now contains:
+- **Open:** D-1 (pre-existing session-manager drift, unrelated)
+- **Open (resolved this pass):** D-2, D-3, D-4, D-5 — doc gaps, each pointing to its
+  Resolved counterpart
+- **Resolved:** D-6–D-9 (the four doc/execution gaps) + D-10–D-13 (accepted design drifts)
+
+**Remaining follow-up:** none. The four doc gaps are fixed and verified by re-reading
+the cited file:line ranges. The four design drifts are explicit Accepted drifts with
+"Verified by: drift-sdk-node audit" trails. Re-running `feature-pipeline-review` on
+`sdk-node` should now produce a no-drift (or "major drift = 0") report.
+

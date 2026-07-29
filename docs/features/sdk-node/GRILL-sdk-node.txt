@@ -1,0 +1,174 @@
+sdk-node (Backend SDK) - Grill Notes
+
+Status: Locked
+Date: 2026-07-29
+Source: docs/architecture/Agentide.md §6 (SDKs), docs/CONTEXT.md (SDK section),
+        docs/architecture/Terminology.md (SDK), docs/Feature_Backlog.md #8,
+        packages/gateway-core/src/* (current auth + invoke flow),
+        packages/event-bus/src/* (event model),
+        packages/capability-registry/src/* (manifest schema reference)
+
+What this feature is about
+
+- Build the Backend SDK (`@platform/sdk-node`, Node/TypeScript) — the package
+  developers install in their application to register business capabilities
+  with the Gateway.
+- App developer writes a Capability Manifest (data file) + handler functions
+  (code module). The SDK connects, registers, and stays connected.
+- Pluggable runtime, in-process default; alternate runtimes (Lambda, edge,
+  worker pool) ship as adapters in future packs.
+- Reference role: "Backend SDK" per CONTEXT.md naming convention. NOT a
+  different package from the Frontend SDK (`@platform/sdk-browser`).
+
+Questions and answers locked so far
+
+1. What's the install + connection story?
+Answer:
+- Explicit `connect()` call. Developer writes:
+    const sdk = createSdk({ gateway: { url, token }, ... });
+    await sdk.connect();
+- Fails fast if Gateway unreachable; URL from environment variable or config.
+- Auth: static API key for v1. Token refresh deferred (drift #14).
+
+Why:
+- Explicit is clearer for ops — connection visible in app startup logs.
+- A (connect-on-import) hides failure modes. C (lazy) is invisible to ops.
+- v1 stays scoped to localhost/on-prem/co-located. SaaS-ready auth is a
+  separate pack.
+
+2. Capability manifest shape?
+Answer:
+- B. Manifest object + handlers map, kept separate.
+- Manifest is data (file: YAML/JSON). Handlers are code (module path).
+- SDK reads manifest, imports handlers, zips name→fn, registers with Gateway.
+
+Why:
+- Manifest serializable, reviewable, version-controllable.
+- Handlers can use any library the manifest shouldn't know about.
+- A (builder) prevents serialization. C (decorators) needs modern runtime.
+
+3. Permission declarations — where do they live?
+Answer:
+- A. Per-capability, in the manifest object.
+- Each capability declares its own `permissions: [...]` array.
+
+Why:
+- Permissions are the security boundary — must be visible per capability.
+- B (manifest-level scope) encourages "give everything the same scope" —
+  dangerous.
+- C (derive from name) hides the security boundary — exact pattern we
+  just rejected for tier-convention in BI[7].
+
+4. Connection lifecycle — Gateway dies mid-flight?
+Answer:
+- B. Auto-reconnect with exponential backoff (1s → 2s → 4s → ... cap).
+- In-flight invocations fail-fast (no buffering).
+- On reconnect, re-register all capabilities automatically — developer
+  doesn't call register() again.
+
+Why:
+- A forces every app to write reconnect logic — duplication.
+- C is heavier machinery for the same outcome.
+- Auto-reconnect covers Gateway deploys/crashes without operator intervention.
+
+5. Events — what does sdk-node emit?
+Answer:
+- C. Bus events.
+- Emits `sdk.connected`, `sdk.disconnected`, `sdk.capability.registered`,
+  `sdk.capability.unregistered` on the shared `@platform/event-bus`.
+- Bus events flow through to dashboard, audit, plugin manager (uniform model).
+
+Why:
+- Architecture has uniform event model across every component.
+- Dashboard/audit need to observe app lifecycle; polling is fragile.
+- Plugin Manager already publishes on the bus; SDK should follow.
+
+6. Subscription vs invocation — does sdk-node expose both?
+Answer:
+- A. Invoke only.
+- Apps register capabilities (Gateway invokes them). Apps don't subscribe
+  to platform events — that's the dashboard's job.
+- Boundary: Application = caller/registrar; Platform = observer/registrar.
+
+Why:
+- App-side subscriptions would blur the Application/Platform boundary.
+- Apps would learn about other tenants, other plugins — security hole.
+- If needed later, scope narrowly ("events about MY capability's tier").
+
+7. Where does the SDK live at runtime?
+Answer:
+- C. Pluggable runtime. In-process default.
+- v1 ships the in-process runtime. Alternate runtimes (Lambda, edge, worker
+  pool) ship as adapters in future packs.
+
+Why:
+- v1 simplicity: in-process is easier to debug, faster (no IPC).
+- "Backend SDK" role implies the developer's app process.
+- B (separate worker) adds operational complexity (process mgmt, IPC,
+  restart on crash) without solving a v1 problem.
+- A (in-process only) is the right default; C leaves the door open.
+
+8. Capability-manifest-vs-implementation gap?
+Answer:
+- C. Explicit, separate.
+- Manifest is a file (YAML/JSON). Handlers are an exported JS/TS module.
+- SDK reads the manifest, looks up handlers by name. Mismatch fails loudly.
+
+Why:
+- Manifest data, handlers code — different cadences.
+- B (convention-based discovery) breaks when layout is non-standard.
+- A (co-located) conflates two things.
+
+9. What's NOT in v1?
+Answer:
+- C. Defined by what's blocked. Only ship what unblocks mcp-adapter #9.
+- In scope: factory, connect(), manifest loader, handler loader, register(),
+  auto-reconnect, bus events.
+- Out of scope (separate packs or future versions — see future.md):
+  - Token refresh flow (drift #14)
+  - App-side event subscription (Q6-A)
+  - Out-of-process / edge runtimes (Q7-C is design; only in-process ships)
+  - Multi-app per process
+  - Schema validation beyond basic JSON shape
+  - Metrics / tracing SDK-side
+  - CLI debug tools
+  - Frontend SDK (separate pack, #11)
+
+Why:
+- "Done" = "unblocks the next pack and demonstrates the path."
+- v1 has one job: enable an app to register capabilities that an agent can
+  invoke through mcp-adapter.
+- Anything else is gold-plating that delays the next pack.
+
+Non-goals
+
+- Authentication for SaaS Gateways. Drift #14 documents this.
+- Capability invocation semantics — that's the gateway-core contract; SDK
+  just consumes it.
+- Capability discovery / catalog browsing — that's dashboard-core.
+- Plugin management — sdk-node doesn't install or update plugins.
+
+Cross-cutting decisions
+
+- License: MIT (matches the rest of the @platform packages).
+- TypeScript: strict mode, ESM only (matches the repo convention).
+- Node target: >= 20 (matches current package.json engines).
+- Transport to Gateway: WebSocket for live eventing + invocation; HTTP for
+  registration. Single multiplexed connection. (Confirm during Phase 1 of IMPL.)
+
+Drift log entries referenced
+
+- #14 — Gateway token refresh flow not implemented; SaaS-ready auth
+  requires a separate pack. Affects sdk-node's auth story.
+
+References
+
+- docs/architecture/Agentide.md §6, §9
+- docs/CONTEXT.md (SDK section)
+- docs/architecture/Terminology.md (SDK Naming Convention)
+- docs/Feature_Backlog.md #8 (sdk-node row)
+- packages/gateway-core/src/auth.ts, factory.ts (existing gateway surface)
+- packages/event-bus/src/* (event model)
+- packages/capability-registry/src/* (manifest validation patterns)
+- docs/drift-issue-log.md #14
+- future.md (deferred work)

@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sdk-node pre-impl simulation</title>
+
+<!-- xterm.js for the terminal pane -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+<style>
+  :root {
+    --bg: #0f1419;
+    --bg-elevated: #1a1f2e;
+    --card: #232938;
+    --border: #2d3344;
+    --fg: #e6e6e6;
+    --muted: #8b95a7;
+    --accent: #6ee7b7;
+    --accent-dim: #34d399;
+    --warn: #fbbf24;
+    --error: #f87171;
+    --info: #60a5fa;
+    --tier-read: #34d399;
+    --tier-write: #fbbf24;
+    --tier-act: #fb923c;
+    --tier-destructive: #ef4444;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 12px 20px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  header .badge {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 12px;
+    min-height: 0;
+  }
+
+  .panel {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .panel h2 {
+    margin: 0 0 10px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* LEFT PANEL — visual state */
+  #left-panel {
+    overflow-y: auto;
+    gap: 14px;
+  }
+
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .cap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+  }
+
+  .cap-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 4px;
+    padding: 10px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.3s ease, transform 0.3s ease, border-color 0.3s ease;
+    cursor: pointer;
+  }
+
+  .cap-card.shown {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .cap-card.registered { border-left-color: var(--accent); }
+  .cap-card.invoked { border-left-color: var(--info); }
+  .cap-card.failed { border-left-color: var(--error); }
+
+  .cap-name {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .cap-tier {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    text-transform: uppercase;
+  }
+
+  .tier-read { background: var(--tier-read); color: #0a1a0f; }
+  .tier-write { background: var(--tier-write); color: #1a1408; }
+  .tier-act { background: var(--tier-act); color: #1a0e05; }
+  .tier-destructive { background: var(--tier-destructive); color: #1a0505; }
+
+  .cap-desc {
+    color: var(--muted);
+    font-size: 11px;
+    margin: 4px 0;
+  }
+
+  .cap-perms {
+    font-family: ui-monospace, monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* LIFECYCLE */
+  .lifecycle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 4px;
+  }
+
+  .lc-step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .lc-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--card);
+    border: 2px solid var(--border);
+    transition: all 0.3s ease;
+  }
+
+  .lc-dot.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(110, 231, 183, 0.6);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  .lc-dot.done {
+    background: var(--accent-dim);
+    border-color: var(--accent-dim);
+  }
+
+  .lc-dot.failed {
+    background: var(--error);
+    border-color: var(--error);
+  }
+
+  .lc-label {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .lc-step.active .lc-label { color: var(--accent); }
+  .lc-step.done .lc-label { color: var(--accent-dim); }
+
+  .lc-line {
+    flex: 1;
+    height: 2px;
+    background: var(--border);
+    transition: background 0.3s ease;
+  }
+
+  .lc-line.active { background: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .lc-line.done { background: var(--accent-dim); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* EVENT LOG */
+  #event-log {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    min-height: 0;
+    max-height: 220px;
+  }
+
+  .evt {
+    padding: 2px 6px;
+    margin-bottom: 2px;
+    border-radius: 3px;
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+
+  .evt.shown {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .evt.connected { color: var(--accent); }
+  .evt.disconnected { color: var(--warn); }
+  .evt.registered { color: var(--info); }
+  .evt.invocation { color: var(--accent-dim); }
+  .evt.error { color: var(--error); background: rgba(248, 113, 113, 0.08); }
+  .evt.info { color: var(--muted); }
+
+  .evt-time { color: var(--muted); margin-right: 6px; }
+  .evt-name { font-weight: 600; }
+
+  /* RIGHT PANEL — terminal */
+  #right-panel {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  #right-panel h2 {
+    padding: 14px 14px 0 14px;
+    margin: 0;
+  }
+
+  #terminal-container {
+    flex: 1;
+    padding: 8px;
+    min-height: 0;
+    background: #000;
+    border-radius: 4px;
+    margin: 8px;
+  }
+
+  /* HELP ROW */
+  .help-bar {
+    padding: 8px 20px;
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--muted);
+    align-items: center;
+  }
+
+  .help-bar code {
+    background: var(--card);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--accent);
+  }
+
+  .help-bar .demo-btn {
+    margin-left: auto;
+    padding: 6px 14px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+  }
+
+  .help-bar .demo-btn:hover { opacity: 0.85; }
+  .help-bar .demo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* EMPTY STATES */
+  .empty {
+    color: var(--muted);
+    font-style: italic;
+    padding: 8px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>sdk-node</h1>
+  <span class="badge">DESIGN SIMULATION</span>
+  <span class="badge">v1 scope only</span>
+</header>
+
+<main>
+  <div class="panel" id="left-panel">
+    <div class="section">
+      <h2>Lifecycle</h2>
+      <div class="lifecycle" id="lifecycle">
+        <div class="lc-step" data-step="init"><div class="lc-dot"></div><div class="lc-label">init</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="connect"><div class="lc-dot"></div><div class="lc-label">connect</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="register"><div class="lc-dot"></div><div class="lc-label">register</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="invoke"><div class="lc-dot"></div><div class="lc-label">invoke</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="disconnect"><div class="lc-dot"></div><div class="lc-label">disconnect</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Capabilities</h2>
+      <div class="cap-grid" id="cap-grid">
+        <div class="empty">No capabilities registered yet. Try <code>register</code> in the terminal.</div>
+      </div>
+    </div>
+
+    <div class="section" style="flex: 1; min-height: 0;">
+      <h2>Events</h2>
+      <div id="event-log"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="right-panel">
+    <h2>Terminal</h2>
+    <div id="terminal-container"></div>
+  </div>
+</main>
+
+<div class="help-bar">
+  <span>Type commands at the prompt or click <code>▶ Run full demo</code>. Try <code>help</code> for the list.</span>
+  <button class="demo-btn" id="demo-btn">▶ Run full demo</button>
+</div>
+
+<script>
+  // ─── State ─────────────────────────────────────────────────────────────
+  const state = {
+    phase: 'init',           // init | connected | registered | disconnected
+    capabilities: {},         // name → {description, permissions, tier, registered, lastResult}
+    events: [],               // recent events for the log
+    autoReconnect: false,
+  };
+
+  // Sample manifest (matches GRILL-locked shape: per-capability permissions, customer.read/write tiers)
+  const SAMPLE_MANIFEST = {
+    app: 'customer-app',
+    name: 'Acme Customer Service',
+    capabilities: [
+      {
+        name: 'customer.read',
+        description: 'Fetch a customer record by ID',
+        version: '1.0.0',
+        permissions: ['customer.read'],
+        tier: 'read',
+        handler: (input) => {
+          if (!input?.customerId) throw new Error('customerId required');
+          if (input.customerId === 'unknown') throw new Error(`not found: ${input.customerId}`);
+          return { id: input.customerId, name: `Customer ${input.customerId.slice(-3)}`, email: '...' };
+        },
+      },
+      {
+        name: 'customer.delete',
+        description: 'Delete a customer record (irreversible)',
+        version: '1.0.0',
+        permissions: ['customer.delete'],
+        tier: 'write',
+        handler: (input) => {
+          if (!input?.customerId) throw new Error('customerId required');
+          return { deleted: input.customerId, deletedAt: Date.now() };
+        },
+      },
+    ],
+  };
+
+  // ─── Terminal ─────────────────────────────────────────────────────────
+  const term = new Terminal({
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    fontSize: 12,
+    cursorBlink: true,
+    theme: { background: '#000000', foreground: '#e6e6e6', cursor: '#6ee7b7' },
+  });
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(document.getElementById('terminal-container'));
+  fitAddon.fit();
+
+  const PROMPT = 'sdk@sim ~ $ ';
+  let inputBuffer = '';
+  let history = [];
+  let historyIdx = -1;
+
+  function termWrite(s, color) {
+    if (color) term.write(`\x1b[${color}m${s}\x1b[0m`);
+    else term.write(s);
+  }
+
+  function termWriteln(s, color) {
+    termWrite((s || '') + '\r\n', color);
+  }
+
+  function showPrompt() {
+    term.write('\r\n' + PROMPT);
+  }
+
+  function banner() {
+    termWriteln('sdk-node pre-impl simulation', '36');  // cyan
+    termWriteln('Type a command. Type "help" for the list. Type "exit" to quit.', '90'); // gray
+  }
+
+  // ─── Lifecycle ───────────────────────────────────────────────────────
+  function setPhase(phase) {
+    state.phase = phase;
+    const order = ['init', 'connect', 'register', 'invoke', 'disconnect'];
+    const idx = order.indexOf(phase);
+    document.querySelectorAll('#lifecycle .lc-step').forEach((el, i) => {
+      const step = el.dataset.step;
+      const stepIdx = order.indexOf(step);
+      el.classList.remove('active', 'done', 'failed');
+      if (stepIdx < idx) el.classList.add('done');
+      else if (stepIdx === idx) el.classList.add('active');
+    });
+    document.querySelectorAll('#lifecycle .lc-line').forEach((el, i) => {
+      el.classList.remove('active', 'done');
+      if (i < idx) el.classList.add('done');
+      else if (i === idx) el.classList.add('active');
+    });
+  }
+
+  function resetLifecycle() {
+    document.querySelectorAll('#lifecycle .lc-step').forEach(el => {
+      el.classList.remove('active', 'done', 'failed');
+    });
+    document.querySelectorAll('#lifecycle .lc-line').forEach(el => {
+      el.classList.remove('active', 'done');
+    });
+    document.getElementById('init').classList.add('active');  // back to init
+  }
+
+  // ─── Capabilities ────────────────────────────────────────────────────
+  function registerCapability(cap, manifest) {
+    const card = document.createElement('div');
+    card.className = 'cap-card';
+    card.id = `cap-${cap.name}`;
+    card.innerHTML = `
+      <div class="cap-name">${cap.name}<span class="cap-tier tier-${cap.tier}">${cap.tier}</span></div>
+      <div class="cap-desc">${cap.description}</div>
+      <div class="cap-perms">${cap.permissions.map(p => `· ${p}`).join(' ')}</div>
+    `;
+    card.addEventListener('click', () => invokeCapability(cap.name));
+    const empty = document.querySelector('#cap-grid .empty');
+    if (empty) empty.remove();
+    document.getElementById('cap-grid').appendChild(card);
+    requestAnimationFrame(() => card.classList.add('shown', 'registered'));
+    state.capabilities[cap.name] = { ...cap, registered: true, lastResult: null };
+  }
+
+  function flashCard(name, klass, ms = 1500) {
+    const card = document.getElementById(`cap-${name}`);
+    if (!card) return;
+    card.classList.add(klass);
+    setTimeout(() => card.classList.remove(klass), ms);
+  }
+
+  function clearCapabilities() {
+    document.getElementById('cap-grid').innerHTML = '<div class="empty">No capabilities registered yet.</div>';
+    state.capabilities = {};
+  }
+
+  // ─── Events ──────────────────────────────────────────────────────────
+  function pushEvent(name, kind, payload = '') {
+    const t = new Date().toTimeString().slice(0, 8);
+    const el = document.createElement('div');
+    el.className = `evt ${kind}`;
+    el.innerHTML = `<span class="evt-time">${t}</span><span class="evt-name">${name}</span> ${payload ? '— ' + payload : ''}`;
+    document.getElementById('event-log').appendChild(el);
+    requestAnimationFrame(() => el.classList.add('shown'));
+    el.scrollIntoView({ block: 'end' });
+  }
+
+  // ─── Command handlers ────────────────────────────────────────────────
+  const commands = {
+    help() {
+      termWriteln('Commands:', '36');
+      termWriteln('  connect                          — connect to the in-memory Gateway');
+      termWriteln('  register                         — register all manifest capabilities');
+      termWriteln('  invoke <cap-name> [json]         — invoke a registered capability');
+      termWriteln('  disconnect                       — simulate Gateway drop (auto-reconnect kicks in)');
+      termWriteln('  reset                            — clear state and start over');
+      termWriteln('  state                            — show current state');
+      termWriteln('  help                             — this message');
+    },
+
+    state() {
+      termWriteln(`phase:      ${state.phase}`);
+      termWriteln(`capabilities: ${Object.keys(state.capabilities).length}`);
+      for (const [name, cap] of Object.entries(state.capabilities)) {
+        termWriteln(`  · ${name} [${cap.tier}] registered=${cap.registered}`);
+      }
+    },
+
+    async connect() {
+      if (state.phase === 'connected' || state.phase === 'registered') {
+        termWriteln('already connected.', '33');
+        return;
+      }
+      termWriteln('connecting to gateway...');
+      await sleep(800);
+      termWriteln('✓ connected (1.2s)', '32');
+      pushEvent('sdk.connected', 'connected', 'gateway=ws://localhost:7777');
+      setPhase('connect');
+      state.phase = 'connected';
+    },
+
+    async register() {
+      if (state.phase !== 'connected' && state.phase !== 'registered') {
+        termWriteln('not connected. run `connect` first.', '31');
+        return;
+      }
+      termWriteln(`loading manifest (app: ${SAMPLE_MANIFEST.app})...`);
+      await sleep(300);
+      termWriteln(`registering ${SAMPLE_MANIFEST.capabilities.length} capabilities...`);
+      for (const cap of SAMPLE_MANIFEST.capabilities) {
+        await sleep(200);
+        registerCapability(cap, SAMPLE_MANIFEST);
+        termWriteln(`  ✓ ${cap.name} [${cap.tier}]`, '32');
+        pushEvent('sdk.capability.registered', 'registered', cap.name);
+      }
+      termWriteln('✓ registered', '32');
+      setPhase('register');
+      state.phase = 'registered';
+    },
+
+    async invoke(args) {
+      const name = args[0];
+      let inputJson = args.slice(1).join(' ');
+      if (!name) {
+        termWriteln('usage: invoke <cap-name> [json-input]', '31');
+        return;
+      }
+      const cap = state.capabilities[name];
+      if (!cap) {
+        termWriteln(`unknown capability: ${name}`, '31');
+        pushEvent('sdk.invoke.failed', 'error', `unknown=${name}`);
+        return;
+      }
+      if (state.phase !== 'registered') {
+        termWriteln('not registered. run `register` first.', '31');
+        return;
+      }
+
+      let input = {};
+      if (inputJson) {
+        try { input = JSON.parse(inputJson); }
+        catch { termWriteln('invalid JSON input', '31'); return; }
+      } else {
+        input = name === 'customer.read' ? { customerId: 'c-001' } : { customerId: 'c-001' };
+      }
+
+      termWriteln(`→ invoking ${name}...`);
+      pushEvent('sdk.invoke.started', 'invocation', `${name} ${JSON.stringify(input)}`);
+      const t0 = Date.now();
+      try {
+        const result = await cap.handler(input);
+        const ms = Date.now() - t0;
+        termWriteln(`← result:`, '32');
+        term.writeln(JSON.stringify(result, null, 2));
+        termWriteln(`✓ ${ms}ms`, '32');
+        pushEvent('sdk.invoke.completed', 'invocation', `${name} ok (${ms}ms)`);
+        flashCard(name, 'invoked');
+        setPhase('invoke');
+        cap.lastResult = result;
+      } catch (err) {
+        const ms = Date.now() - t0;
+        termWriteln(`✗ error: ${err.message}`, '31');
+        pushEvent('sdk.invoke.failed', 'error', `${name} ${err.message}`);
+        flashCard(name, 'failed');
+      }
+    },
+
+    async disconnect() {
+      if (state.phase === 'init' || state.phase === 'disconnected') {
+        termWriteln('not connected.', '33');
+        return;
+      }
+      termWriteln('⚠ gateway unreachable (simulated)', '33');
+      pushEvent('sdk.disconnected', 'disconnected', 'reason=simulated-drop');
+      setPhase('disconnect');
+      state.phase = 'disconnected';
+
+      termWriteln('auto-reconnect in 1s, 2s, 4s...', '33');
+      // Simulate exponential backoff: 1s, 2s, 4s (capped)
+      const waits = [1000, 2000, 4000];
+      for (const w of waits) {
+        await sleep(w);
+        term.writeln('.');
+      }
+      termWriteln('✓ reconnected after 7s (auto)', '32');
+      pushEvent('sdk.connected', 'connected', 'reason=auto-reconnect');
+      state.phase = 'connected';
+
+      // Re-register all capabilities on reconnect (Q4 lock: "re-register
+      // automatically so developer doesn't call register() again").
+      if (Object.keys(state.capabilities).length > 0) {
+        termWriteln('re-registering capabilities...');
+        for (const [name, cap] of Object.entries(state.capabilities)) {
+          await sleep(150);
+          term.writeln(`  ✓ ${name}`);
+          pushEvent('sdk.capability.registered', 'registered', `${name} (reconnect)`);
+        }
+        state.phase = 'registered';
+        setPhase('register');
+      }
+    },
+
+    reset() {
+      termWriteln('clearing state...');
+      state.capabilities = {};
+      state.events = [];
+      state.phase = 'init';
+      clearCapabilities();
+      resetLifecycle();
+      document.getElementById('event-log').innerHTML = '';
+      termWriteln('✓ reset', '32');
+    },
+  };
+
+  // ─── Command loop ───────────────────────────────────────────────────
+  function runCommand(line) {
+    const parts = line.trim().split(/\s+/);
+    const cmd = parts[0];
+    const args = parts.slice(1);
+    if (!cmd) {
+      showPrompt();
+      return;
+    }
+    if (commands[cmd]) {
+      // Wait for the async command to finish before showing the next prompt,
+      // so command output and prompt never interleave.
+      Promise.resolve(commands[cmd](args))
+        .catch(err => {
+          termWriteln(`error: ${err.message}`, '31');
+          pushEvent('error', 'error', err.message);
+        })
+        .finally(() => showPrompt());
+    } else {
+      termWriteln(`unknown command: ${cmd}. type "help".`, '31');
+      showPrompt();
+    }
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // Echo strategy: xterm.js echoes printable input by default when the terminal
+  // is the active element. We DO NOT manually `term.write(data)` for printable
+  // chars — doing so double-writes. Backspace needs manual handling because
+  // xterm doesn't render backspace deletion visually without help.
+  term.onData(data => {
+    const code = data.charCodeAt(0);
+    if (code === 13) {  // Enter
+      term.write('\r\n');
+      const line = inputBuffer.trim();
+      inputBuffer = '';
+      if (line) {
+        history.push(line);
+        historyIdx = history.length;
+        runCommand(line);
+      } else {
+        showPrompt();
+      }
+      // showPrompt is called inside runCommand (after async finishes) or above.
+    } else if (code === 127 || code === 8) {  // Backspace
+      if (inputBuffer.length > 0) {
+        inputBuffer = inputBuffer.slice(0, -1);
+        // Erase the character on screen: move cursor back, overwrite with space, move back.
+        term.write('\b \b');
+      }
+    } else if (code === 27) {  // ESC sequence (arrow keys) — skip for now
+      // Up/Down arrows would manipulate history; out of scope for v1 sim
+    } else if (code >= 32) {
+      // Append to buffer; xterm.js echoes the character itself.
+      inputBuffer += data;
+    }
+  });
+
+  // ─── Demo button ────────────────────────────────────────────────────
+  document.getElementById('demo-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('demo-btn');
+    btn.disabled = true;
+    btn.textContent = '⟳ running...';
+
+    try {
+      // Echo the demo commands into the terminal so the user sees the flow.
+      term.writeln('');
+      term.writeln('sdk@sim ~ $ connect');
+      await sleep(150);
+      term.writeln('sdk@sim ~ $ register');
+      await sleep(150);
+      term.writeln('sdk@sim ~ $ invoke customer.read {"customerId":"c-042"}');
+      await sleep(150);
+      term.writeln('sdk@sim ~ $ disconnect');
+
+      await commands.connect();
+      await sleep(300);
+      await commands.register();
+      await sleep(300);
+      await commands.invoke(['customer.read', JSON.stringify({ customerId: 'c-042' })]);
+      await sleep(300);
+      await commands.disconnect();
+      await sleep(300);
+      term.writeln('');
+      termWriteln('─ demo complete ─', '32');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '▶ Run full demo';
+      showPrompt();
+    }
+  });
+
+  // ─── Bootstrap ──────────────────────────────────────────────────────
+  banner();
+  setPhase('init');
+  term.focus();
+  // NOTE: showPrompt() is intentionally NOT called here — the banner()
+  // already prints the welcome lines, and the cursor sits at column 0 of
+  // an empty line, ready for user input. Calling showPrompt() here would
+  // duplicate the prompt on first load.
+</script>
+
+</body>
+</html>

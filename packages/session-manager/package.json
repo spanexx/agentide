@@ -21,7 +21,7 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/event-bus": "0.0.0"
+    "@platform/event-bus": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

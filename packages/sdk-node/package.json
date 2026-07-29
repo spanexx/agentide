@@ -1,8 +1,8 @@
 {
-  "name": "@platform/gateway-core",
+  "name": "@platform/sdk-node",
   "version": "0.0.0",
   "private": true,
-  "description": "In-process control-plane component that authenticates callers, authorizes capability invocations, manages sessions, dispatches to capability handlers, audits every invocation, applies rate limits, and enforces tenant isolation.",
+  "description": "Backend SDK for Agentide — register business capabilities with the Gateway, execute handlers, emit events.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,7 +12,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run",
@@ -21,14 +24,13 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/capability-registry": "workspace:*",
     "@platform/event-bus": "workspace:*",
-    "@platform/platform-capabilities": "workspace:*",
-    "@platform/plugin-manager": "workspace:*",
-    "@platform/session-manager": "workspace:*"
+    "ws": "^8.18.0",
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
     "eslint": "^10.8.0",
