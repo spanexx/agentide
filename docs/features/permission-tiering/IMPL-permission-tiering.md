@@ -75,8 +75,8 @@
 ### Phase 5: agentide CLI prints tier
 
 **Build:**
-- `packages/agentide/src/commands/capability.ts` (or equivalent): update `capability list` print format to show the `tier` column
-- No new flags
+- `packages/agentide/src/cli.ts`: update `capability list` print format to show the `tier` column
+- The `--tier <read|write|act|destructive>` filter flag was added in BI[6] (platform-capabilities pack, `cli.ts:214-229`). It filters by `card.tier === tierFilter`. No new CLI flags are introduced by this BI[7] pack.
 
 **Verify:**
 - [ ] Manual: `agentide capability list` shows tier per row
@@ -171,17 +171,26 @@ Migration story is "no migration." Pre-production. Refactor of `cap()` helper is
 
 ## Status Updates
 
-Mark each phase inline as it completes:
+### Phase 1: types + validator — ✅ Complete (2026-07-29)
+`CapabilityTier` type, `tier` field on `CapabilityRecord`/`CapabilityCard`, `validateRecord()` tier rules, `deriveTier()` helper all in `packages/capability-registry/src/types.ts` and `validate.ts`.
 
-```
-### Phase 1: types + validator — ⏳ Pending
-### Phase 2: tier convention — ⏳ Pending
-### Phase 3: caps refactor — ⏳ Pending
-### Phase 4: gateway filter — ⏳ Pending
-### Phase 5: CLI print — ⏳ Pending
-### Phase 6: post-impl sim — ⏳ Pending
-### Phase 7: drift check — ⏳ Pending
-### Phase 8: reconcile — ⏳ Pending
-```
+### Phase 2: tier convention — ✅ Complete (2026-07-29)
+`tierFromConvention()` in `packages/plugin-manager/src/tier-convention.ts`, `TIER_REQUIRED` error code, `buildCapabilityRecords()` uses convention by default.
 
-Then update `docs/Feature_Backlog.md` and run `update-backlog` skill after each phase completes.
+### Phase 3: caps refactor — ✅ Complete (2026-07-29)
+All 25 platform caps in `packages/platform-capabilities/src/caps.ts` declare explicit `tier:` (`read`/`write`). Runtime caps continue to use convention-derived tier at install time.
+
+### Phase 4: gateway filter — ✅ Complete (2026-07-29)
+`checkAuthz()` tier-hierarchy algorithm in `packages/gateway-core/src/authz.ts`. `capability.list` handler in `factory.ts:383-399` applies scope-based filter using `checkAuthz()`. `GATEWAY_INSUFFICIENT_SCOPE` error code on denial.
+
+### Phase 5: CLI print — ✅ Complete (2026-07-29)
+CLI tier column in `capability list` output (`cli.ts:213-236`). Note: `--tier <read|write|act|destructive>` flag was added in BI[6] (platform-capabilities) — see PRD-TRD §Technical Design for context.
+
+### Phase 6: post-impl sim — ✅ Complete (2026-07-29)
+`docs/features/permission-tiering/simulate.ts` walks the 8 PRD-TRD behavioral scenarios using real packages.
+
+### Phase 7: drift check — ✅ Complete (2026-07-29)
+`.reports/2026-07-29-drift-permission-tiering.md` — verdict "Minor Drift" with 7 gaps. All gaps resolved this session.
+
+### Phase 8: reconcile — ✅ Complete (2026-07-29)
+`simulate.ts` tagged as RECONCILED; pre-impl preserved at `archive/simulate-pre.ts`. `stageInvoke()` and `stageAudit()` re-added to keep parity with pre-impl's 8 stages.

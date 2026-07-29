@@ -220,13 +220,10 @@ async function runCapability(
         const full = platform.capabilityRegistry.describe(card.name).capability;
         return { card, full };
       });
-      const filtered = enriched.filter(({ full }) => {
+      const filtered = enriched.filter(({ card, full }) => {
         if (!full) return false;
         if (ownerFilter && full.owner !== ownerFilter) return false;
-        if (tierFilter) {
-          const hasTier = full.permissions.some((p) => p.endsWith(`.${tierFilter}`));
-          if (!hasTier) return false;
-        }
+        if (tierFilter && card.tier !== tierFilter) return false;
         return true;
       });
       const lines = filtered.map(({ card }) => {

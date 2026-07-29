@@ -40,7 +40,7 @@ This pack makes the convention real: tier is a first-class field, the catalog is
 
 **Given** a platform cap registered without an explicit tier
 **When** the registry stores it
-**Then** the tier is computed from `permissions[0]`'s last segment (`read`/`act`/`destructive`/`write`). If the computed tier doesn't match a known tier value, an error is thrown.
+**Then** the tier is computed from `permissions[0]`'s last segment (`read`/`act`/`destructive`/`write`). If the computed tier doesn't match a known tier value, the tier is set to `null` (silent fallback — the operator is responsible for declaring an explicit tier on runtime caps via the verb convention). Platform caps with unknown permission verbs simply show `tier: null` in the catalog.
 
 ### Scenario 5: tier is required for runtime caps
 
@@ -131,7 +131,7 @@ The install algorithm (in `lifecycle.ts`): for each cap, prefer explicit `tier:`
 
 This replaces the v1 placeholder ("return the full catalog").
 
-**`packages/agentide`** — CLI's `capability list` formatting prints the new `tier` column. No new flags.
+**`packages/agentide`** — CLI's `capability list` formatting prints the new `tier` column. Note: the `--tier <read|write|act|destructive>` filter flag was added by BI[6] (platform-capabilities pack) — it filters by the `card.tier` field via `card.tier === tierFilter`. `--owner` filter flag was also added by BI[6] alongside `--tier`.
 
 ### Dependencies
 

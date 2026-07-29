@@ -20,7 +20,7 @@
 //================================================================
 
 import { createCapabilityRegistry, type CapabilityRecord, type CapabilityCard } from "@platform/capability-registry";
-import { createPluginManager } from "@platform/plugin-manager";
+import { createPluginManager, tierFromConvention } from "@platform/plugin-manager";
 import { createSessionManager } from "@platform/session-manager";
 import { createEventBus } from "@platform/event-bus";
 import { createGateway, issueToken } from "@platform/gateway-core";
@@ -152,8 +152,10 @@ const STAGES: Record<string, () => Promise<void>> = {
   setup: stageSetup,
   token: stageToken,
   filter: stageFilter,
+  invoke: stageInvoke,
   tier: stageTier,
   validate: stageValidate,
+  audit: stageAudit,
   scenario: stageScenario,
 };
 
@@ -202,17 +204,18 @@ async function stageFilter() {
 }
 
 async function stageTier() {
-  banner("Stage: tier (verb convention)");
+  banner("Stage: tier (real tierFromConvention from @platform/plugin-manager)");
 
-  const samples: Array<{ name: string; expected: string }> = [
-    { name: "browser.navigate", expected: "act (verb in ACT_VERBS)" },
-    { name: "browser.click", expected: "act" },
-    { name: "browser.delete", expected: "destructive" },
-    { name: "browser.screenshot", expected: "ambiguous — author must declare" },
-    { name: "browser.read", expected: "read (verb in READ_VERBS)" },
+  const samples = [
+    "browser.navigate",
+    "browser.click",
+    "browser.delete",
+    "browser.screenshot",
+    "browser.read",
   ];
-  for (const s of samples) {
-    ok(`${s.name}: ${s.expected}`);
+  for (const name of samples) {
+    const tier = tierFromConvention(name);
+    ok(`${name}: tier=${tier ?? "null (author must declare)"}`);
   }
 }
 
@@ -259,6 +262,86 @@ async function stageValidate() {
       ok(`rejected: ${err.message.slice(0, 80)}`);
     } else fail(`unexpected: ${err}`);
   }
+}
+
+async function stageInvoke() {
+  banner("Stage: invoke — handleInvocation with tier-scoped tokens");
+
+  // 1) bootstrap sees everything
+  const bootToken = await issueToken(
+    { sub: { tenantId: "acme", callerId: "bootstrap" }, scope: ["*"], iat: 1, exp: 1e15 },
+    Buffer.from("reconciled-sim-secret-key-32-bytes"),
+    clock,
+  );
+  const capList = await gateway.handleInvocation({
+    token: bootToken,
+    caller: { tenantId: "acme", callerId: "bootstrap", scope: ["*"] },
+    capability: { name: "capability.list" },
+    input: { scope: ["*"] },
+  });
+  if ("error" in capList) fail(`bootstrap capability.list: ${capList.error.code}`);
+  else ok(`bootstrap capability.list → ${(capList.output as unknown[]).length} caps`);
+
+  // 2) read-only token denied a write-tier call
+  const readOnlyToken = await issueToken(
+    { sub: { tenantId: "acme", callerId: "dashboard-bot" }, scope: ["platform.*.read"], iat: 1, exp: 1e15 },
+    Buffer.from("reconciled-sim-secret-key-32-bytes"),
+    clock,
+  );
+  const denied = await gateway.handleInvocation({
+    token: readOnlyToken,
+    caller: { tenantId: "acme", callerId: "dashboard-bot", scope: ["platform.*.read"] },
+    capability: { name: "session.create" },
+    input: {},
+  });
+  if ("error" in denied && denied.error.code === "GATEWAY_INSUFFICIENT_SCOPE") {
+    ok(`dashboard-bot session.create → DENIED (GATEWAY_INSUFFICIENT_SCOPE)`);
+  } else if ("error" in denied) {
+    fail(`expected GATEWAY_INSUFFICIENT_SCOPE, got ${denied.error.code}`);
+  } else {
+    fail("dashboard-bot session.create unexpectedly succeeded");
+  }
+
+  // 3) write token succeeds
+  const writeToken = await issueToken(
+    { sub: { tenantId: "acme", callerId: "ops-bot" }, scope: ["platform.session.write"], iat: 1, exp: 1e15 },
+    Buffer.from("reconciled-sim-secret-key-32-bytes"),
+    clock,
+  );
+  const ok2 = await gateway.handleInvocation({
+    token: writeToken,
+    caller: { tenantId: "acme", callerId: "ops-bot", scope: ["platform.session.write"] },
+    capability: { name: "session.create" },
+    input: {},
+  });
+  if ("error" in ok2) fail(`ops-bot session.create: ${ok2.error.code}`);
+  else ok(`ops-bot session.create → OK (got sessionId)`);
+}
+
+async function stageAudit() {
+  banner("Stage: audit — read the audit log written by handleInvocation");
+
+  const auditPath = `${dataDir}/audit.log`;
+  let raw = "";
+  try {
+    raw = await memFs.readFile(auditPath);
+  } catch {
+    fail(`audit log not found at ${auditPath} — run 'stage invoke' first`);
+    return;
+  }
+  const lines = raw.split("\n").filter((l) => l.length > 0);
+  // Note: simulate's in-mem fs overwrites on writeFile, so this shows the
+  // LAST appended record. Real fs.appendFile accumulates; production audit
+  // writer uses append. See packages/gateway-core/src/__tests__/audit.test.ts.
+  if (lines.length === 0) {
+    fail("audit log is empty");
+    return;
+  }
+  const last = JSON.parse(lines[lines.length - 1]!) as Record<string, unknown>;
+  ok(`last record schemaVersion=${last["schemaVersion"]} status=${last["status"]}`);
+  const cap = last["capability"] as { name?: string } | undefined;
+  ok(`last record capability=${cap?.name ?? "?"}`);
+  ok(`note: in-mem fs overwrites; real gateway uses appendFile (1 line per call)`);
 }
 
 async function stageScenario() {
@@ -330,8 +413,10 @@ function showStages() {
       setup: "show state (cards, tokens, active)",
       token: "issue demo tokens",
       filter: "capability list with different scopes",
+      invoke: "handleInvocation with tier-scoped tokens (read denied / write ok)",
       tier: "verb-convention tier inference",
       validate: "real registry validator",
+      audit: "read the audit log written by handleInvocation",
       scenario: "7-step end-to-end demo with real packages",
     };
     console.log(`  ${C.cyan}${name.padEnd(10)}${C.reset}  ${desc[name] ?? ""}`);

@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-07-29  **Open:** 1  **Resolved:** 8  **Critical/High:** 0
+**Last updated:** 2026-07-29  **Open:** 8  **Resolved:** 15  **Critical/High:** 0
 
 ## Open
 
@@ -39,6 +39,55 @@
   - Owner: sdk-node
   - To fix: IMPL Phase 3 updated with module-layout note pointing to the actual final structure.
 
+- **D-14** (Low, 2026-07-29, reporter: feature-pipeline-review) — `permission-tiering` IMPL Status section shows all 8 phases as "⏳ Pending" despite full implementation. Resolved this session — see D-21.
+  - Doc claim: `IMPL-permission-tiering.md:176-185` (original) — every phase "⏳ Pending".
+  - Code reality: All 8 phases implemented across 5 packages: `capability-registry` (types + validator), `plugin-manager` (tier-convention), `platform-capabilities` (caps refactor), `gateway-core` (authz + filter), `agentide` (CLI).
+  - Why matters: future agents reading IMPL would re-implement already-shipped work.
+  - Owner: permission-tiering
+  - To fix: IMPL §Status Updates rewritten to mark each phase ✅ Complete with file:line citations.
+
+- **D-15** (Low, 2026-07-29, reporter: feature-pipeline-review) — `permission-tiering` PRD-TRD & IMPL claim "No new flags" for CLI, but `--tier` flag exists (added by BI[6]). Resolved this session — see D-22.
+  - Doc claim: PRD-TRD §Technical Design and IMPL Phase 5 both say "No new flags" for `packages/agentide`.
+  - Code reality: `cli.ts:16` help text includes `[--tier <read|write|act|destructive>]`. CLI supports `--tier` filter (`cli.ts:214-229`). 4 tests in `cli-tier-column.test.ts:39-68` cover it. CONTEXT.md correctly documents it as a BI[6] addition.
+  - Why matters: doc lies about CLI surface; future agents may remove `--tier` thinking it's an unowned flag.
+  - Owner: permission-tiering
+  - To fix: PRD-TRD §Technical Design and IMPL Phase 5 rewritten to note `--tier` was added by BI[6).
+
+- **D-16** (Low, 2026-07-29, reporter: feature-pipeline-review) — `permission-tiering` PRD-TRD Scenario 4 says "an error is thrown" for unknown tier derivation, but code returns `null` silently. Resolved this session — see D-23.
+  - Doc claim: PRD-TRD §Scenario 4 — "If the computed tier doesn't match a known tier value, an error is thrown."
+  - Code reality: `deriveTier()` at `validate.ts:91-101` returns `null` for unknown last segments. `validateRecord()` allows `null` for platform caps — no error thrown.
+  - Why matters: documented contract diverges from lenient code behavior; platform caps with unknown permission verbs silently show `tier: null`.
+  - Owner: permission-tiering
+  - To fix: PRD-TRD §Scenario 4 rewritten to match lenient behavior (silent `null` fallback; operator responsible for explicit tier on runtime caps).
+
+- **D-17** (Medium, 2026-07-29, reporter: feature-pipeline-review) — `permission-tiering` IMPL Phase 2 Verify checklist lists 6 tier-convention unit tests, none of which exist. Resolved this session — see D-24.
+  - Doc claim: IMPL Phase 2 Verify checklist (`IMPL-permission-tiering.md`) — 6 unit tests for `tierFromConvention` and `buildCapabilityRecords`.
+  - Code reality: `packages/plugin-manager/src/__tests__/tier-convention.test.ts` did not exist before this session; tier convention was exercised only via integration-level paths.
+  - Why matters: pure-function regression safety net was missing. A change to `tierFromConvention` or `buildCapabilityRecords` could silently break install paths.
+  - Owner: permission-tiering
+  - To fix: 11 unit tests written (`tier-convention.test.ts`), all passing.
+
+- **D-18** (Low, 2026-07-29, reporter: feature-pipeline-review) — `permission-tiering` CLI `--tier` filter re-parses permission strings instead of using first-class `card.tier` field. Resolved this session — see D-25.
+  - Doc claim: PRD-TRD §Design rationale — tier field introduced specifically to avoid "parsing twice."
+  - Code reality: `cli.ts:226-228` (original) — `full.permissions.some((p) => p.endsWith(`.${tierFilter}`))`. Permission-string parse, not card.tier lookup.
+  - Why matters: works for 25 platform caps (all permissions end in `.read` or `.write`) but breaks for runtime caps or unusual permission names. Violates the design's "first-class tier field" spirit.
+  - Owner: permission-tiering
+  - To fix: `cli.ts` rewritten to use `card.tier !== tierFilter`. All 18 CLI tests still pass.
+
+- **D-19** (Low, 2026-07-29, reporter: feature-pipeline-review) — `permission-tiering` post-impl sim `stageTier()` did not exercise real `tierFromConvention()` from packages. Resolved this session — see D-26.
+  - Doc claim: PRD-TRD §Simulation Contract — "post-impl sim walks the 8 scenarios using actual packages."
+  - Code reality: `simulate.ts` (original) `stageTier()` printed hardcoded expected descriptions without importing or calling real `tierFromConvention()`.
+  - Why matters: stage was theater — it printed what the doc said should happen, not what the real code does. Drift could go undetected.
+  - Owner: permission-tiering
+  - To fix: `tierFromConvention` now imported from `@platform/plugin-manager` (re-exported via `index.ts:107`); `stageTier()` calls it directly. `tier-convention.ts` re-exported from package index.
+
+- **D-20** (Low, 2026-07-29, reporter: feature-pipeline-review) — `permission-tiering` post-impl sim dropped `stageInvoke()` and `stageAudit()` from pre-impl's 8 stages. Resolved this session — see D-27.
+  - Doc claim: pre-impl sim had 8 stages: setup, token, filter, invoke, tier, validate, audit, scenario.
+  - Code reality: post-impl sim (original) had 6 stages — `invoke` and `audit` were dropped.
+  - Why matters: standalone invoke/audit flows were hidden; users had to step through `stageScenario()` to see denial + audit.
+  - Owner: permission-tiering
+  - To fix: `stageInvoke()` and `stageAudit()` re-added to `simulate.ts` and registered in `STAGES` map. Help text updated.
+
 ---
 
 ## Resolved
@@ -63,3 +112,10 @@
   - Doc reality: pre-impl sim was fully in-memory stubs. Post-impl needs the shim so the bundle parses without the `ws` Node-only import.
   - Why matters: necessary browser adaptation. Logging so the shim isn't read as missing functionality.
   - Verified by: drift-sdk-node audit.
+- **D-14 → D-21** (Resolved 2026-07-29 by drift-permission-tiering audit) — IMPL §Status Updates rewritten: each of 8 phases now marked ✅ Complete with file:line citations (`IMPL-permission-tiering.md:172-196`). Verified by re-reading the new status block.
+- **D-15 → D-22** (Resolved 2026-07-29 by drift-permission-tiering audit) — PRD-TRD §Technical Design and IMPL Phase 5 both rewritten: `--tier <read|write|act|destructive>` and `--owner` filters now cited as BI[6] additions (with file:line for `cli.ts:214-229`). Verified by re-reading `PRD-TRD-permission-tiering.md:134-138` and `IMPL-permission-tiering.md:77-79`.
+- **D-16 → D-23** (Resolved 2026-07-29 by drift-permission-tiering audit) — PRD-TRD §Scenario 4 rewritten to match lenient behavior: "If the computed tier doesn't match a known tier value, the tier is set to `null` (silent fallback — the operator is responsible for declaring an explicit tier on runtime caps via the verb convention). Platform caps with unknown permission verbs simply show `tier: null` in the catalog." Verified by re-reading `PRD-TRD-permission-tiering.md:43`.
+- **D-17 → D-24** (Resolved 2026-07-29 by drift-permission-tiering audit) — 11 unit tests added at `packages/plugin-manager/src/__tests__/tier-convention.test.ts`. Covers IMPL Phase 2 Verify checklist (3 tierFromConvention direct cases, plus exhaustive verb-list coverage) plus 4 `buildCapabilityRecords` tests (explicit tier, override, inferred, TIER_REQUIRED error). All 119 plugin-manager tests pass; full repo: 394/394 pass.
+- **D-18 → D-25** (Resolved 2026-07-29 by drift-permission-tiering audit) — `cli.ts:223-228` rewritten: `card.tier !== tierFilter` replaces `full.permissions.some(p => p.endsWith(`.${tierFilter}`))`. All 18 CLI tests still pass; typecheck clean.
+- **D-19 → D-26** (Resolved 2026-07-29 by drift-permission-tiering audit) — `simulate.ts:23` imports `tierFromConvention` from `@platform/plugin-manager`. `plugin-manager/src/index.ts:107` re-exports from `./tier-convention.js`. `stageTier()` calls the real function and prints `tier=<result>`. Verified by reading the new `stageTier` body.
+- **D-20 → D-27** (Resolved 2026-07-29 by drift-permission-tiering audit) — `simulate.ts` `STAGES` map now includes `invoke` and `audit` (line 152-160). `stageInvoke()` exercises 3 invocations (bootstrap, read-denied, write-ok). `stageAudit()` reads `${dataDir}/audit.log` via in-mem fs and notes the overwrite-vs-append caveat. Help text updated.
