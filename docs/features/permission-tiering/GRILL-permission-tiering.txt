@@ -1,0 +1,241 @@
+Permission Tiering - Grill Notes
+
+Status: Phase 0 grilling complete
+Date: 2026-07-28
+Source: docs/architecture/Runtime_Capabilities.md, docs/architecture/Capability_System.md,
+        docs/architecture/Business_Capability.md, docs/architecture/Goals.md, docs/CONTEXT.md,
+        docs/features/gateway-core/IMPL-gateway-core.md, scripts/backlog/permission-tiering.js,
+        docs/drift-issue-log.md (item #11)
+
+What this feature is about
+
+- Implement the read/act/destructive scope convention platform-wide — the
+  convention is documented in Runtime_Capabilities.md §Permissions and Risk
+  Tiers, but the implementation is incomplete today.
+- Three concrete surfaces ship in BI[7]:
+  (1) Tier field on CapabilityRecord (hybrid: explicit-or-derived).
+  (2) Tier-aware capability.list — coverage-filtered; agents see only what
+      they can invoke.
+  (3) Wildcard scope tests — prove the tier hierarchy works across kinds
+      and namespaces.
+- Tenant-scoped listing (the BI[6] U3 punt) is deferred to BI[14] (Tenant
+  design). Tracked in drift log #11.
+- This pack is Tier 2 #7. Deps: [5, 6] (gateway-core, platform-capabilities).
+  Both shipped. Unblocks Tier 3 (browser-runtime, docker-runtime) which
+  depend on BI[7].
+
+Questions and answers locked so far
+
+1. What does "platform-wide" mean for BI[7]?
+Answer:
+- Ship three surfaces: (1) tier field, (2) tier-aware capability.list,
+  (3) wildcard scope tests.
+- Tenant-scoped listing deferred to BI[14] (drift log #11).
+
+Why:
+- The documented convention is only partially enforced. Tier is implicit
+  (parsed from permissions). capability.list returns the full catalog
+  regardless of caller scope. The wildcard scope tests are missing.
+- Tenant scoping was scoped to BI[7] in BI[6]'s PRD but on inspection
+  requires a per-tenant model that doesn't exist yet (CONTEXT.md open
+  item). Per-tenant install records, per-tenant capability visibility —
+  none of those primitives are built. Mixing it into BI[7] makes the pack
+  do two unrelated things and slows it down.
+- BI[14] is the right home. Tracked in drift #11.
+
+2. Where does the tier live on a capability?
+Answer:
+- Hybrid: a new optional `tier` field on CapabilityRecord. If unset, derive
+  from permissions[0]'s last segment. The validator enforces strict rules:
+  - type="runtime" -> tier REQUIRED, one of read|act|destructive
+  - type="platform" -> tier OPTIONAL, derived if missing
+  - type="business" -> tier MUST be null/undefined
+
+Why:
+- The tier is metadata that callers and the registry need to read. Storing
+  it explicitly avoids the parsing-twice problem (authz checks the
+  permission, the catalog filter checks the tier; both need the same value).
+- The hybrid carries the existing 25 platform caps without churn. The
+  refactor of @platform/platform-capabilities' cap() helper is a 1-line
+  change per cap (pass the tier explicitly); the runtime caps auto-derive
+  if not given.
+- The validator is the single source of truth. Runtime plugin authors who
+  forget the tier get a clear error at install time.
+
+3. What does "tier-aware capability.list" actually mean?
+Answer:
+- coverage-filtered: capability.list returns only the caps the caller's
+  scope covers. A token with runtime.browser.read sees browser.screenshot
+  but not browser.click. A token with * sees everything.
+
+Why:
+- The catalog is the caller's security boundary, not a public phone book.
+  A token scoped to runtime.browser.read should not even know that
+  customer.delete exists.
+- The bootstrap * scope still works (covers everything). The operator's
+  CLI sees everything via the bootstrap token. Operators using narrower
+  scopes see narrower lists.
+- An agent calling tools/list (MCP) sees only what it can invoke. No
+  trial-and-error probing, no info-leak via catalog.
+
+4. Tenant-scoped listing. Does this fit in BI[7]?
+Answer:
+- DEFERRED to BI[14] (Tenant design). Drift log #11 records the trail.
+
+Why:
+- Plugins and capabilities are global today. There's no tenantId field on
+  InstallRecord or CapabilityRecord. To filter by tenant requires a
+  per-tenant model.
+- The CONTEXT.md open item "Tenant design - multi-tenancy isolation
+  semantics beyond the plugin-permission split above are not fully
+  specified" is the right place for this decision.
+- BI[7] does not need to be re-opened when BI[14] lands — the tier-aware
+  list is tenant-agnostic by design. Adding tenant filtering on top is a
+  multi-axis query that BI[14] owns.
+
+5. Migration story for the new tier field?
+Answer:
+- No migration. Pre-production. The 25 existing platform caps in
+  @platform/platform-capabilities get explicit tiers in the same BI[7]
+  commit (refactor of the cap() helper). New runtime plugins MUST declare
+  tiers; the registry rejects registration if missing.
+
+Why:
+- We're in dev. Migration is not a real concern. The refactor is 1-line
+  per cap and lives in the same package.
+
+6. Where does a runtime plugin declare the tier?
+Answer:
+- Hybrid: most cases use a built-in convention (verb -> tier map); ambiguous
+  verbs require explicit declaration in the manifest.
+
+The verb map (lives in packages/plugin-manager/src/tier-convention.ts):
+- READ_VERBS: read, list, get, view, show, describe, fetch, query, count, is, has
+- ACT_VERBS: write, set, put, create, update, edit, patch, append, push, post,
+  send, open, close, start, stop, restart, pause, resume, navigate, goto,
+  click, doubleclick, hover, type, press, select, scroll, wait, upload,
+  download, run, exec, execute, install, enable, disable, reload, touch,
+  move, copy, rename
+- DESTRUCTIVE_VERBS: delete, remove, drop, destroy, purge, wipe, reset,
+  clear, truncate, commit, merge, rebase, push, checkout
+
+Manifest format:
+  runtime:
+    id: browser
+  capabilities:
+    - browser.navigate    # verb in ACT_VERBS -> act
+    - browser.click       # verb in ACT_VERBS -> act
+    - name: browser.screenshot
+      tier: read           # explicit override (screenshot not in any list)
+
+The plugin manager's algorithm:
+  for each cap in manifest.capabilities:
+    name = (string | {name}) -> name
+    explicitTier = (string | {tier}) -> tier or null
+    tier = explicitTier ?? tierFromConvention(name)
+    if (tier === null) throw TIER_REQUIRED
+    register CapabilityRecord with permissions=[runtime.{id}.{tier}]
+
+Why:
+- 90%+ of caps (click, read, delete, navigate) get the right tier
+  automatically. Plugin authors only write `tier:` when the verb is
+  ambiguous (browser.screenshot, browser.run, browser.exec).
+- The verb list is auditable. When a new plugin ships with a new verb,
+  the maintainer decides "is this act or destructive?" once in the
+  platform, and every plugin uses it.
+- Matches the tenant's journey: the admin reads the browser plugin's
+  manifest, sees "scroll, click, type, navigate, screenshot" — most are
+  obviously act, one is read. They trust the convention for the boring
+  cases.
+
+7. Where does the tier-aware filter live?
+Answer:
+- The gateway. The capability.list handler in
+  packages/gateway-core/src/factory.ts reads caller.scope from the request,
+  iterates the registry's full list, calls checkAuthz(caller.scope, cap.permissions)
+  per cap, returns the filtered set. The registry stays a pure catalog.
+
+Why:
+- The gateway is the authz authority. The filter is a one-line walk per
+  cap. The registry stays decoupled from policy.
+- All callers (MCP adapter, CLI, SDK) hit the same gateway path, so the
+  user sees the same filtered list everywhere.
+
+8. What does the response of capability.list look like after BI[7]?
+Answer:
+- The CapabilityCard gains a `tier` field. Agents see the tier in the
+  catalog response. No second call per cap to learn its risk.
+
+Response shape (post-BI[7]):
+  interface CapabilityCard {
+    name: string;
+    version: string;
+    type: "business" | "platform" | "runtime";
+    tier: "read" | "act" | "destructive" | "write" | null;
+    description: string;
+  }
+
+Test matrix (11 cases):
+  | Caller scope                              | Expected                                    |
+  |-------------------------------------------|---------------------------------------------|
+  | *                                         | All 25 caps                                 |
+  | runtime.*.read                            | All read-tier runtime caps (0 today) +       |
+  |                                           |  no platform caps (different kind)           |
+  | platform.*.read                           | All 11 read-tier platform caps               |
+  | runtime.*.act                             | All 25 (covers all platform caps) + 0 runtime|
+  | runtime.*.destructive                    | All 25 (highest rank, same as act today)     |
+  | runtime.*.write                           | Invalid (write is not a runtime tier) -> 0   |
+  | customer.read                             | Empty (no business caps registered yet)     |
+  | ["platform.session.write"]                | The 4 session.* caps                        |
+  | ["runtime.*.read", "platform.*.read"]     | Union of read-tier across both kinds        |
+  | []                                        | Empty                                       |
+  | ["xyzzy"]                                 | Empty (malformed scope)                      |
+
+Why:
+- The tier on the card is exactly what an agent needs to plan its actions.
+  Without it, the agent has to call capability.describe per cap.
+- The wildcards are the headline test. They prove the tier hierarchy works
+  across kinds and namespaces.
+- Empty/malformed scopes are defensive tests. The filter doesn't crash.
+
+Implementation outline (low-detail; deeper in IMPL phase)
+
+- packages/platform-capabilities: no change to the registration; the 25
+  existing caps get explicit tiers in caps.ts (1-line per cap).
+- packages/capability-registry: CapabilityRecord adds tier?: CapabilityTier | null.
+  validateRecord enforces the rules from Q2.
+- packages/plugin-manager: new tier-convention.ts (verb list). The install
+  algorithm in lifecycle.ts applies the convention + explicit override.
+- packages/gateway-core:
+  - authz.ts: no change (the existing tierCovers already supports the
+    wildcard).
+  - factory.ts: the capability.list handler filters by caller.scope via
+    checkAuthz. The CapabilityCard returned by the handler now includes
+    tier.
+  - handle-invocation.ts: no change.
+- packages/agentide: CLI's capability list gatering the new tier field
+  in the print format. No new flags.
+
+Defer trail
+
+- 2026-07-28 — BI[6] GRILL, original punt: "Tenant-scoped plugin list →
+  BI[7]."
+- 2026-07-28 — BI[7] grill Q4, re-punt: "Out of scope. Awaits BI[14]
+  (Tenant design)."
+
+Drift log entries
+
+- drift-issue-log.md #11: "Tenant-scoped listing deferred from BI[6] to
+  BI[14] — DEFERRED." Records the trail and the action item: create BI[14]
+  on the backlog.
+
+Open Items (carry forward to Phase 0.5)
+
+- Confirm the verb list covers the cases that will appear in BI[12]
+  (browser-runtime). The browser plugin's manifest will use it first.
+- Verify the wildcard scope tests catch edge cases: a token with two
+  scopes where one is malformed; a token with a kind that doesn't match
+  any runtime cap today.
+- Decide whether the existing 25 caps need their `description` field
+  updated to reflect the tier (UI polish). Mechanically: pass the tier
+  to the description formatter. Cosmetic.

@@ -14,8 +14,15 @@
  * Quick lookup: rg -n "CID:manifest-" packages/plugin-manager/src/manifest.ts
  */
 
+import type { CapabilityTier } from "@platform/capability-registry";
 import { ERROR_CODES, PluginManagerError } from "./errors.js";
-import type { PluginManifest, PluginType, YamlParser, YamlValue } from "./types.js";
+import type {
+  ManifestCapability,
+  PluginManifest,
+  PluginType,
+  YamlParser,
+  YamlValue,
+} from "./types.js";
 
 const CAPABILITY_NAME_REGEX = /^[a-z][a-z0-9_-]*\.[a-z][a-z0-9_.-]*$/;
 
@@ -106,28 +113,58 @@ function coerceVersion(value: YamlValue): string {
   return value;
 }
 
-function coerceCapabilities(value: YamlValue): readonly string[] | undefined {
+function coerceCapabilities(value: YamlValue): readonly ManifestCapability[] | undefined {
   if (value === undefined || value === null) return undefined;
   if (!Array.isArray(value)) {
     throw new PluginManagerError(
       ERROR_CODES.MANIFEST_INVALID,
-      "manifest \"capabilities\" must be an array of strings",
+      "manifest \"capabilities\" must be an array of strings or {name,tier} objects",
       { expected: "array", got: typeof value, field: "capabilities" },
     );
   }
-  const out: string[] = [];
+  const out: ManifestCapability[] = [];
   for (let i = 0; i < value.length; i++) {
     const item = value[i];
-    if (typeof item !== "string") {
+    if (typeof item === "string") {
+      out.push(item);
+      continue;
+    }
+    if (!isCapabilityObject(item)) {
       throw new PluginManagerError(
         ERROR_CODES.MANIFEST_INVALID,
-        `manifest capabilities[${i}] must be a string`,
-        { expected: "string", got: typeof item, index: i },
+        `manifest capabilities[${i}] must be a string or {name,tier} object`,
+        { expected: "string|object", got: typeof item, index: i },
       );
     }
-    out.push(item);
+    const validTiers: readonly string[] = ["read", "act", "destructive"];
+    if (item.tier !== undefined && !validTiers.includes(item.tier)) {
+      throw new PluginManagerError(
+        ERROR_CODES.MANIFEST_INVALID,
+        `manifest capabilities[${i}] tier must be one of read|act|destructive (got ${JSON.stringify(item.tier)})`,
+        { index: i, got: String(item.tier) },
+      );
+    }
+    out.push({
+      name: item.name,
+      tier: (item.tier ?? "act") as CapabilityTier,
+    });
   }
   return out;
+}
+
+// Narrow YamlValue into a {name:string, tier?:string} capability-object shape.
+// Returns false for strings, arrays, null, or objects missing a string `name`.
+function isCapabilityObject(
+  value: YamlValue,
+): value is { readonly name: string; readonly tier?: string } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const name = (value as { name?: YamlValue }).name;
+  if (typeof name !== "string") return false;
+  const tier = (value as { tier?: YamlValue }).tier;
+  if (tier === undefined) return true;
+  return typeof tier === "string";
 }
 
 function coerceMetadata(
@@ -200,12 +237,13 @@ export function validateManifest(manifest: PluginManifest): void {
 
   if (manifest.capabilities) {
     for (let i = 0; i < manifest.capabilities.length; i++) {
-      const cap = manifest.capabilities[i];
-      if (!CAPABILITY_NAME_REGEX.test(cap)) {
+      const entry = manifest.capabilities[i];
+      const capName = typeof entry === "string" ? entry : entry.name;
+      if (!CAPABILITY_NAME_REGEX.test(capName)) {
         throw new PluginManagerError(
           ERROR_CODES.CAPABILITY_NAME_INVALID,
-          `capability "${cap}" is not in the required format`,
-          { capability: cap, format: "domain.action", index: i },
+          `capability "${capName}" is not in the required format`,
+          { capability: capName, format: "domain.action", index: i },
         );
       }
     }

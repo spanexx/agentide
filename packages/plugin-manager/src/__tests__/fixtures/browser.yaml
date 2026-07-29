@@ -4,6 +4,7 @@ version: "1.0"
 capabilities:
   - browser.navigate
   - browser.click
-  - browser.screenshot
+  - name: browser.screenshot
+    tier: read
 metadata:
   description: Browser automation runtime

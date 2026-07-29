@@ -16,16 +16,18 @@
  * Quick lookup: rg -n "CID:helpers-" packages/plugin-manager/src/lifecycle-helpers.ts
  */
 
-import type { CapabilityRecord, CapabilityRegistry, CapabilityType } from "@platform/capability-registry";
+import type { CapabilityRecord, CapabilityRegistry, CapabilityTier, CapabilityType } from "@platform/capability-registry";
 import type { EventBus } from "@platform/event-bus";
 import { ERROR_CODES, PluginManagerError } from "./errors.js";
 import type { EventPublisher } from "./events.js";
 import { manifestId, manifestType, parseManifest, validateManifest } from "./manifest.js";
+import { tierFromConvention } from "./tier-convention.js";
 import type { InstallStore } from "./store.js";
 import type {
   Clock,
   FileSystem,
   InstallRecord,
+  ManifestCapability,
   PluginManifest,
   PluginType,
   YamlParser,
@@ -55,31 +57,53 @@ export function pluginCapabilityType(type: PluginType): CapabilityType {
 }
 
 // CID:helpers-003 - buildCapabilityRecords
-// Purpose: turns the manifest's capability name list into CapabilityRecord[] (with default permissions/description + owner)
+// Purpose: turns the manifest's capability name list into CapabilityRecord[]
+//   with permissions and tier derived per BI[7] Decision 6 (hybrid):
+//   - explicit `tier:` if the manifest entry is `{name, tier}` object
+//   - else tierFromConvention(name) — verb lookup in READ/ACT/DESTRUCTIVE lists
+//   - throws TIER_REQUIRED if both are absent (e.g. "browser.screenshot")
+// Used by: lifecycle install/update/reload paths
 export function buildCapabilityRecords(
   manifest: PluginManifest,
   capType: CapabilityType,
   owner: string,
 ): readonly CapabilityRecord[] {
   const fallbackDescription = manifest.metadata?.description ?? "";
-  return (manifest.capabilities ?? []).map((name) => ({
-    name,
-    version: manifest.version,
-    type: capType,
-    description: fallbackDescription || name,
-    permissions: [],
-    owner,
-  }));
+  return (manifest.capabilities ?? []).map((entry: ManifestCapability) => {
+    const name = typeof entry === "string" ? entry : entry.name;
+    const explicitTier: CapabilityTier | null =
+      typeof entry === "string" ? null : entry.tier;
+    const inferred = tierFromConvention(name);
+    const tier = explicitTier ?? inferred;
+    if (tier === null) {
+      throw new PluginManagerError(
+        ERROR_CODES.TIER_REQUIRED,
+        `capability "${name}" requires an explicit tier — verb not in convention (READ/ACT/DESTRUCTIVE)`,
+        { capability: name },
+      );
+    }
+    return {
+      name,
+      version: manifest.version,
+      type: capType,
+      description: fallbackDescription || name,
+      permissions: [],
+      owner,
+      tier,
+    };
+  });
 }
 
 // CID:helpers-004 - checkCapabilityCollisions
 // Purpose: pre-checks each declared capability against the Capability Registry; throws PLUGIN_CAPABILITY_COLLISION if any capability is already owned by a different owner
+// Accepts the manifest's `capabilities` (strings or {name,tier} objects); only the name is used.
 export function checkCapabilityCollisions(
   registry: CapabilityRegistry,
   owner: string,
-  capabilities: readonly string[],
+  capabilities: readonly ManifestCapability[],
 ): void {
-  for (const cap of capabilities) {
+  for (const entry of capabilities) {
+    const cap = typeof entry === "string" ? entry : entry.name;
     const result = registry.describe(cap);
     if (result.capability && result.capability.owner !== owner) {
       throw new PluginManagerError(

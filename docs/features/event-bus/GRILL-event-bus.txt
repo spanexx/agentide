@@ -1,0 +1,117 @@
+Event Bus - Grill Notes
+
+Status: Locked (retrospective)
+Date: 2026-07-28
+Source: packages/event-bus/src/ + docs/features/event-bus/PRD-event-bus.md
+
+Note: This pack was implemented before the grill-with-docs skill produced
+backfill files. This GRILL is reconstructed from the actual implementation
+to satisfy the pipeline. Every "Question" below is reconstructed from the
+real code; every "Answer" is what the code does.
+
+What this feature is about
+
+- In-process pub/sub event bus for all Agentide platform components.
+- One bus instance per component that needs one (no global singleton).
+- Public surface: createEventBus(), subscribe(), publish(), Subscription.
+- Wildcard patterns: exact segment match, or prefix.* (multi-segment
+  prefix wildcard with `*` only valid as the final segment).
+- Async handlers supported; publish() awaits all of them.
+- Handler failures are isolated — emit event.handler_failed, don't reject.
+- Payload is shallow-frozen before dispatch; event itself is frozen.
+- Reserved namespace "event." — only the bus itself can publish under it.
+
+Questions and answers locked so far
+
+1. Should the bus be a global singleton or instance-based?
+Answer:
+- Instance-based. Every caller creates its own via createEventBus().
+- No shared global state between bus instances.
+
+Why:
+- Source: packages/event-bus/src/index.ts CID:index-001 (createEventBus
+  factory owns its own subscription list).
+- Two independent bus instances do not see each other's events.
+- PRD AC-17 pins this: "The bus has no observable global state outside
+  its own instance; two independent bus instances do not see each other's
+  events."
+
+2. What wildcard syntax should subscriptions support?
+Answer:
+- Exact segment match: subscribe("session.created") matches only that name.
+- Trailing wildcard: subscribe("session.*") matches any name whose segments
+  start with "session." — session.created, session.created.foo, etc.
+- Bare wildcard: subscribe("*") is rejected by validatePattern (must have
+  a prefix segment before the final `*`).
+- `*` is only valid as the final segment. subscribe("session.*.created")
+  throws.
+
+Why:
+- Source: packages/event-bus/src/match.ts CID:match-001 / CID:match-002.
+- Real `*` matches one or more remaining segments (prefix wildcard),
+  not exactly one. PRD AC-1 + AC-2 reflect this.
+- PRD original draft said "single segment" but the implementation actually
+  treats `*` as prefix-anything (multi-segment). Drift noted in
+  docs/drift-issue-log.md.
+
+3. Should handler failures stop subsequent handlers from running?
+Answer:
+- No. A throw or rejection in one handler must NOT stop the others.
+- The bus emits exactly one `event.handler_failed` event per failing
+  handler, with payload { eventName, subscriberPattern, error }.
+
+Why:
+- Source: packages/event-bus/src/index.ts dispatchToSnapshot() lines 226-231
+  (sync catch) and lines 215-223 (async .then with onAsyncError).
+- emitHandlerFailed emits event.handler_failed via dispatchInternal (bypasses
+  reserved-namespace guard so the bus can publish its own internal events).
+- PRD AC-7, AC-8, AC-9, AC-10, AC-11 pin this.
+
+4. Is publish() sync or async?
+Answer:
+- Async. Returns Promise<void> always.
+- Sync handlers complete inline; async handlers (returning a thenable) are
+  awaited via Promise.allSettled.
+- publish() resolves successfully even if some handlers reject.
+
+Why:
+- Source: packages/event-bus/src/index.ts publish() and dispatchToSnapshot().
+- PRD AC-6, AC-10.
+
+5. Can anyone publish events under the "event." namespace?
+Answer:
+- No. Only the Event Bus itself, via the private dispatchInternal path.
+- External callers using publish() get a thrown error.
+
+Why:
+- Source: packages/event-bus/src/index.ts lines 129-133.
+- "Reserved namespace 'event.' — only the Event Bus may publish events
+  with this prefix."
+- PRD AC-16.
+
+6. Should subscriptions be deduplicated?
+Answer:
+- No. subscribe("session.*", handlerA) followed by subscribe("session.*",
+  handlerB) creates two subscriptions. Both fire on matching events,
+  in registration order.
+
+Why:
+- Source: packages/event-bus/src/index.ts subscribe() lines 76-82 — each
+  subscribe pushes a new RegisteredSubscription onto the array, no dedup
+  check.
+
+7. Does unsubscribe from inside a handler affect the in-flight dispatch?
+Answer:
+- No. The dispatch uses a snapshot of matching subscriptions taken at
+  publish time, so unsubscribes during dispatch only affect future
+  publishes.
+
+Why:
+- Source: packages/event-bus/src/index.ts dispatchToSnapshot() lines 200-202
+  (snapshot + slice before iterating).
+- PRD AC-15.
+
+No remaining open questions
+
+Reconstructed from packages/event-bus/src/. Behavior is locked in code.
+Future changes must update both code and this GRILL together.
