@@ -23,6 +23,7 @@ import { registerPlatformCapabilities } from "@platform/platform-capabilities";
 import type { SessionManager } from "@platform/session-manager";
 import type { PluginManager } from "@platform/plugin-manager";
 import { AuditWriter } from "./audit.js";
+import { checkAuthz } from "./authz.js";
 import { issueToken } from "./auth.js";
 import { handleInvocation } from "./handle-invocation.js";
 import { type DispatchHandlers } from "./dispatch.js";
@@ -379,9 +380,22 @@ function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
     }),
 
     // === capability discovery ===
-    "capability.list": wrap(() => {
-      // v1: return the full catalog. v2: filter by caller scope.
-      return ctx.registry.list();
+    "capability.list": wrap((input) => {
+      // BI[7]: tier-aware catalog. Filter by caller's scope so a token with
+      //   runtime.browser.read does not see runtime.browser.click in its
+      //   catalog (avoids info-leak via capability discovery).
+      //   Bootstrap callers (CLI operator) pass scope: ["*"] or omit to see
+      //   everything — operators retain the v1 "full catalog" view.
+      // Empty/malformed scope returns an empty list — defensive.
+      const i = (input ?? {}) as { scope?: readonly string[] };
+      const callerScope = Array.isArray(i.scope) ? i.scope : [];
+      if (callerScope.length === 0) return [];
+      const allCards = ctx.registry.list();
+      return allCards.filter((card) => {
+        const full = ctx.registry.describe(card.name).capability;
+        if (!full) return false;
+        return checkAuthz(callerScope, full.permissions);
+      });
     }),
 
     "capability.describe": wrap((input) => {

@@ -367,3 +367,47 @@ an architectural decision, not a feature delta.
 
 **Remaining follow-up:** Create BI[14] on the backlog. Tag it as gating Tier 3-5 packs
 that touch installation or capability visibility.
+
+---
+
+## #12 — Reconciled `simulate.ts` Step 4 banner should mention `GATEWAY_SESSION_REQUIRED`
+
+**Discovery:** 2026-07-29 (BI[7] sub-agent drift check)
+
+**What drifted:** The reconciled simulation's Step 4 invokes `gateway.handleInvocation`
+without a session token. The real `handleInvocation` pipeline runs session-check
+*before* scope-check, so the actual denial code is `GATEWAY_SESSION_REQUIRED`,
+not `GATEWAY_INSUFFICIENT_SCOPE` (which PRD-TRD Scenario 2 anticipated assuming
+a session was already present).
+
+**Why this matters:** A future reader of the sim will see the unexpected error code
+and wonder if the tier enforcement is broken. The sim itself handles both branches
+correctly; only the banner copy is misleading.
+
+**Resolution:** ACCEPTED drift. The sim step is illustrative. If someone wants to
+demonstrate the scope-denial path, the next iteration of `simulate.ts` should call
+`gateway.createSession()` first (or read the audit log to surface the right
+denial). Logged here for future iteration.
+
+**Refs:** docs/features/permission-tiering/simulate.ts Step 4
+
+---
+
+## #13 — `archive/simulate-pre.ts` retained (not deleted) per IMPL Phase 8
+
+**Discovery:** 2026-07-29 (BI[7] sub-agent drift check)
+
+**What drifted:** IMPL Phase 8 said: "Delete `simulate-pre.sh` / `.html` (or move to
+`docs/features/<slug>/archive/`)". The implementation chose the archive option,
+keeping the pre-impl simulation (953 lines, hardcoded catalog) as a reference
+alongside the canonical reconciled `simulate.ts` (371 lines, real packages).
+
+**Why this matters:** Future readers may not realize the archived sim still works
+and shows the *design* vs the *reality* side-by-side. The skill's reconcile phase
+explicitly archives rather than deletes to preserve this comparison.
+
+**Resolution:** ACCEPTED drift. The archive/ folder is intentional per the
+feature-pipeline skill. Documented here so the next agent doesn't accidentally
+delete it as cruft.
+
+**Refs:** docs/features/permission-tiering/{simulate.ts,archive/simulate-pre.ts}
