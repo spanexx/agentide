@@ -69,9 +69,10 @@ None.
 │  │                                              │  │
 │  │  ┌──────────────────────────────────────┐   │  │
 │  │  │  Public API:                         │   │  │
-│  │  │    create(), resume(), destroy(),    │   │  │
-│  │  │    getStatus(), attachResource(),    │   │  │
-│  │  │    detachResource(), listResources() │   │  │
+│  │  │    create(), resume(), touch(),       │   │  │
+│  │  │    destroy(), getStatus(),            │   │  │
+│  │  │    attachResource(), detachResource(),│   │  │
+│  │  │    listResources()                    │   │  │
 │  │  └──────────────────────────────────────┘   │  │
 │  └─────────────────────────────────────────────┘  │
 │                                                    │
@@ -273,9 +274,25 @@ Returns the current status of a session.
 **Errors:**
 - Session not found: throw `SessionNotFoundError`
 
+#### `touch(sessionId: string): SessionRecord`
+
+Resets the idle timeout for an active session. Updates `lastActivityAt` to now and restarts the idle timer. Used by the Gateway on every capability call so a long-running agent workflow doesn't get suspended mid-task.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `sessionId` | `string` | Yes | ID of the session |
+
+**Response:** `SessionRecord` with `lastActivityAt` updated to current time.
+
+**Errors:**
+- Session not found: throw `SessionNotFoundError`
+- Session status is not `'active'` (i.e. suspended or archived): throw `SessionNotActiveError`
+
+**Side effects:** Restarts the idle timeout timer.
+
 #### `attachResource(sessionId: string, resource: ResourceRecord): void`
 
-Registers a resource against a session.
+Registers a resource against a session. Permitted when session status is `active` OR `suspended` — resources attached while suspended survive resume without re-attachment.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

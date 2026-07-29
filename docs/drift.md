@@ -1,15 +1,14 @@
 # Drift Log
-**Last updated:** 2026-07-29  **Open:** 8  **Resolved:** 15  **Critical/High:** 0
+**Last updated:** 2026-07-29  **Open:** 8  **Resolved:** 16  **Critical/High:** 0
 
 ## Open
 
-- **D-1** (Medium, 2026-07-27, reporter: session-manager implementation) — session-manager pipeline documents disagree on touch visibility, resource attach state, and minimum timeout values.
-  - Doc claim: `SessionManager` interface omits `touch()`, while FLOW requires every capability call to reset the idle timer (`docs/features/session-manager/TRD-session-manager.md:194-220`, `docs/features/session-manager/FLOW-session-manager.md:39-42`)
-  - Code reality: public API includes `touch(sessionId)`, and attach permits suspended sessions (`packages/session-manager/src/types.ts:70-82`, `packages/session-manager/src/resources.ts:8-16`)
-  - Why matters: Gateway integration and timeout tests need one consistent contract.
+- **D-1** (Medium, 2026-07-27, reporter: session-manager implementation) — session-manager pipeline documents disagreed on touch visibility, resource attach state, minimum timeout values, and touch-on-non-active behavior. Resolved this session — see D-28.
+  - Doc claim: `SessionManager` interface omits `touch()` in TRD §2.3 and IMPL Phase 0; FLOW line 41 requires every capability call to reset the idle timer via `touch()`. IMPL Phase 3 said `attachResource()` "validates session is active". IMPL Phase 1 said `timeout >= 1000`. IMPL Phase 2 said "`touch()` on archived session is a no-op".
+  - Code reality: `touch(sessionId)` exists at `types.ts:137` and `index.ts:132-138`. `attachResource()` permits active OR suspended (rejects only archived) at `resources.ts:35`. Timeout minimum is `< 1` rejected (1ms minimum) at `index.ts:109-110`. `touch()` on non-active throws `SessionNotActiveError`.
+  - Why matters: Gateway integration and timeout tests needed one consistent contract.
   - Owner: session-manager
   - To fix: reconcile PRD/TRD/FLOW/IMPL in follow-up doc pass.
-  - Related: none
 
 - **D-2** (Low, 2026-07-29, reporter: feature-pipeline-review) — `sdk-node` PRD-TRD events table missing 8th event `sdk.capability.rejected`. Resolved this session — see D-6.
   - Doc claim: events table lists 7 events (`docs/features/sdk-node/PRD-TRD-sdk-node.md:173-182`)
@@ -119,3 +118,9 @@
 - **D-18 → D-25** (Resolved 2026-07-29 by drift-permission-tiering audit) — `cli.ts:223-228` rewritten: `card.tier !== tierFilter` replaces `full.permissions.some(p => p.endsWith(`.${tierFilter}`))`. All 18 CLI tests still pass; typecheck clean.
 - **D-19 → D-26** (Resolved 2026-07-29 by drift-permission-tiering audit) — `simulate.ts:23` imports `tierFromConvention` from `@platform/plugin-manager`. `plugin-manager/src/index.ts:107` re-exports from `./tier-convention.js`. `stageTier()` calls the real function and prints `tier=<result>`. Verified by reading the new `stageTier` body.
 - **D-20 → D-27** (Resolved 2026-07-29 by drift-permission-tiering audit) — `simulate.ts` `STAGES` map now includes `invoke` and `audit` (line 152-160). `stageInvoke()` exercises 3 invocations (bootstrap, read-denied, write-ok). `stageAudit()` reads `${dataDir}/audit.log` via in-mem fs and notes the overwrite-vs-append caveat. Help text updated.
+- **D-1 → D-28** (Resolved 2026-07-29 by session-manager doc reconciliation) — session-manager docs were reconciled with code across 5 points of disagreement:
+  - **`touch()` visibility (TRD + IMPL):** Code has `touch(sessionId)` at `packages/session-manager/src/index.ts:132-138` and in the `SessionManager` interface at `types.ts:137`. FLOW already cited `touch()` behaviorally (`FLOW-session-manager.md:41`). TRD §2.3 was missing the API contract; added a full entry (params, response, errors, side effects) at `TRD-session-manager.md:276-290`. TRD high-level architecture diagram updated to list `touch()` (`TRD-session-manager.md:72`). IMPL Phase 0 §SessionManager interface updated to include `touch()` (`IMPL-session-manager.md:52`).
+  - **`touch()` on non-active session (IMPL):** IMPL said "no-op" (`IMPL-session-manager.md:147` original). Code throws `SessionNotActiveError` (`index.ts:134`; test at `session-manager.test.ts:114`). IMPL corrected to: "`touch()` on a non-active session (suspended or archived) throws `SessionNotActiveError`".
+  - **`attachResource` permits suspended (TRD + IMPL):** TRD §2.3 was silent on suspended. IMPL Phase 3 said "validates session is active" (`IMPL-session-manager.md:206` original). Code at `resources.ts:35` checks `status === "archived"` only — permits active AND suspended (test at `session-manager.test.ts:141-148`). TRD §2.3 `attachResource` updated: "Permitted when session status is `active` OR `suspended` — resources attached while suspended survive resume without re-attachment." IMPL Phase 3 updated: "validates session is active or suspended (rejects archived)".
+  - **Minimum timeout value (IMPL):** IMPL Phase 1 said `timeout >= 1000` (`IMPL-session-manager.md:79` original). Code enforces `< 1` rejection at `index.ts:109-110`; tests use 1ms and 10ms (`session-manager.test.ts:107, 145`). IMPL corrected to `timeout >= 1`.
+  - **No code changes required** — all behavior was already correct; the work was doc reconciliation. Full test suite: 394/394 pass; typecheck clean.

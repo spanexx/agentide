@@ -49,7 +49,7 @@ Regression check for every phase: `npm run test -- --run && npm run typecheck &&
   - `CreateSessionParams { ownerId, adapterType, metadata? }`
   - `SessionNotFoundError`, `SessionArchivedError`, `SessionAlreadyActiveError`, `SessionNotActiveError`, `DuplicateResourceError`, `ValidationError` (custom error classes or branded strings)
   - `EventPayloads`: `SessionCreatedPayload`, `SessionSuspendedPayload`, `SessionResumedPayload`, `SessionDestroyedPayload`, `CleanupResourcesPayload`
-  - `SessionManager` interface with `create()`, `resume()`, `destroy()`, `getStatus()`, `attachResource()`, `detachResource()`, `listResources()`
+  - `SessionManager` interface with `create()`, `resume()`, `touch()`, `destroy()`, `getStatus()`, `attachResource()`, `detachResource()`, `listResources()`
 - [ ] Create `src/index.ts` that re-exports from `types.ts` (factory placeholder)
 - [ ] Add workspace reference in root `tsconfig.json`
 
@@ -76,7 +76,7 @@ Regression check for every phase: `npm run test -- --run && npm run typecheck &&
 - [ ] Implement `create(params)`:
   - Generate UUID v4 for session ID
   - Merge default config with per-session metadata overrides (idleTimeoutMs, suspendedTtlMs)
-  - Validate input (non-empty ownerId, valid adapterType, timeout >= 1000)
+  - Validate input (non-empty ownerId, valid adapterType, timeout >= 1)
   - Create `SessionRecord` with status `active`, timestamps set
   - Store in session map
   - Return the record
@@ -144,7 +144,7 @@ Regression check for every phase: `npm run test -- --run && npm run typecheck &&
 
 - [ ] Idle timeout fires after `idleTimeoutMs` of no activity, session transitions to `suspended`
 - [ ] `touch()` resets the idle timer (timeout does not fire before full duration)
-- [ ] `touch()` on archived session is a no-op
+- [ ] `touch()` on a non-active session (suspended or archived) throws `SessionNotActiveError`
 - [ ] Suspended TTL fires after `suspendedTtlMs`, session transitions to `archived`
 - [ ] `resume()` cancels suspended TTL and restarts idle timer
 - [ ] `destroy()` cancels all timers (timeout does not fire after destroy)
@@ -203,7 +203,7 @@ Regression check for every phase: `npm run test -- --run && npm run typecheck &&
 
 - [ ] Implement internal `ResourceTracker` class:
   - Internal store: `Map<SessionId, ResourceRecord[]>`
-  - Exposes `attach(sessionId, resource)` — validates session is active, checks duplicate resource ID
+  - Exposes `attach(sessionId, resource)` — validates session is active or suspended (rejects archived), checks duplicate resource ID
   - Exposes `detach(sessionId, resourceId)` — removes resource, no-op if not found
   - Exposes `list(sessionId)` — returns copy of resource list for active/suspended sessions, empty array for archived
   - Exposes `clear(sessionId)` — removes all resources for a session (called after cleanup)
