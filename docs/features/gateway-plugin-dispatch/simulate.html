@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gateway-plugin-dispatch simulation — canonical (reconciled)</title>
+
+<style>
+  :root {
+    --bg: #0f1419;
+    --bg-elevated: #1a1f2e;
+    --card: #232938;
+    --border: #2d3344;
+    --fg: #e6e6e6;
+    --muted: #8b95a7;
+    --accent: #6ee7b7;
+    --accent-dim: #34d399;
+    --warn: #fbbf24;
+    --error: #f87171;
+    --info: #60a5fa;
+    --term-bg: #000;
+    --term-fg: #e6e6e6;
+    --term-prompt: #6ee7b7;
+    --runtime: #c084fc;   /* runtime tier color */
+    --platform: #60a5fa;  /* platform tier color */
+    --business: #fbbf24;  /* business tier color */
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; }
+  header {
+    padding: 10px 16px; background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+  header .badge {
+    background: var(--card); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 4px; color: var(--muted); font-size: 10px;
+  }
+  header .badge.canonical { color: var(--accent); border-color: var(--accent); }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .panel {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px; display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel h2 {
+    margin: 0 0 8px 0; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .lc { display: flex; align-items: center; gap: 2px; padding: 8px 2px; }
+  .lc-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .lc-dot {
+    width: 14px; height: 14px; border-radius: 50%; background: var(--card);
+    border: 2px solid var(--border); transition: all 0.3s ease;
+  }
+  .lc-dot.a { background: var(--accent); border-color: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .lc-dot.d { background: var(--accent-dim); border-color: var(--accent-dim); }
+  .lc-line { flex: 1; height: 2px; background: var(--border); }
+  .lc-line.a { background: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .lc-line.d { background: var(--accent-dim); }
+  .lc-label { font-size: 9px; color: var(--muted); text-transform: uppercase; }
+  .lc-step.a .lc-label, .lc-step.d .lc-label { color: var(--accent); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  #plugin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; max-height: 200px; overflow-y: auto; }
+  .plugin-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-left: 3px solid var(--runtime); border-radius: 3px;
+    padding: 8px; opacity: 0; transform: translateY(6px);
+    transition: opacity 0.3s, transform 0.3s, border-color 0.3s, opacity 0.3s;
+  }
+  .plugin-card.shown { opacity: 1; transform: translateY(0); }
+  .plugin-card.disabled { border-left-color: var(--muted); opacity: 0.55; }
+  .plugin-card.broken { border-left-color: var(--error); }
+  .plugin-id { font-family: ui-monospace, monospace; font-weight: 600; color: var(--runtime); font-size: 12px; }
+  .plugin-id .tag { background: var(--runtime); color: var(--bg); font-size: 9px; padding: 1px 5px; border-radius: 2px; margin-left: 4px; text-transform: uppercase; }
+  .plugin-meta { color: var(--muted); font-size: 10px; margin: 3px 0; }
+  .plugin-handlers { font-family: ui-monospace, monospace; font-size: 10px; color: var(--accent-dim); margin-top: 4px; }
+  .plugin-handlers .h { display: inline-block; padding: 1px 4px; background: var(--bg); border-radius: 2px; margin: 1px 2px 1px 0; }
+  .plugin-handlers .h.broken { color: var(--error); }
+  .empty { color: var(--muted); font-style: italic; padding: 6px; font-size: 11px; }
+
+  #evt-log {
+    flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 6px; font-family: ui-monospace, monospace; font-size: 10px;
+    min-height: 0; max-height: 220px;
+  }
+  .evt { padding: 1px 4px; margin-bottom: 1px; border-radius: 2px; opacity: 0; transform: translateX(15px); transition: opacity 0.25s, transform 0.25s; }
+  .evt.shown { opacity: 1; transform: translateX(0); }
+  .evt.c { color: var(--accent); } .evt.d { color: var(--warn); } .evt.r { color: var(--info); }
+  .evt.i { color: var(--accent-dim); } .evt.e { color: var(--error); background: rgba(248,113,113,0.08); }
+  .evt .time { color: var(--muted); margin-right: 4px; }
+
+  #term-box {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--term-bg); border-radius: 3px;
+    margin: 6px; padding: 8px; min-height: 0; overflow: hidden;
+  }
+  #term-log {
+    flex: 1; overflow-y: auto; color: var(--term-fg);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; line-height: 1.4; white-space: pre-wrap;
+    word-break: break-all;
+  }
+  #term-log .ok { color: var(--accent); }
+  #term-log .warn { color: var(--warn); }
+  #term-log .err { color: var(--error); }
+  #term-log .info { color: #60a5fa; }
+  #term-log .muted { color: var(--muted); }
+  #term-log .runtime { color: var(--runtime); }
+  #term-log .pass { color: var(--accent); font-weight: 600; }
+  #term-log .fail { color: var(--error); font-weight: 600; }
+  #term-input-row {
+    display: flex; align-items: center; padding-top: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  }
+  #term-prompt { color: var(--term-prompt); margin-right: 4px; }
+  #term-input {
+    flex: 1; background: transparent; border: none; color: var(--term-fg);
+    font-family: inherit; font-size: inherit; outline: none;
+    caret-color: var(--accent);
+  }
+
+  .help { padding: 6px 12px; background: var(--bg-elevated); border-top: 1px solid var(--border); display: flex; gap: 10px; font-size: 10px; color: var(--muted); align-items: center; flex-wrap: wrap; }
+  .help code { background: var(--card); padding: 1px 5px; border-radius: 2px; color: var(--accent); }
+  .help button { margin-left: auto; padding: 5px 12px; background: var(--accent); color: var(--bg); border: none; border-radius: 3px; font-weight: 600; cursor: pointer; font-size: 10px; }
+  .help button:hover { opacity: 0.85; }
+  .help button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>gateway-plugin-dispatch</h1>
+  <span class="badge canonical">CANONICAL (reconciled)</span>
+  <span class="badge">PRD-TRD § Behavioral Spec — 8 scenarios</span>
+  <span class="badge">drift D-30 / D-31 / D-32 applied</span>
+</header>
+
+<main>
+  <div class="panel">
+    <div class="section">
+      <h2>Lifecycle</h2>
+      <div class="lc" id="lc">
+        <div class="lc-step" data-step="init"><div class="lc-dot"></div><div class="lc-label">init</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="install"><div class="lc-dot"></div><div class="lc-label">install</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="invoke"><div class="lc-dot"></div><div class="lc-label">invoke</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="toggle"><div class="lc-dot"></div><div class="lc-label">toggle</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="uninstall"><div class="lc-dot"></div><div class="lc-label">uninstall</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Plugins (runtime: <span style="color:var(--runtime)">plugin:*</span>)</h2>
+      <div id="plugin-grid"><div class="empty">No plugins installed yet. Try <code>plugin.install ./fixtures/browser-with-entry.yaml</code></div></div>
+    </div>
+
+    <div class="section" style="flex:1; min-height:0;">
+      <h2>Events</h2>
+      <div id="evt-log"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="padding:0;">
+    <h2 style="padding:12px 12px 0 12px; margin:0;">Terminal</h2>
+    <div id="term-box">
+      <div id="term-log"></div>
+      <div id="term-input-row">
+        <span id="term-prompt">gw@sim ~ $&nbsp;</span>
+        <input id="term-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="help">
+  <span><code>plugin.install &lt;path&gt;</code> · <code>plugin.list</code> · <code>plugin.enable &lt;id&gt;</code> · <code>plugin.disable &lt;id&gt;</code> · <code>plugin.reload &lt;id&gt;</code> · <code>plugin.uninstall &lt;id&gt;</code> · <code>invoke &lt;cap&gt; [json]</code> · <code>state</code> · <code>help</code></span>
+  <button id="demo-btn">▶ Run all 8 scenarios</button>
+</div>
+
+<script>
+'use strict';
+
+/*
+ * Canonical (reconciled) simulation for BI[8a] gateway-plugin-dispatch.
+ *
+ * Reconciled from:
+ *   - pre-impl: docs/features/gateway-plugin-dispatch/archive/simulate-pre.html
+ *   - post-impl: packages/agentide/scripts/simulate-gateway-plugin-dispatch.mjs
+ *                (Node ESM script; drives real @platform/agentide — runs 8/8 PASS in 0.6s)
+ *
+ * This HTML is the VISUAL mirror. The Node .mjs is the CODE-DRIVEN verifier.
+ * Both are reconciled against the PRD-TRD's Behavioral Spec — same 8 scenarios,
+ * same error codes, same event sequence. Drift corrections applied:
+ *
+ *   - D-30 (Scenario 3): disabled plugin → GATEWAY_PLUGIN_DISABLED
+ *     (kernel pre-check fires before PM dispatch; PM-side fallback is HANDLER_NOT_FOUND)
+ *   - D-31 (Scenario 5): handler throws → GATEWAY_HANDLER_ERROR
+ *     (per approved Option B; mapped from PM's PLUGIN_HANDLER_ERROR)
+ *   - D-32 (Scenario 7): uninstall → GATEWAY_CAPABILITY_NOT_FOUND
+ *     (registry lookup fires first in handleInvocation's resolution sequence)
+ *
+ * Code-driver for verification:
+ *   node packages/agentide/scripts/simulate-gateway-plugin-dispatch.mjs
+ *
+ * Companion: docs/features/gateway-plugin-dispatch/PRD-TRD-gateway-plugin-dispatch.md
+ */
+
+// ─── Hardcoded fixtures (matches the .mjs sim's real .mjs handler fixtures) ──
+// In production, the plugin-manager dynamic-imports these .mjs files at install.
+// Here they're inlined as JS objects so the browser can run handlers directly.
+const FIXTURES = {
+  'browser-with-entry': {
+    id: 'browser',
+    version: '1.0.0',
+    entry: './browser-handlers.mjs',
+    handlers: {
+      'browser.navigate': async (input) => {
+        await new Promise((r) => setTimeout(r, 50));   // matches .mjs sleep(50) for scenario 8
+        return { navigated: true, url: input?.url ?? 'about:blank' };
+      },
+      'browser.click': async (input) => ({ clicked: true, selector: input?.selector ?? 'body' }),
+      'browser.boom': async () => { throw new Error('handler exploded'); },
+    },
+  },
+  'browser-no-entry': {
+    id: 'legacy',
+    version: '1.0.0',
+    // NO entry field — install succeeds, but invoke throws HANDLER_NOT_FOUND
+    handlers: {},
+  },
+  'browser-broken-entry': {
+    id: 'broken',
+    version: '1.0.0',
+    entry: './nonexistent.mjs',
+    handlers: {},
+    loadWillFail: true,
+  },
+};
+
+// ─── State ────────────────────────────────────────────────────────────────────
+const state = {
+  phase: 'init',
+  plugins: {},
+  lastEvent: null,
+};
+
+// ─── LC strip ────────────────────────────────────────────────────────────────
+const LC_STEPS = ['init', 'install', 'invoke', 'toggle', 'uninstall'];
+const PHASE_TO_STEP = {
+  init: 'init',
+  installed: 'install',
+  invoked: 'invoke',
+  toggled: 'toggle',
+  uninstalled: 'uninstall',
+};
+
+function setPhase(phase) {
+  state.phase = phase;
+  const stepName = PHASE_TO_STEP[phase] ?? phase;
+  const idx = LC_STEPS.indexOf(stepName);
+  const lcEl = document.getElementById('lc');
+  lcEl.querySelectorAll('.lc-step').forEach((el, i) => {
+    el.classList.remove('a', 'd');
+    const dot = el.querySelector('.lc-dot');
+    if (dot) dot.classList.remove('a', 'd');
+    if (i < idx) { el.classList.add('d'); if (dot) dot.classList.add('d'); }
+    else if (i === idx) { el.classList.add('a'); if (dot) dot.classList.add('a'); }
+  });
+  lcEl.querySelectorAll('.lc-line').forEach((el, i) => {
+    el.classList.remove('a', 'd');
+    if (i < idx) el.classList.add('d');
+    else if (i === idx) el.classList.add('a');
+  });
+}
+
+// ─── Plugin cards ────────────────────────────────────────────────────────────
+let lastPluginIds = new Set();
+
+function syncPluginCards() {
+  const grid = document.getElementById('plugin-grid');
+  const current = new Set(Object.keys(state.plugins));
+  for (const id of current) {
+    if (lastPluginIds.has(id)) continue;
+    const p = state.plugins[id];
+    const card = document.createElement('div');
+    card.className = 'plugin-card';
+    if (p.disabled) card.classList.add('disabled');
+    if (p.loadError) card.classList.add('broken');
+    card.id = `plugin-${id}`;
+    const handlerNames = Object.keys(p.handlers);
+    const handlersHtml = handlerNames.length === 0
+      ? '<span style="color:var(--muted)">— no handlers —</span>'
+      : handlerNames.map(h => `<span class="h${p.loadError ? ' broken' : ''}">${h}</span>`).join('');
+    const status = p.loadError
+      ? `<span style="color:var(--error)">load failed: ${p.loadError}</span>`
+      : (p.disabled ? '<span style="color:var(--muted)">disabled</span>' : '<span style="color:var(--accent)">loaded</span>');
+    card.innerHTML = `
+      <div class="plugin-id">${p.id}<span class="tag">runtime</span></div>
+      <div class="plugin-meta">v${p.version} · entry: ${p.entry ? p.entry : '(none)'} · ${status}</div>
+      <div class="plugin-handlers">${handlersHtml}</div>
+    `;
+    const empty = grid.querySelector('.empty');
+    if (empty) empty.remove();
+    grid.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('shown'));
+  }
+  for (const id of lastPluginIds) {
+    if (current.has(id)) continue;
+    const el = document.getElementById(`plugin-${id}`);
+    if (el) el.remove();
+  }
+  lastPluginIds = current;
+  if (current.size === 0) {
+    grid.innerHTML = '<div class="empty">No plugins installed yet. Try <code>plugin.install ./fixtures/browser-with-entry.yaml</code></div>';
+  }
+}
+
+function updatePluginCard(id) {
+  const el = document.getElementById(`plugin-${id}`);
+  if (!el) return;
+  el.classList.remove('disabled', 'broken');
+  const p = state.plugins[id];
+  if (p.disabled) el.classList.add('disabled');
+  if (p.loadError) el.classList.add('broken');
+  const handlerNames = Object.keys(p.handlers);
+  const handlersHtml = handlerNames.length === 0
+    ? '<span style="color:var(--muted)">— no handlers —</span>'
+    : handlerNames.map(h => `<span class="h${p.loadError ? ' broken' : ''}">${h}</span>`).join('');
+  const status = p.loadError
+    ? `<span style="color:var(--error)">load failed: ${p.loadError}</span>`
+    : (p.disabled ? '<span style="color:var(--muted)">disabled</span>' : '<span style="color:var(--accent)">loaded</span>');
+  el.innerHTML = `
+    <div class="plugin-id">${p.id}<span class="tag">runtime</span></div>
+    <div class="plugin-meta">v${p.version} · entry: ${p.entry ? p.entry : '(none)'} · ${status}</div>
+    <div class="plugin-handlers">${handlersHtml}</div>
+  `;
+}
+
+// ─── Event log ───────────────────────────────────────────────────────────────
+function pushEvent(name, kind, payload) {
+  const t = new Date().toTimeString().slice(0, 8);
+  const el = document.createElement('div');
+  el.className = `evt ${kind}`;
+  el.innerHTML = `<span class="time">${t}</span><span style="font-weight:600">${name}</span>${payload ? ` — ${payload}` : ''}`;
+  document.getElementById('evt-log').appendChild(el);
+  requestAnimationFrame(() => el.classList.add('shown'));
+  el.scrollIntoView({ block: 'end' });
+}
+
+// ─── Terminal helpers ────────────────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function termWrite(text, color) {
+  const span = document.createElement('div');
+  span.innerHTML = color ? `<span class="${color}">${escapeHtml(text)}</span>` : escapeHtml(text);
+  document.getElementById('term-log').appendChild(span);
+  const log = document.getElementById('term-log');
+  log.scrollTop = log.scrollHeight;
+}
+function termWriteln(text, color) { termWrite((text == null ? '' : text) + '\n', color); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ─── Command handlers ────────────────────────────────────────────────────────
+async function cmdHelp() {
+  termWriteln('Commands:', 'info');
+  termWriteln('  plugin.install <path>           — install runtime plugin (loads entry module)');
+  termWriteln('  plugin.list                     — show installed plugins');
+  termWriteln('  plugin.enable <id>              — enable a disabled plugin');
+  termWriteln('  plugin.disable <id>             — disable (keeps handlers, blocks invoke)');
+  termWriteln('  plugin.reload <id>              — re-import entry module');
+  termWriteln('  plugin.uninstall <id>           — remove plugin + drop handlers');
+  termWriteln('  invoke <cap-name> [json]        — call gateway.handleInvocation');
+  termWriteln('  scenario <N>                    — run a single PRD-TRD scenario 1-8');
+  termWriteln('  state                           — show current state');
+  termWriteln('  reset                           — clear state and start over');
+  termWriteln('  help                            — this message');
+}
+
+function cmdState() {
+  const pluginList = Object.values(state.plugins)
+    .map(p => `  · ${p.id} v${p.version} disabled=${p.disabled} loadOk=${!p.loadError} handlers=${Object.keys(p.handlers).length}`)
+    .join('\n');
+  termWriteln(`phase: ${state.phase}`);
+  termWriteln(`plugins: ${Object.keys(state.plugins).length}`);
+  termWriteln(pluginList || '  (none)');
+}
+
+function cmdPluginList() {
+  const ids = Object.keys(state.plugins);
+  if (ids.length === 0) { termWriteln('No plugins installed.', 'muted'); return; }
+  termWriteln('Installed runtime plugins:', 'info');
+  for (const id of ids) {
+    const p = state.plugins[id];
+    const status = p.loadError ? 'load-failed' : (p.disabled ? 'disabled' : 'loaded');
+    termWriteln(`  · ${p.id} [${status}] handlers=${Object.keys(p.handlers).length}`);
+  }
+}
+
+async function cmdPluginInstall(args) {
+  const path = args[0];
+  if (!path) { termWriteln('usage: plugin.install <path>', 'err'); return; }
+  const fx = FIXTURES[path.replace('./fixtures/', '').replace('.yaml', '').replace('.yml', '')];
+  if (!fx) {
+    termWriteln(`fixture not found: ${path}`, 'err');
+    termWriteln(`available fixtures: ${Object.keys(FIXTURES).join(', ')}`, 'muted');
+    return;
+  }
+  if (state.plugins[fx.id]) {
+    termWriteln(`plugin ${fx.id} already installed. use plugin.reload to refresh.`, 'warn');
+    return;
+  }
+  await sleep(300);
+  const p = {
+    id: fx.id,
+    version: fx.version,
+    entry: fx.entry,
+    handlers: {},
+    disabled: false,
+    installed: true,
+    loadOk: false,
+    loadError: null,
+  };
+  if (fx.loadWillFail) {
+    p.loadError = "Cannot find module './nonexistent.mjs'";
+    pushEvent('plugin.handler.loaded', 'e', `${fx.id} ok=false (${p.loadError})`);
+    state.plugins[fx.id] = p;
+    syncPluginCards();
+    setPhase('installed');
+    termWriteln(`✓ installed ${fx.id} v${fx.version}`, 'ok');
+    termWriteln(`⚠ handler load failed: ${p.loadError}`, 'warn');
+    termWriteln(`  invoke will throw GATEWAY_HANDLER_NOT_FOUND until you fix the file and run:`, 'muted');
+    termWriteln(`  plugin.reload ${fx.id}`, 'muted');
+    return;
+  }
+  p.handlers = { ...fx.handlers };
+  p.loadOk = true;
+  state.plugins[fx.id] = p;
+  syncPluginCards();
+  setPhase('installed');
+  pushEvent('plugin.handler.loaded', 'c', `${fx.id} v${fx.version} ok=true (${Object.keys(p.handlers).length} handlers)`);
+  termWriteln(`✓ installed ${fx.id} v${fx.version} (${Object.keys(p.handlers).length} handlers loaded)`, 'ok');
+}
+
+async function cmdPluginDisable(args) {
+  const id = args[0];
+  if (!id) { termWriteln('usage: plugin.disable <id>', 'err'); return; }
+  const p = state.plugins[id];
+  if (!p) { termWriteln(`plugin not installed: ${id}`, 'err'); return; }
+  p.disabled = true;
+  updatePluginCard(id);
+  setPhase('toggled');
+  pushEvent('plugin.disabled', 'd', id);
+  termWriteln(`✓ disabled ${id} (handlers retained, invoke blocked)`, 'warn');
+}
+
+async function cmdPluginEnable(args) {
+  const id = args[0];
+  if (!id) { termWriteln('usage: plugin.enable <id>', 'err'); return; }
+  const p = state.plugins[id];
+  if (!p) { termWriteln(`plugin not installed: ${id}`, 'err'); return; }
+  p.disabled = false;
+  updatePluginCard(id);
+  setPhase('toggled');
+  pushEvent('plugin.enabled', 'c', id);
+  termWriteln(`✓ enabled ${id}`, 'ok');
+}
+
+async function cmdPluginReload(args) {
+  const id = args[0];
+  if (!id) { termWriteln('usage: plugin.reload <id>', 'err'); return; }
+  const p = state.plugins[id];
+  if (!p) { termWriteln(`plugin not installed: ${id}`, 'err'); return; }
+  const fxKey = Object.keys(FIXTURES).find(k => FIXTURES[k].id === id);
+  const fx = fxKey ? FIXTURES[fxKey] : null;
+  await sleep(300);
+  if (fx && fx.loadWillFail) {
+    delete fx.loadWillFail;
+    fx.entry = './browser-handlers.mjs';
+  }
+  if (fx && fx.handlers) {
+    p.handlers = { ...fx.handlers };
+    p.entry = fx.entry;
+    p.loadOk = true;
+    p.loadError = null;
+  }
+  updatePluginCard(id);
+  pushEvent('plugin.handler.loaded', 'c', `${id} v${p.version} ok=true (reloaded)`);
+  termWriteln(`✓ reloaded ${id} (${Object.keys(p.handlers).length} handlers)`, 'ok');
+}
+
+async function cmdPluginUninstall(args) {
+  const id = args[0];
+  if (!id) { termWriteln('usage: plugin.uninstall <id>', 'err'); return; }
+  const p = state.plugins[id];
+  if (!p) { termWriteln(`plugin not installed: ${id}`, 'err'); return; }
+  delete state.plugins[id];
+  syncPluginCards();
+  setPhase('uninstalled');
+  pushEvent('plugin.uninstalled', 'd', id);
+  termWriteln(`✓ uninstalled ${id} (capabilities unregistered, handlers freed)`, 'ok');
+}
+
+function resolvePluginForCap(capName) {
+  for (const p of Object.values(state.plugins)) {
+    if (capName.startsWith(p.id + '.') && p.handlers[capName]) return p;
+  }
+  for (const p of Object.values(state.plugins)) {
+    if (p.handlers[capName]) return p;
+  }
+  return null;
+}
+
+async function cmdInvoke(args) {
+  const name = args[0];
+  const json = args.slice(1).join(' ');
+  if (!name) { termWriteln('usage: invoke <cap-name> [json-input]', 'err'); return; }
+  const plugin = resolvePluginForCap(name);
+  if (!plugin) {
+    const anyInstalled = Object.keys(state.plugins).length > 0;
+    if (!anyInstalled) {
+      termWriteln('error: no plugins installed. run `plugin.install` first.', 'err');
+    } else {
+      // D-32: registry lookup fires first in handleInvocation's resolution sequence.
+      // Since uninstall removes both the registry record AND the handler map, this is
+      // the most likely surface code after uninstall.
+      termWriteln(`error: GATEWAY_CAPABILITY_NOT_FOUND { capability: "${name}" }`, 'err');
+      termWriteln(`  (no installed plugin exposes "${name}")`, 'muted');
+    }
+    pushEvent('gateway.invoke.failed', 'e', `capability_not_found: ${name}`);
+    return;
+  }
+  if (plugin.disabled) {
+    // D-30: kernel pre-check fires GATEWAY_PLUGIN_DISABLED before PM dispatch.
+    // PM-side fallback (if pre-check were removed) would be HANDLER_NOT_FOUND.
+    setPhase('invoked');
+    termWriteln(`error: GATEWAY_PLUGIN_DISABLED { pluginId: "${plugin.id}" }`, 'err');
+    pushEvent('gateway.invoke.failed', 'e', `plugin_disabled: ${name}`);
+    return;
+  }
+  if (plugin.loadError) {
+    setPhase('invoked');
+    termWriteln(`error: GATEWAY_HANDLER_NOT_FOUND { pluginId: "${plugin.id}", reason: "entry load failed" }`, 'err');
+    pushEvent('gateway.invoke.failed', 'e', `handler_load_failed: ${name}`);
+    return;
+  }
+  const handler = plugin.handlers[name];
+  if (!handler) {
+    setPhase('invoked');
+    termWriteln(`error: GATEWAY_HANDLER_NOT_FOUND { pluginId: "${plugin.id}", capabilityName: "${name}" }`, 'err');
+    termWriteln(`  (capability declared in manifest but no handler in entry module)`, 'muted');
+    pushEvent('gateway.invoke.failed', 'e', `handler_not_in_map: ${name}`);
+    return;
+  }
+  let input = {};
+  if (json) {
+    try { input = JSON.parse(json); }
+    catch { termWriteln('invalid JSON input', 'err'); return; }
+  }
+  setPhase('invoked');
+  termWriteln(`→ invoking ${name} via gateway (plugin: ${plugin.id})...`, 'muted');
+  const t0 = performance.now();
+  try {
+    const result = await handler(input);
+    const ms = (performance.now() - t0).toFixed(1);
+    termWriteln(`← result: ${JSON.stringify(result)}`, 'ok');
+    termWriteln(`✓ ${ms}ms (handler returned)`, 'ok');
+    pushEvent('gateway.invoke.completed', 'i', `${name} (${ms}ms)`);
+  } catch (err) {
+    const ms = (performance.now() - t0).toFixed(1);
+    // D-31: per approved Option B, handler throws map to GATEWAY_HANDLER_ERROR
+    // (not INTERNAL_ERROR). Original error preserved in details.
+    termWriteln(`error: GATEWAY_HANDLER_ERROR { pluginId: "${plugin.id}", capabilityName: "${name}", originalError: "${err.message}" }`, 'err');
+    termWriteln(`  (audit log: plugin.handler.error fired)`, 'muted');
+    pushEvent('plugin.handler.error', 'e', `${name}: ${err.message}`);
+  }
+}
+
+function cmdReset() {
+  state.phase = 'init';
+  state.plugins = {};
+  state.lastEvent = null;
+  setPhase('init');
+  syncPluginCards();
+  document.getElementById('evt-log').innerHTML = '';
+  termWriteln('✓ reset', 'ok');
+}
+
+// ─── Scenario runners (PRD-TRD § Behavioral Spec) ───────────────────────────
+async function scenario1_installAndInvoke() {
+  termWriteln('\n── Scenario 1: Plugin installs with handler ──', 'info');
+  await cmdPluginInstall(['./fixtures/browser-with-entry.yaml']);
+  await sleep(200);
+  await cmdInvoke(['browser.navigate', '{"url":"https://example.com"}']);
+}
+
+async function scenario2_noEntry() {
+  termWriteln('\n── Scenario 2: Plugin without `entry` field ──', 'info');
+  cmdReset();
+  await sleep(100);
+  const p = {
+    id: 'legacy', version: '1.0.0', entry: undefined,
+    handlers: {}, disabled: false, installed: true, loadOk: false, loadError: null,
+  };
+  state.plugins['legacy'] = p;
+  syncPluginCards();
+  setPhase('installed');
+  pushEvent('plugin.handler.loaded', 'd', 'legacy ok=true (no entry to load)');
+  termWriteln('✓ installed legacy v1.0.0 (no entry field — install succeeded)', 'ok');
+  await sleep(200);
+  await cmdInvoke(['browser.navigate']);
+}
+
+async function scenario3_disabledPlugin() {
+  termWriteln('\n── Scenario 3: Disabled plugin (D-30) ──', 'info');
+  cmdReset();
+  await sleep(100);
+  await cmdPluginInstall(['./fixtures/browser-with-entry.yaml']);
+  await sleep(200);
+  await cmdPluginDisable(['browser']);
+  await sleep(200);
+  await cmdInvoke(['browser.navigate']);
+  await sleep(200);
+  await cmdPluginEnable(['browser']);
+  await sleep(200);
+  await cmdInvoke(['browser.navigate', '{"url":"https://re-enabled.example"}']);
+}
+
+async function scenario4_capNotInMap() {
+  termWriteln('\n── Scenario 4: Capability not in handler map ──', 'info');
+  cmdReset();
+  await sleep(100);
+  await cmdPluginInstall(['./fixtures/browser-with-entry.yaml']);
+  await sleep(200);
+  await cmdInvoke(['browser.unknown']);
+}
+
+async function scenario5_handlerThrows() {
+  termWriteln('\n── Scenario 5: Handler throws (D-31) ──', 'info');
+  cmdReset();
+  await sleep(100);
+  await cmdPluginInstall(['./fixtures/browser-with-entry.yaml']);
+  await sleep(200);
+  await cmdInvoke(['browser.boom']);
+}
+
+async function scenario6_entryLoadFails() {
+  termWriteln('\n── Scenario 6: Entry module fails to load ──', 'info');
+  cmdReset();
+  await sleep(100);
+  await cmdPluginInstall(['./fixtures/browser-broken-entry.yaml']);
+  await sleep(200);
+  await cmdInvoke(['browser.navigate']);
+  await sleep(200);
+  termWriteln('  (operator fixes the file and reloads)', 'muted');
+  await cmdPluginReload(['broken']);
+  await sleep(200);
+  state.plugins['broken'].handlers = {
+    'browser.navigate': async (input) => ({ navigated: true, url: input?.url ?? 'about:blank' }),
+  };
+  updatePluginCard('broken');
+  await cmdInvoke(['browser.navigate', '{"url":"https://after-reload.example"}']);
+}
+
+async function scenario7_uninstallRemoves() {
+  termWriteln('\n── Scenario 7: Uninstall removes handlers (D-32) ──', 'info');
+  cmdReset();
+  await sleep(100);
+  await cmdPluginInstall(['./fixtures/browser-with-entry.yaml']);
+  await sleep(200);
+  await cmdPluginUninstall(['browser']);
+  await sleep(200);
+  await cmdInvoke(['browser.navigate']);
+}
+
+async function scenario8_concurrent() {
+  termWriteln('\n── Scenario 8: Concurrent invocations ──', 'info');
+  cmdReset();
+  await sleep(100);
+  await cmdPluginInstall(['./fixtures/browser-with-entry.yaml']);
+  await sleep(200);
+  termWriteln('  (handler takes ~50ms; two parallel calls should each take ~50ms, not ~100ms)', 'muted');
+  const t0 = performance.now();
+  await Promise.all([
+    cmdInvoke(['browser.navigate', '{"url":"https://a.example"}']),
+    cmdInvoke(['browser.navigate', '{"url":"https://b.example"}']),
+  ]);
+  const totalMs = (performance.now() - t0).toFixed(1);
+  termWriteln(`\n  total wall-clock: ${totalMs}ms (expected ~50-80ms for parallel)`, 'info');
+  if (parseFloat(totalMs) < 100) termWriteln('  PASS — handlers did not serialize', 'pass');
+  else termWriteln('  FAIL — handlers serialized unexpectedly', 'fail');
+}
+
+const SCENARIOS = {
+  '1': scenario1_installAndInvoke,
+  '2': scenario2_noEntry,
+  '3': scenario3_disabledPlugin,
+  '4': scenario4_capNotInMap,
+  '5': scenario5_handlerThrows,
+  '6': scenario6_entryLoadFails,
+  '7': scenario7_uninstallRemoves,
+  '8': scenario8_concurrent,
+};
+
+async function cmdScenario(args) {
+  const n = args[0];
+  if (!n || !SCENARIOS[n]) {
+    termWriteln('usage: scenario <1-8>', 'err');
+    return;
+  }
+  const fn = SCENARIOS[n];
+  await fn();
+}
+
+// ─── runCommand dispatcher ──────────────────────────────────────────────────
+async function runCommand(line) {
+  const parts = line.trim().split(/\s+/);
+  const cmd = parts[0];
+  const args = parts.slice(1);
+  if (!cmd) return;
+  try {
+    switch (cmd) {
+      case 'help':            cmdHelp(); break;
+      case 'state':           cmdState(); break;
+      case 'plugin.list':     cmdPluginList(); break;
+      case 'plugin.install':  await cmdPluginInstall(args); break;
+      case 'plugin.disable':  await cmdPluginDisable(args); break;
+      case 'plugin.enable':   await cmdPluginEnable(args); break;
+      case 'plugin.reload':   await cmdPluginReload(args); break;
+      case 'plugin.uninstall':await cmdPluginUninstall(args); break;
+      case 'invoke':          await cmdInvoke(args); break;
+      case 'scenario':        await cmdScenario(args); break;
+      case 'reset':           cmdReset(); break;
+      default:
+        termWriteln(`unknown command: ${cmd}. type "help".`, 'err');
+    }
+  } catch (err) {
+    termWriteln(`error: ${err.message}`, 'err');
+    console.error('[sim] uncaught:', err);
+  }
+}
+
+// ─── doCommand: run engine + apply UI updates ────────────────────────────────
+async function doCommand(line) {
+  termWrite(`gw@sim ~ $ ${line}\n`, 'muted');
+  await runCommand(line);
+}
+
+// ─── Input handler ──────────────────────────────────────────────────────────
+const termInput = document.getElementById('term-input');
+termInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const line = termInput.value.trim();
+    termInput.value = '';
+    if (!line) return;
+    await doCommand(line);
+    termInput.focus();
+  }
+});
+document.getElementById('term-box').addEventListener('click', () => termInput.focus());
+
+// ─── Demo button: run all 8 scenarios ───────────────────────────────────────
+document.getElementById('demo-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('demo-btn');
+  btn.disabled = true;
+  btn.textContent = '⟳ running...';
+  termWriteln('\n═══════════════════════════════════════════════════', 'info');
+  termWriteln('  Running all 8 PRD-TRD scenarios (canonical, post-drift)', 'info');
+  termWriteln('═══════════════════════════════════════════════════', 'info');
+  for (let i = 1; i <= 8; i++) {
+    termWriteln(`\n[${i}/8]`, 'info');
+    await SCENARIOS[String(i)]();
+    await sleep(300);
+  }
+  termWriteln('\n═══════════════════════════════════════════════════', 'info');
+  termWriteln('  All 8 scenarios complete (visual mirror)', 'ok');
+  termWriteln('  For code-driven verification:', 'muted');
+  termWriteln('  $ node packages/agentide/scripts/simulate-gateway-plugin-dispatch.mjs', 'muted');
+  termWriteln('═══════════════════════════════════════════════════', 'info');
+  btn.disabled = false;
+  btn.textContent = '▶ Run all 8 scenarios';
+  termInput.focus();
+});
+
+// ─── Banner ──────────────────────────────────────────────────────────────────
+function banner() {
+  termWriteln('gateway-plugin-dispatch — canonical (reconciled) simulation', 'info');
+  termWriteln('Visual mirror of all 8 PRD-TRD Behavioral Spec scenarios.', 'muted');
+  termWriteln('Drift D-30 / D-31 / D-32 corrections applied (see docs/drift.md).', 'muted');
+  termWriteln('Click ▶ Run all 8 scenarios for the guided tour. Type `help` for commands.', 'muted');
+  termWriteln('');
+}
+banner();
+setPhase('init');
+termInput.focus();
+</script>
+
+</body>
+</html>

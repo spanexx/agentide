@@ -33,7 +33,7 @@ This pack closes that gap: when `dispatch.ts` sees `owner.startsWith("plugin:")`
 
 **Given** an installed runtime plugin with a loaded handler
 **When** the operator runs `plugin.disable <id>` and then invokes one of its capabilities
-**Then** `gateway.handleInvocation(...)` throws `GATEWAY_HANDLER_NOT_FOUND { pluginId, reason: "plugin disabled" }`. Re-enabling the plugin (`plugin.enable <id>`) flips the flag back and the next invocation succeeds without re-importing the entry module.
+**Then** `gateway.handleInvocation(...)` throws `GATEWAY_PLUGIN_DISABLED { pluginId, reason: "plugin disabled" }` (kernel pre-check fires before PM dispatch; PM-side fallback is `GATEWAY_HANDLER_NOT_FOUND` if pre-check is removed). Re-enabling the plugin (`plugin.enable <id>`) flips the flag back and the next invocation succeeds without re-importing the entry module.
 
 ### Scenario 4: Capability not in the handler map
 
@@ -45,7 +45,7 @@ This pack closes that gap: when `dispatch.ts` sees `owner.startsWith("plugin:")`
 
 **Given** a plugin with a handler that throws on bad input
 **When** the operator calls the capability with input that triggers the throw
-**Then** `gateway.handleInvocation(...)` throws `GATEWAY_INTERNAL_ERROR { pluginId, capabilityName, originalError }`. The audit log records `plugin.handler.error` with the same payload. The original handler error message is preserved in the structured error details (not the public message) — operators with audit access can read it; end users see only the structured public message.
+**Then** `gateway.handleInvocation(...)` throws `GATEWAY_HANDLER_ERROR { pluginId, capabilityName, originalError }` (per approved Option B; mapped from PM's `PLUGIN_HANDLER_ERROR`). The audit log records `plugin.handler.error` with the same payload. The original handler error message is preserved in the structured error details (not the public message) — operators with audit access can read it; end users see only the structured public message.
 
 ### Scenario 6: Entry module fails to load
 
@@ -57,7 +57,7 @@ This pack closes that gap: when `dispatch.ts` sees `owner.startsWith("plugin:")`
 
 **Given** an installed runtime plugin with a loaded handler
 **When** the operator runs `plugin.uninstall <id>`
-**Then** the plugin's record is removed, its capabilities are unregistered, and the handler map entry is freed. A subsequent `gateway.handleInvocation(...)` for one of those capabilities returns `GATEWAY_CAPABILITY_NOT_FOUND` (capability no longer in the registry), not `GATEWAY_HANDLER_NOT_FOUND` (handler map lookup).
+**Then** the plugin's record is removed, its capabilities are unregistered, and the handler map entry is freed. A subsequent `gateway.handleInvocation(...)` for one of those capabilities returns either `GATEWAY_CAPABILITY_NOT_FOUND` (registry lookup fires first in `handleInvocation`'s resolution sequence) or `GATEWAY_HANDLER_NOT_FOUND` (handler map lookup first), depending on which path fires first. Both signal "this cap is not callable".
 
 ### Scenario 8: Concurrent invocations
 
