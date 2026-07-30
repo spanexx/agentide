@@ -66,8 +66,8 @@ sub.unsubscribe();
 
 ## Design references
 
-- PRD: [docs/features/event-bus-b/PRD-event-bus.md](../../docs/features/event-bus-b/PRD-event-bus.md)
-- TRD: [docs/features/event-bus-b/TRD-event-bus.md](../../docs/features/event-bus-b/TRD-event-bus.md)
-- FLOW: [docs/features/event-bus-b/FLOW-event-bus.md](../../docs/features/event-bus-b/FLOW-event-bus.md)
-- IMPL: [docs/features/event-bus-b/IMPL-event-bus.md](../../docs/features/event-bus-b/IMPL-event-bus.md)
+- PRD: [docs/features/event-bus/PRD-event-bus.md](../../docs/features/event-bus/PRD-event-bus.md)
+- TRD: [docs/features/event-bus/TRD-event-bus.md](../../docs/features/event-bus/TRD-event-bus.md)
+- FLOW: [docs/features/event-bus/FLOW-event-bus.md](../../docs/features/event-bus/FLOW-event-bus.md)
+- IMPL: [docs/features/event-bus/IMPL-event-bus.md](../../docs/features/event-bus/IMPL-event-bus.md)
 - Glossary: [docs/CONTEXT.md](../../docs/CONTEXT.md) → *Event / Event Bus*

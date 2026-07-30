@@ -3,226 +3,180 @@
 ## Status
 
 - Type: Technical requirements document
-- Audience: Backend, QA
-- Scope: First workspace package that provides in-process event publish/subscribe for platform components.
-- Status: Approved 2026-07-26. Implemented as `@platform/event-bus`. See [packages/event-bus/src/index.ts](../../../packages/event-bus/src/index.ts) for the implementation; design shape from § 2.1 matches the shipped `dispatchToSnapshot` helper.
+- Audience: Backend, frontend, QA
+- Scope: In-process, typed publish/subscribe event delivery mechanism for the platform's
+  Control Plane and Execution Plane components — no consumers required yet.
 - PRD: [PRD-event-bus.md](./PRD-event-bus.md)
 
 ## 1. Current Baseline
 
-What already exists that this feature builds on or must not break.
-
 ### 1.1 Data model
 
-- No runtime data model exists yet. The repo contains only root TypeScript
-  workspace configuration in `package.json`, `tsconfig.base.json`, and
-  `tsconfig.json`.
-- `tsconfig.base.json` sets strict TypeScript, declaration output, and
-  composite builds. Any new package must fit that build model.
-- `tsconfig.json` has no package references yet, which confirms Event Bus
-  becomes the first referenced workspace package.
+None. `packages/` is empty — this is the first package in the monorepo.
 
 ### 1.2 API surface
 
-- There is no current platform API, RPC surface, or package export for event
-  publishing or subscription.
-- `README.md` states `packages/` is populated feature-by-feature and that
-  `event-bus` is the first planned package.
+None. No existing publish/subscribe mechanism of any kind exists in the codebase.
 
 ### 1.3 Frontend surface
 
-- No frontend application or UI package exists in this repository.
-- No browser-facing code depends on Event Bus behavior yet.
+Not applicable. Event Bus is a Node-side Control Plane package with no frontend surface —
+Frontend SDK (`@platform/sdk-browser`, a later feature) will eventually communicate with the
+platform over the Gateway, not by importing this package directly.
 
 ### 1.4 What is missing
 
-- No package under `packages/` implements publish/subscribe.
-- No typed event contract exists for platform modules.
-- No wildcard matcher exists for dotted event names.
-- No unsubscribe lifecycle exists for future Session-owned subscriptions.
-- No failure surfacing exists for handler throws or rejected async handlers.
+Everything: there is currently no way for any two platform components to communicate without
+a direct, hard-coded reference to each other. This feature is the first piece of Control
+Plane infrastructure.
 
 ## 2. Target Architecture
 
-Describe the system after this feature is shipped.
-
 ### 2.1 Architecture overview
 
-The shipped system adds one small package, `@platform/event-bus`, under
-`packages/event-bus`. The package exposes one public Event Bus interface and
-keeps pattern matching and failure handling behind that interface so future
-platform modules do not need to know how subscription storage works.
+A single package, `@platform/event-bus`, exporting one concrete `EventBus` implementation
+and its supporting types. It has no dependencies on any other platform package (deliberately
+— Session Manager, Capability Registry, and Plugin Manager will depend on it, not the other
+way around, matching the Feature Backlog's Tier 1 ordering).
 
-```mermaid
-flowchart LR
-    Publisher[Platform component<br/>Gateway / Runtime / Plugin]
-    Bus[@platform/event-bus]
-    HandlerA[Specific subscriber]
-    HandlerB[Wildcard subscriber]
-    Failure[event.handler_failed]
-
-    Publisher -->|publish(name, payload)| Bus
-    Bus -->|invoke in subscription order| HandlerA
-    Bus -->|invoke in subscription order| HandlerB
-    HandlerA -. throw / reject .-> Failure
-    Failure -->|internal publish| Bus
 ```
-
-Design shape:
-
-- One package, no external runtime dependency.
-- One public seam: publish, subscribe, unsubscribe.
-- One internal matcher for exact names, `*`, and `**`.
-- One internal failure path that publishes `event.handler_failed`.
-- No persistence, transport, or framework tie-in.
+publisher                     EventBus                      subscriber(s)
+    │                             │                                │
+    │  publish(name, payload)    │                                │
+    ├────────────────────────────►                                │
+    │                             │  match name against            │
+    │                             │  registered patterns           │
+    │                             │  (exact + wildcard)             │
+    │                             ├───────────────────────────────►│ handler(event)
+    │                             │                                │
+    │                             │◄─── handler throws/rejects ────┤
+    │                             │  caught, does NOT propagate    │
+    │                             │  publishes event.handler_failed │
+    │                             ├───────────────────────────────►│ (other subscribers,
+    │                             │                                │  unaffected)
+    │  publish() resolves after  │                                │
+    │◄─── all handlers settled ──┤                                │
+```
 
 ### 2.2 New or changed data models
 
-New package-level models:
+**`PlatformEvent<TPayload>`** (1 per publish call)
+- `name: string` — dot-delimited event name, e.g. `session.created`
+- `payload: TPayload` — the event's data, shallow-frozen before delivery
+- `id: string` — UUID, generated at publish time
+- `publishedAt: number` — epoch milliseconds, generated at publish time
+- All fields `readonly`
 
-- `EventPayload`
-  - Type: generic object or primitive payload supplied by publisher
-  - Cardinality: one payload per published event
-  - Required: yes
-  - Index requirements: none
-- `PublishedEvent<TPayload>`
-  - Fields:
-    - `name: string`
-    - `payload: Readonly<TPayload>`
-  - Cardinality: one per dispatch
-  - Required: both fields required
-  - Index requirements: none
-- `Subscription`
-  - Fields:
-    - `pattern: string`
-    - `handler: EventHandler`
-    - `order: number`
-  - Cardinality: one bus instance to many subscriptions
-  - Required: all fields required
-  - Index requirements: preserve insertion order; no external index
-- `HandlerFailureEvent`
-  - Fields:
-    - `event: PublishedEvent<unknown>`
-    - `handlerIndex: number`
-    - `error: unknown`
-  - Cardinality: one emitted event per failed handler
-  - Required: all fields required
-  - Index requirements: none
+**`Subscription`** (1 per subscribe call)
+- `unsubscribe(): void` — removes this subscription; idempotent (calling twice is a no-op)
+
+**`EventHandler<TPayload>`** (function type, not a stored model)
+- `(event: PlatformEvent<TPayload>) => void | Promise<void>`
+
+**`HandlerFailedPayload`** (payload shape for the `event.handler_failed` system event)
+- `eventName: string` — the original event's name
+- `subscriberPattern: string` — the pattern the failing subscriber registered with
+- `error: { message: string; stack?: string }` — normalized from whatever the handler threw
+  or rejected with
+
+No persistence — everything above is in-memory only, per the PRD's non-goals.
 
 ### 2.3 API contracts
 
-Public package contract:
+Module-level contract (this is a library, not a network API — "route" below means exported
+function/method signature):
 
-- Factory or constructor
-  - Function signature: `createEventBus(): EventBus`
-  - Request shape: none
-  - Response shape: new isolated bus instance
-  - Error cases: none expected
-  - Auth requirements: none
+**`EventBus.publish<TPayload>(name: string, payload: TPayload): Promise<void>`**
+- Input: event name (any string; no enforced enum, since capability/event names are
+  open-ended across the whole platform) and a payload of any shape.
+- Behavior: constructs a `PlatformEvent`, shallow-freezes the payload, finds every
+  subscription whose pattern matches `name`, and calls each handler. Resolves once every
+  matched handler has either completed or had its failure caught and reported.
+- Never rejects — per-handler failures are isolated and converted into a follow-up
+  `event.handler_failed` publish, not propagated to the original caller.
 
-- Subscribe
-  - Function signature:
-    `subscribe(pattern: string, handler: EventHandler): () => void`
-  - Request shape:
-    - `pattern`: exact name, `<prefix>.*`, or `**`
-    - `handler`: sync or async function receiving published event
-  - Response shape: unsubscribe function
-  - Error cases:
-    - invalid wildcard grammar
-    - reserved `event.*` publish attempts are handled on publish, not subscribe
-  - Auth requirements: none
+**`EventBus.subscribe<TPayload>(pattern: string, handler: EventHandler<TPayload>): Subscription`**
+- Input: either an exact event name (`session.created`) or a namespace wildcard ending in
+  `*` (`browser.*`, `docker.*`).
+- Wildcard matching rule: a pattern `a.b.*` matches any event name whose first two
+  segments are exactly `a.b`, regardless of how many segments follow — chosen because real
+  event names in the platform already go beyond two segments (e.g.
+  `docker.container.started`, `browser.navigation.completed`, per Runtime Capabilities'
+  examples), so a single-level-only wildcard would under-match. A bare `*` matches every
+  event name, as an emergent property of the same rule (zero required prefix segments) —
+  useful later for a Dashboard "show everything" debug view, though nothing in this PRD
+  requires it.
+- Returns a `Subscription` whose `unsubscribe()` removes it.
 
-- Publish
-  - Function signature:
-    `publish<TPayload>(name: string, payload: TPayload): Promise<void>`
-  - Request shape:
-    - `name`: dotted event name
-    - `payload`: shallow-freezable value
-  - Response shape: resolved promise after all handlers settle
-  - Error cases:
-    - invalid event name grammar
-    - attempt to publish into reserved `event.*` namespace by external caller
-  - Auth requirements: none
+**Error cases:**
+- A handler throwing synchronously, or its returned promise rejecting, is caught internally.
+  It never surfaces to the publisher and never blocks other subscribers for the same event.
+- A failure while handling `event.handler_failed` itself is caught and dropped (logged
+  internally only, not re-published) — a deliberate guard against infinite recursion if a
+  `event.handler_failed` subscriber is itself broken.
 
-Behavioral contract:
-
-- Exact-name subscribers match exact event names only.
-- `*` matches exactly one dotted segment after the prefix.
-- `**` matches any event name at any depth.
-- Handlers are invoked in registration order.
-- Async handlers start when reached in that order; completion order is ignored.
-- One failing handler never stops later handlers.
-- Failures surface as one internal `event.handler_failed` publish per failure.
-- Unsubscribing during a dispatch does not alter the in-flight subscriber list.
+**Auth requirements:** none at this layer. The Event Bus has no concept of identity or
+permissions — per the platform's ownership model, permission enforcement belongs to the
+Gateway (Control Plane), not to this internal delivery mechanism. Any future need to restrict
+who can publish/subscribe to what would be enforced by whatever calls into this module, not
+by the module itself.
 
 ### 2.4 Frontend changes
 
-- No frontend changes in this feature.
-- No new UI components, service calls, or browser state.
-- Future consumers (Dashboard, Browser Runtime, SDK Browser) only depend on the
-  package's public interface after this feature ships.
+Not applicable — no frontend surface for this feature (see 1.3).
 
 ## 3. Dependency Analysis
 
-This feature introduces **no external runtime dependency** and upgrades no
-existing package. The implementation uses:
+No new external dependencies are introduced by this feature. The implementation is fully
+custom per `docs/adr/0001-custom-event-bus.md` — no pub/sub library (e.g. `eventemitter2`) is
+used; wildcard matching is a small amount of in-house string-splitting logic, not worth an
+external dependency for.
 
-- built-in JavaScript/TypeScript language features
-- existing repo dev tooling already pinned at the workspace root
+`opensrc` is therefore not applicable to this feature — there is nothing to inspect.
 
-`opensrc` gate was checked for this phase. Result: no package fetch was needed
-because Event Bus adds no external runtime dependency, so there is no third-
-party package whose source must be inspected before implementation.
-
-**Summary table**:
+**Summary table**
 
 | Package | Version | Purpose | Source-confirmed behavior | Alternatives rejected |
 |---|---|---|---|---|
-| None | n/a | Event Bus uses language/runtime features only | `opensrc` review concluded there is no external package to inspect; built-in language/runtime features are enough for publish/subscribe, wildcard matching, shallow freeze, and promise settling | `eventemitter3`, Node `EventEmitter`, distributed brokers rejected because v1 requires custom semantics and zero external runtime dependency |
+| *(none)* | — | — | — | Node's built-in `EventEmitter` — rejected; see ADR-0001 for the specific behaviors (no handler isolation, no wildcard support) that ruled it out |
 
 ## 4. Migration Strategy
 
-How does the system move from the current baseline to the target state safely?
-
 ### 4.1 Additive phase
 
-- Create `packages/event-bus` as the first workspace package.
-- Add package-local `package.json`, `tsconfig.json`, source files, and tests.
-- Add a root TypeScript project reference to the new package.
-- Keep all behavior additive: no existing package or API is replaced because
-  none exists yet.
+Everything about this feature is additive — `packages/event-bus` is a brand-new package with
+no existing code to touch.
 
 ### 4.2 Migration / transition phase
 
-- No schema migration.
-- No interface replacement.
-- No compatibility bridge needed between old and new behavior because Event Bus
-  is the first implementation of this capability.
+Not applicable. Nothing existing depends on any prior event mechanism, because none existed.
 
 ### 4.3 Compatibility rails
 
-- Reserve `event.*` for internal emissions from day one so later packages do not
-  build on a namespace we need to reclaim.
-- Keep wildcard grammar narrow now (`*`, `**`) so later components rely on one
-  stable rule set.
+None needed yet, but worth flagging forward: once `capability-registry`, `session-manager`,
+and `plugin-manager` (all Tier 1, all listed as depending on `event-bus` in the Feature
+Backlog) start consuming this package's public API (`EventBus.publish` /
+`EventBus.subscribe` / `Subscription.unsubscribe`), that API becomes a de facto compatibility
+contract across all three. A breaking change to it after that point requires updating all
+three dependents in the same change, not a rolling migration.
 
 ### 4.4 Rollback plan
 
-- Remove the new package and the root project reference.
-- Re-run build, lint, and test to confirm the repository returns to the
-  "no packages" baseline.
-- Because no existing feature depends on Event Bus yet, rollback is deletion
-  only and does not require data cleanup.
+Trivial at this stage: the package is stateless (in-memory only, nothing persisted), so
+rollback is simply removing or reverting the package. No data migration risk exists because
+nothing depends on it yet.
 
 ## 5. Open Questions
 
-- [x] None. PRD grilling resolved wildcard grammar, failure payload shape,
-      mixed sync/async dispatch order, and `event.*` namespace ownership.
+None. Every design question surfaced during grilling was resolved before this TRD was
+written (see `docs/adr/0001-custom-event-bus.md` for the one decision that crossed the ADR
+bar; the rest are captured directly in the PRD's Product Goals and this TRD's Section 2).
 
 ## 6. Deferred Items
 
 | Item | Reason deferred | Suggested future trigger |
 |---|---|---|
-| Deep recursive immutability | PRD only requires shallow freeze; deep freeze adds cost and surprising behavior for nested objects | Revisit if a real consumer needs nested mutation protection |
-| Subscription identifiers | Current failure payload can use handler index; stable ids are extra surface with no v1 caller | Revisit if observability tooling needs durable subscription references |
-| Cross-process forwarding | Explicit PRD non-goal; would change ordering guarantees and transport model | Revisit only if platform architecture becomes multi-process |
+| Cross-process / distributed delivery | No multi-process or multi-Gateway deployment model exists yet | When a distributed deployment model is designed |
+| Event persistence / replay / event sourcing | No current feature needs historical event replay | When a feature needs event sourcing or audit replay (e.g. Dashboard event timeline with history) |
+| Automatic retry of failed handlers | Adds real complexity (backoff, idempotency) for a need nobody has stated | If a real reliability requirement emerges — e.g. a subscriber that must never miss an event |
+| Global cross-event-name ordering guarantees | Not required by any known consumer | If a future feature needs strict ordering across different event types, not just within one |

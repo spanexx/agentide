@@ -23,3 +23,9 @@ Execute Phase 6: agentide composition. Add backendRuntimePort to CreatePlatformC
 Phase 7: drift check + ship the gateway-sdk-dispatch pack. Fix the 3 existing lint warnings along the way (Phase 2 server.test.ts unused connectAndAuthWithRegisteredCap, Phase 4 dispatch.test.ts unused BackendValue import, Phase 5 gateway-core factory.ts unused BackendRuntime type import). Update Feature_Backlog.md + CONTEXT.md Decisions Log + drift log + run drift sub-agent + build post-impl sim + reconcile.
 
 ---
+
+## 2026-07-30 06:26:01 | source: direct
+
+Step back from mcp-adapter. User's audit: 4 real inconsistencies need resolution before building the next layer — event-bus doc duplication (event-bus vs event-bus-b), competing lockfiles (npm + pnpm), D-1 session-manager drift, plugin:<id> dispatch seam incomplete. Backlog gap: scripts/backlog/ outside git. Don't proceed to mcp-adapter until drift is resolved.
+
+---

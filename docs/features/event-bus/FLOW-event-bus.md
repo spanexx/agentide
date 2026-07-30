@@ -4,304 +4,239 @@
 
 - Type: End-to-end behavior and flow document
 - Audience: Product, engineering, QA
-- Scope: In-process publish/subscribe behavior for the first platform Event Bus package.
-- Status: Approved 2026-07-26. Implemented as `@platform/event-bus`. All six flows (happy path, subscribe, dispatch, unsubscribe, failure surfacing, edge cases) covered by tests in [packages/event-bus/src/](../../../packages/event-bus/src/).
+- Scope: In-process, typed publish/subscribe event delivery mechanism for the platform's
+  Control Plane and Execution Plane components — no consumers required yet.
 - PRD: [PRD-event-bus.md](./PRD-event-bus.md)
 - TRD: [TRD-event-bus.md](./TRD-event-bus.md)
 
 ## Overview
 
-The Event Bus starts when a platform component subscribes to an event name or
-wildcard pattern, then another component publishes an immutable event into the
-same bus instance. The flow ends when every matching handler has been invoked,
-all async handlers have settled, any failures have been surfaced through
-`event.handler_failed`, and the caller receives a successful `publish()`
-completion.
+Event Bus isn't a CRUD feature, so the flow slots below are adapted: "Add/Create" maps to
+subscribing, "Retrieve/Use" maps to receiving events (including wildcard delivery over time),
+and "Update/Refresh" maps to unsubscribing — the closest lifecycle transition an existing
+subscription has. Every flow below is driven entirely by two calls (`publish`, `subscribe`)
+and one returned handle (`Subscription.unsubscribe`).
 
 ---
 
 ## Flow 1: Primary Happy Path
 
-Specific and wildcard subscribers observe one published event in deterministic
-registration order.
+A single subscriber registers for an exact event name; a publisher later publishes that
+event; the subscriber's handler is called exactly once.
 
 ### Trigger
 
-A platform component publishes an event like `browser.page.loaded` into a bus
-instance that already has matching subscribers.
+A component calls `subscribe('session.created', handler)`, then some time later another
+component calls `publish('session.created', payload)`.
 
 ### Steps
 
-1. Browser Runtime subscribes a handler to exact event
-   `browser.page.loaded`.
-2. Analytics Plugin subscribes a second handler to wildcard
-   `browser.page.*`.
-3. Gateway Logger subscribes a third handler to `**`.
-4. Browser Runtime publishes `browser.page.loaded` with payload
-   `{ url, tabId }`.
-5. Event Bus shallow-freezes payload before dispatch.
-6. Event Bus finds all matching handlers in registration order.
-7. Event Bus invokes exact subscriber first, single-segment wildcard
-   subscriber second, and catch-all subscriber third.
-8. Each handler reads same payload values.
-9. `publish()` completes after all invoked handlers settle.
-
-### Mermaid diagram
-
-```mermaid
-sequenceDiagram
-    participant BrowserRuntime
-    participant EventBus
-    participant ExactSubscriber
-    participant WildcardSubscriber
-    participant CatchAllSubscriber
-
-    BrowserRuntime->>EventBus: publish("browser.page.loaded", payload)
-    EventBus->>EventBus: shallow-freeze payload
-    EventBus->>ExactSubscriber: invoke handler #1
-    ExactSubscriber-->>EventBus: complete
-    EventBus->>WildcardSubscriber: invoke handler #2
-    WildcardSubscriber-->>EventBus: complete
-    EventBus->>CatchAllSubscriber: invoke handler #3
-    CatchAllSubscriber-->>EventBus: complete
-    EventBus-->>BrowserRuntime: resolve publish()
-```
+1. Subscriber calls `subscribe('session.created', handler)` and receives a `Subscription`.
+2. Publisher calls `publish('session.created', { sessionId: 'abc123' })`.
+3. EventBus constructs a `PlatformEvent` — assigns `id`, `publishedAt`, and shallow-freezes
+   the payload.
+4. EventBus finds the one subscription whose pattern exactly matches `session.created`.
+5. EventBus calls the subscriber's handler with the `PlatformEvent`.
+6. Handler completes without error.
+7. `publish()` resolves.
 
 ### Postconditions
 
-- Every matching handler runs once.
-- Handler invocation order matches subscription order.
-- Publisher sees successful completion after dispatch finishes.
-- Payload remains unchanged for all subscribers.
+The handler was called exactly once with the correct `PlatformEvent`. `publish()` resolved
+without error. No `event.handler_failed` was published.
 
 ---
 
-## Flow 2: Add / Create Flow
-
-New subscriptions enter system and begin observing later events only.
+## Flow 2: Add / Create Flow (Subscribing)
 
 ### Trigger
 
-A component adds a new event subscription.
+A component wants to start receiving events under a specific name or namespace.
 
 ### Steps
 
-1. Session Manager creates a bus instance for current runtime context.
-2. Debugger Plugin subscribes to `session.created`.
-3. Analytics Plugin subscribes to `browser.*`.
-4. Event Bus stores each subscription with insertion order preserved.
-5. Event Bus returns one unsubscribe handle per subscription.
-6. No historical events are replayed to either new subscriber.
-7. Later publishes are matched against stored subscriptions only from that
-   point onward.
+1. Component calls `subscribe(pattern, handler)` — `pattern` is either an exact event name
+   (`session.created`) or a wildcard ending in `*` (`browser.*`).
+2. EventBus validates the pattern: non-empty, and if it contains `*`, that `*` must be the
+   final character. A malformed pattern throws synchronously (see Flow 6).
+3. EventBus registers the pattern + handler internally.
+4. EventBus returns a `Subscription` object exposing `unsubscribe()`.
 
 ### Postconditions
 
-- New subscriber receives future matching events only.
-- Caller holds unsubscribe handle needed for later cleanup.
-- Bus instance state remains local to that one Event Bus.
+The subscription is active for any future matching `publish()` call. Events published
+*before* this call are never delivered retroactively — there is no replay.
 
 ---
 
-## Flow 3: Retrieve / Use Flow
-
-A component gets value from previously-created subscriptions by receiving
-matching future events.
+## Flow 3: Retrieve / Use Flow (Wildcard delivery over time)
 
 ### Trigger
 
-A component that already subscribed with `browser.*` waits for browser-related
-events from another component.
+A subscriber has registered a wildcard pattern, and multiple different events are published
+under and outside that namespace over time.
 
 ### Steps
 
-1. Analytics Plugin keeps active subscription on `browser.*`.
-2. Browser Runtime publishes `browser.started`.
-3. Event Bus matches `browser.started` to `browser.*`.
-4. Event Bus invokes Analytics Plugin handler.
-5. Browser Runtime later publishes `browser.page.loaded`.
-6. Event Bus does not match `browser.page.loaded` to `browser.*` because
-   `*` covers exactly one segment.
-7. A catch-all `**` subscriber, if present, still receives both events.
+1. Subscriber calls `subscribe('browser.*', handler)`.
+2. Publisher A calls `publish('browser.started', {...})` — handler is invoked.
+3. Publisher B calls `publish('browser.navigation.completed', {...})` — handler is invoked
+   again (multi-segment names under the same prefix still match).
+4. Publisher C calls `publish('session.created', {...})` — handler is **not** invoked; it
+   falls outside the `browser.` namespace.
 
 ### Postconditions
 
-- Single-segment wildcard behavior is observable and predictable.
-- Subscriber sees only events that fit its pattern.
-- Catch-all subscribers can observe whole system traffic.
+The handler received exactly the two `browser.*` events, each with its own distinct
+`PlatformEvent`, and was never called for the unrelated `session.created` event.
 
 ---
 
-## Flow 4: Update / Refresh / Version Flow
-
-Subscriptions change over time through unsubscribe and later publishes reflect
-that updated subscription set.
+## Flow 4: Update / Refresh Flow (Unsubscribing)
 
 ### Trigger
 
-A component cleans up a subscription after its scope ends.
+A component that previously subscribed — most commonly a session that's ending — needs to
+stop receiving events.
 
 ### Steps
 
-1. Session Manager stores unsubscribe handle returned at subscribe time.
-2. Session-scoped work ends.
-3. Session Manager calls unsubscribe handle.
-4. Event Bus removes that subscription from future matching.
-5. Another component publishes same event again.
-6. Removed subscriber no longer receives delivery.
-7. If unsubscribe is called from inside an in-flight handler, Event Bus keeps
-   current dispatch snapshot intact and applies removal only to later
-   publishes.
+1. Component holds the `Subscription` returned from an earlier `subscribe()` call.
+2. Component calls `subscription.unsubscribe()`.
+3. EventBus removes that subscription from its internal registry.
+4. A later `publish()` call for a matching event name no longer invokes this handler.
+5. Calling `unsubscribe()` a second time is a no-op — it does not throw.
 
 ### Postconditions
 
-- Cleanup removes future deliveries for that subscription.
-- In-flight dispatch remains stable even if a handler unsubscribes itself.
-- Session-owned resource cleanup stays outside Event Bus internals.
+The handler is never invoked again after `unsubscribe()`. Double-unsubscribe is safe.
 
 ---
 
 ## Flow 5: Error / Fallback Flow
 
-One handler fails but remaining handlers still run and publisher still gets a
-successful completion.
+A subscriber's handler throws or rejects while processing an event; delivery to other
+subscribers is unaffected, and the failure is surfaced rather than silently dropped.
 
 ### Trigger
 
-At least one matching handler throws or returns a rejected promise during
-dispatch.
+`publish()` is called for an event with two matching subscribers, and the first one's handler
+throws synchronously.
 
 ### Steps
 
-1. Capability Registry publishes `capability.registered`.
-2. First matching handler throws or rejects.
-3. Event Bus captures failure details.
-4. Event Bus emits one internal `event.handler_failed` event with original
-   event, failing handler index, and error.
-5. Event Bus continues invoking later matching handlers in the same dispatch.
-6. All remaining sync and async handlers settle.
-7. Original `publish()` resolves successfully rather than rejecting.
+1. Publisher calls `publish('capability.executed', payload)`.
+2. EventBus finds two matching subscriptions: Subscriber A (e.g. a Logger) and Subscriber B
+   (e.g. Analytics).
+3. EventBus calls Subscriber A's handler — it throws synchronously.
+4. EventBus catches the error internally. It is never propagated to the `publish()` caller.
+5. EventBus calls Subscriber B's handler — it completes normally, entirely unaffected by A's
+   failure.
+6. EventBus publishes a follow-up `event.handler_failed` event with payload
+   `{ eventName: 'capability.executed', subscriberPattern: <A's pattern>, error }`.
+7. Any subscriber to `event.handler_failed` (if one exists) is notified, following the same
+   delivery path as any other event.
+8. The original `publish('capability.executed', ...)` call resolves normally — it does not
+   reject — once A, B, and the internal `event.handler_failed` dispatch have all settled.
 
 ### Mermaid diagram
 
 ```mermaid
 sequenceDiagram
-    participant Publisher
+    actor Publisher
     participant EventBus
-    participant FailingHandler
-    participant LaterHandler
-    participant FailureObserver
+    participant SubscriberA as Subscriber A (fails)
+    participant SubscriberB as Subscriber B
 
-    Publisher->>EventBus: publish("capability.registered", payload)
-    EventBus->>FailingHandler: invoke handler #1
-    FailingHandler-->>EventBus: throw / reject
-    EventBus->>FailureObserver: publish("event.handler_failed", failure)
-    FailureObserver-->>EventBus: complete
-    EventBus->>LaterHandler: invoke handler #2
-    LaterHandler-->>EventBus: complete
-    EventBus-->>Publisher: resolve publish()
+    Publisher->>EventBus: publish("capability.executed", payload)
+    EventBus->>SubscriberA: handler(event)
+    SubscriberA-->>EventBus: throws
+    EventBus->>SubscriberB: handler(event)
+    SubscriberB-->>EventBus: resolves
+    EventBus->>EventBus: publish("event.handler_failed", {...})
+    EventBus-->>Publisher: publish() resolves (no rejection)
 ```
 
 ### Recovery
 
-Operator or observability tooling inspects `event.handler_failed`, fixes noisy
-subscriber, and leaves healthy subscribers running. No rollback is needed
-because Event Bus does not persist partial state.
+There is no automatic retry or redelivery to Subscriber A — per the PRD's non-goals, the
+platform's response to a handler failure is observability, not correction.
+`event.handler_failed` is the mechanism by which a human or a monitoring component (a future
+Logger or Dashboard) finds out and investigates; the Event Bus itself takes no corrective
+action.
 
 ---
 
-## Flow 6: Edge Case Flows
+## Flow 6: Additional Edge Case Flows
 
-Additional behavior that constrains the package boundary and replacement-safe
-semantics.
+**6a. Publish with zero matching subscribers.** `publish()` still resolves normally — this is
+a no-op, not an error.
 
-### Trigger
+**6b. Malformed wildcard pattern.** `subscribe('br*wser.started', handler)` — `*` appears
+somewhere other than the final character. `subscribe()` throws synchronously at registration
+time rather than silently treating it as a literal string.
 
-A caller exercises one of the boundary cases below.
+**6c. Re-entrant unsubscribe.** A handler calls its own `subscription.unsubscribe()` while
+it's being invoked, mid-dispatch, for the event currently being published. `publish()`
+iterates a **snapshot** of matching subscriptions taken at the start of the call, not a live,
+mutable list — so this does not crash or skip/duplicate delivery to other subscribers in the
+same `publish()` call.
 
-### Steps
+**6d. A subscriber to `event.handler_failed` itself throws.** Per the TRD's recursion guard,
+this is caught and dropped (not re-published as another `event.handler_failed`) — this
+prevents an infinite failure loop.
 
-1. Two separate Event Bus instances are created.
-2. Publisher sends event into bus A.
-3. Subscribers on bus B receive nothing.
-4. Mixed sync and async handlers subscribe on same bus.
-5. Event Bus invokes them in registration order; async completion order may
-   differ, but `publish()` waits for all of them.
-6. External caller attempts to publish `event.handler_failed` directly.
-7. Event Bus rejects that publish path because `event.*` is reserved for
-   bus-internal events only.
-8. Publisher attempts to mutate payload after publish or subscriber attempts to
-   mutate inside handler.
-9. Mutation does not change values seen by other handlers because payload was
-   shallow-frozen before dispatch.
-
-### Postconditions
-
-- Bus instances stay isolated.
-- Invocation order remains deterministic across mixed handler types.
-- Internal namespace boundary is observable.
-- Published payload stays shallowly immutable.
+**6e. Overlapping patterns.** A subscriber to `browser.*` and a separate subscriber to the
+exact name `browser.started` are both registered. When `browser.started` is published, both
+receive it independently — there is no "most specific pattern wins" precedence. All matching
+subscriptions fire, always.
 
 ---
 
 ## Manual QA Checklist
 
-Executable steps for a human reviewer. Each item references PRD acceptance
-criteria in listed order.
-
 ### Setup
 
-- [x] Create one Event Bus instance with three subscribers: exact match,
-      `browser.*`, and `**`.
-- [x] Create a second separate Event Bus instance with one subscriber to prove
-      instance isolation.
-- [x] Prepare one sync handler, one async handler, one throwing handler, and
-      one rejecting async handler.
+- [x] `packages/event-bus` is built (`npm run build`) and importable
+- [x] Each test scenario uses a fresh `EventBus` instance — no shared state carried between
+      scenarios
 
 ### Happy path
 
-- [x] Publish `browser.page.loaded` and confirm every matching handler runs
-      exactly once. [AC-1]
-- [x] Publish `browser.started` and confirm `browser.*` matches it but not
-      `browser.page.loaded`. [AC-2]
-- [x] Publish several event names at different depths and confirm `**`
-      receives all of them. [AC-3]
-- [x] Register handlers in known order and confirm delivery order stays same
-      across repeated publishes. [AC-4]
-- [x] Mix sync and async subscribers, then confirm invocation order follows
-      registration order even if completion order differs. [AC-5]
-- [x] Add one async handler with visible delay and confirm `publish()`
-      completes only after it settles. [AC-6]
-- [x] Attempt payload mutation in publisher or subscriber and confirm later
-      handlers still see original shallow values. [AC-12]
-- [x] Review public TypeScript event payload declarations and confirm payload
-      properties are marked `readonly` by convention. [AC-13]
+- [x] Subscribe to an exact event name, publish that event, handler receives it exactly once
+      [AC-2]
+- [x] `publish()` resolves only after the handler has completed [AC-1]
+- [x] Subscribe to a wildcard pattern, publish a matching multi-segment event name, handler
+      receives it [AC-3]
+- [x] Subscribe to a wildcard pattern, publish an unrelated event name, handler does not
+      receive it [AC-3]
 
 ### Error handling
 
-- [x] Make first handler throw and confirm later handlers still run. [AC-7]
-- [x] Make async handler reject and confirm later handlers still run. [AC-8]
-- [x] Confirm thrown or rejected handlers do not cause original `publish()`
-      to reject. [AC-9]
-- [x] Confirm mixed async failures still end with successfully-resolved
-      `publish()` after all handlers settle. [AC-10]
-- [x] Confirm exactly one `event.handler_failed` event is emitted per failing
-      handler and payload includes original event, handler index, and error.
-      [AC-11]
-- [x] Attempt external publish into `event.*` and confirm Event Bus blocks it.
-      [AC-16]
+- [x] One handler throws synchronously; a second subscriber to the same event still receives
+      it [AC-4]
+- [x] One handler's returned promise rejects; a second subscriber to the same event still
+      receives it [AC-4]
+- [x] A handler failure triggers `event.handler_failed` with the correct `eventName`,
+      `subscriberPattern`, and `error.message` [AC-5]
+- [x] `publish()` itself never rejects, even when a subscriber's handler fails [AC-1, AC-4]
 
 ### Edge cases
 
-- [x] Call unsubscribe handle, publish again, and confirm removed subscriber no
-      longer receives delivery. [AC-14]
-- [x] Unsubscribe from inside a running handler and confirm remaining handlers
-      in that same dispatch still run. [AC-15]
-- [x] Publish into bus A and confirm subscribers on bus B receive nothing.
-      [AC-17]
+- [x] Publishing with zero matching subscribers resolves normally, no error
+- [x] Subscribing with a malformed pattern (`*` not as the final character) throws
+      synchronously at `subscribe()` time
+- [x] Calling `unsubscribe()` twice on the same `Subscription` does not throw
+- [x] A handler that calls its own `unsubscribe()` mid-dispatch does not crash the current
+      `publish()` call or affect delivery to other subscribers
+- [x] A subscriber to `event.handler_failed` that itself throws does not cause infinite
+      recursion or an unhandled rejection
+- [x] Two overlapping subscriptions (exact + wildcard) both fire independently for a matching
+      event
+- [x] Published payload is frozen — mutating it inside a handler does not affect what other
+      subscribers receive [AC-6]
 
 ### Cleanup / teardown
 
-- [x] Call remaining unsubscribe handles and discard both bus instances.
-- [x] Clear any temporary logs or counters used to observe handler order and
-      failure events.
+- [x] No lingering subscriptions or timers after the test suite completes — `EventBus`
+      instances are per-test and hold no global state to reset
