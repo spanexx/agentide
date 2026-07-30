@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-07-30  **Open:** 1  **Resolved:** 16  **Critical/High:** 0
+**Last updated:** 2026-07-30  **Open:** 0  **Resolved:** 16  **Critical/High:** 0
 
 
 ## Resolved
@@ -37,29 +37,3 @@
   - **`attachResource` permits suspended (TRD + IMPL):** TRD §2.3 was silent on suspended. IMPL Phase 3 said "validates session is active" (`IMPL-session-manager.md:206` original). Code at `resources.ts:35` checks `status === "archived"` only — permits active AND suspended (test at `session-manager.test.ts:141-148`). TRD §2.3 `attachResource` updated: "Permitted when session status is `active` OR `suspended` — resources attached while suspended survive resume without re-attachment." IMPL Phase 3 updated: "validates session is active or suspended (rejects archived)".
   - **Minimum timeout value (IMPL):** IMPL Phase 1 said `timeout >= 1000` (`IMPL-session-manager.md:79` original). Code enforces `< 1` rejection at `index.ts:109-110`; tests use 1ms and 10ms (`session-manager.test.ts:107, 145`). IMPL corrected to `timeout >= 1`.
   - **No code changes required** — all behavior was already correct; the work was doc reconciliation. Full test suite: 394/394 pass; typecheck clean.
-
----
-
-## D-29 — `gateway-plugin-dispatch` (BI[8a]) — DEFERRED pending design decision
-
-**Where:** `packages/gateway-core/src/dispatch.ts:90-103` (stub for `plugin:<id>` owners); `docs/Feature_Backlog.md` row 8a.
-
-**Found** 2026-07-30 during drift audit. The dispatch path for `owner.startsWith("plugin:")` throws `GATEWAY_MANAGER_UNAVAILABLE { retryable: true }` because `plugin-manager` doesn't yet expose a `handleInvocation()` API for the gateway to call into, and — more fundamentally — the manifest doesn't carry handler code, only capability metadata.
-
-**Why this differs from BI[8b (the sibling pack that just shipped).** BI[8b] replaced a stub for a path whose wire protocol and handler location were *fully designed*: `backend-sdk-*` owner prefix, `@platform/sdk-node` was the handler host, only the kernel wiring was missing. BI[8a] is a **fundamental unresolved design question**: how does a plugin actually register a handler function?
-
-Three plausible answers, each with different scope:
-- **(a) In-process JS handler:** manifest gains a `runtime: { entry: "./dist/index.js" }` field; `plugin-manager` does `await import(entry)` to get a handler map. Needs module resolution + lifecycle for the loaded module.
-- **(b) Child-process runtime:** each plugin is a separate Node process; gateway spawns it, communicates via IPC. Matches the architecture docs' "Runtime Capabilities → Browser Runtime example" but is a much bigger build (process supervisor, IPC protocol, crash recovery).
-- **(c) WebSocket/IPC to a remote runtime:** analogous to BI[8b]'s `backend-sdk-*` path but for a runtime process rather than a SDK. Most architecturally clean but most surface area.
-
-**Why deferred, not addressed now.** The current stub is non-blocking: any operator trying to invoke a `plugin:<id>` cap today gets a clear `MANAGER_UNAVAILABLE { retryable: true }` with the pluginId in `details`. No code path is currently broken. The cost of doing BI[8a] wrong is high: choosing (a) when the right answer is (b) means a future `browser-runtime` pack (Tier 4, item 12) hits a wall and we redo the interface. The PHILOSOPHY.md replaceability test is at risk if the plugin-loading design locks in too early.
-
-**What unblocks BI[8a.** A concrete consumer. The fastest path: when BI[12 `browser-runtime` starts, BI[8a] can be designed in tandem — the browser runtime IS the first `plugin:<id>` consumer, so its handler-loading requirements (in-process browser-tab control vs remote WebDriver vs Playwright) constrain the API. Until then, BI[8a] is a design problem looking for a problem to solve.
-
-**Status:** DEFERRED. Backlog row 8a remains `NOT STARTED`; no code changes in this session. The stub at `dispatch.ts:90-103` and the audit-recorded `MANAGER_UNAVAILABLE` response stay as the contract for anyone trying to invoke a runtime plugin cap before BI[8a] ships.
-
-**Next agent/session actions:**
-1. When starting BI[12 `browser-runtime`, do BI[8a] in the same or previous pack so the handler-loading design is informed by a concrete consumer.
-2. The GRILL for BI[8a] must explicitly enumerate the handler-loading options (a/b/c above) and pick one with rationale tied to browser-runtime's needs.
-3. The plugin-manifest schema gains a new top-level field (likely `runtime: { entry, type }` or similar). This is a breaking change to the manifest format — coordinate with the plugin-marketplace pack (#16) so marketplace-published plugins can declare their handler location.
