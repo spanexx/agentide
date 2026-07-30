@@ -58,7 +58,7 @@ mostly a priority call, not a technical blocker.)*
 
 **Status of 8b:** SHIPPED 2026-07-30. New package `@platform/backend-runtime` (`server.ts` + `registry.ts` + `dispatch.ts` + `events.ts` + `verify.ts` + `types.ts`), integration with `gateway-core` (`backendRuntime` ctx field on `dispatch`), integration with `agentide` (`backendRuntimePort` on `CreatePlatformConfig` auto-creates + lifecycle-wires the runtime). 41 vitest files / 439 tests pass; build/lint/typecheck/check-banned-types all clean. Future pack `sdk-browser` reuses the same wire protocol.
 
-**Status of 8a:** NOT STARTED. Stub remains in `packages/gateway-core/src/dispatch.ts:82-89`; no runtime plugin handler registry in `@platform/plugin-manager` yet.
+**Status of 8a:** GRILLED 2026-07-30. Design locked: plugin manifest gains `runtime.entry` field (path to a Node ESM module); `@platform/plugin-manager` dynamic-imports the module at install time and stores a `{ [capabilityName]: async (input, ctx) => result }` map; `gateway-core/src/dispatch.ts` calls `pluginManager.handleInvocation(name, input, sessionId)` synchronously, replacing the `MANAGER_UNAVAILABLE` stub at `dispatch.ts:90-103`. Architecture doc updated (`Capability_System.md`) to name the handler location per type. Design record: [`docs/features/gateway-plugin-dispatch/GRILL-gateway-plugin-dispatch.txt`](gateway-plugin-dispatch/GRILL-gateway-plugin-dispatch.txt). Next: IMPL pack.
 
 Without 8a and 8b, the kernel works but only for the 25 platform caps — runtime plugin capabilities and remote SDK capabilities are unreachable no matter how many adapters are wired. Everything in Tier 3 (adapters, SDKs) is only *genuinely* usable once 8a and 8b land.
 
