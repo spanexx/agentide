@@ -1,71 +1,120 @@
-# Main clean — BI[6] merged, ready for next pack
+# sdk-browser Wayfinder — T2 closed, frontier = T5
 
 ## Soul
 
-This session closed with PR #6 merged into main (commit 300fb44). The cleanup pass:
-local main fast-forwarded to `300fb44`, both stale branches (`feature/platform-capabilities` and `feature/gateway-core`) deleted locally and remotely. Working tree clean. Repo state matches origin: `main` is the only branch.
+This session worked the **Wayfinder** process for `@platform/sdk-browser` (Phase 4
+Frontend SDK). Map created, **2/7 tickets closed**. T2 (Manifest and handler
+transport in browser) fully resolved with 5 Q's locked. Frontier advances to T5
+(WebSocket transport details). Code unchanged this session — pure planning.
 
-## What We Did
+Next session picks up T5 with `grill-with-docs`. One ticket per session per
+Wayfinder rule.
 
-The session ran the full BI[6] feature pipeline from grill to ship:
-- Phase 0 (grill): 5 questions locked in plain English (Q1 ownership, Q2 scope, Q3 permission naming, Q4 package location, Q5 registration wiring).
-- Phase 0.5 (uncertainty scan): U1-U7 classified; U2 (`system.health` depth) defaulted to always-ok in v1.
-- Phase 1 (PRD): 142 lines, 7 acceptance criteria.
-- Phase 2 (TRD): 386 lines, including the authz wildcard fix and the 4-call migration strategy.
-- Phase 3 (FLOW): 292 lines, 6 flows + QA checklist.
-- Phase 4 (IMPL): 326 lines, 6 phases.
-- Phase 5a (stability check): cross-doc consistency review. Caught one counting discrepancy (TRD §4.2 stutter) and one perf N+1 smell (CLI filters) — both fixed.
-- Phase 5b (implement): 6 phases, 308/308 tests pass, 0 lint errors, build clean.
-- Phase 5c (gap-report review): feature-pipeline-review sub-agent found 0 RED, 5 YELLOW. All 4 follow-ups resolved: AC-3 happy-path test added, drift 1/2 docs updated, session.list caveat added.
-- Phase 6 (ship): 3 commits, 2 via PR #6 (merged).
+## What This Session Did
 
-## What Was Shipped
+- Created the sdk-browser Wayfinder map on `spanexx/agentide`:
+  - Map issue #8 (label `wayfinder:map`)
+  - 7 child tickets #9–#15 (T1–T7)
+  - 5 wayfinder labels created (`wayfinder:map`, `:grilling`, `:prototype`,
+    `:task`, `:research`)
+- Closed T1 (#15): capability surface = DOM-annotation model (see CONTEXT.md:162)
+- Closed T2 (#9): no manifest, attribute set, observe scope, dedup, dispatch target
+  (5 Q's; full record in GRILL file + CONTEXT.md)
+- Created `agentide/docs/features/sdk-browser/GRILL-sdk-browser.txt`
+- Updated local mirrors: `map.md` + ticket files in
+  `agentide/docs/wayfinder/sdk-browser/`
 
-- **`@platform/platform-capabilities`** (new package, 5 files, 14 tests)
-- **`gateway-core` augmentations**: 3-line authz wildcard fix, 9 new handlers (plugin.* + system.*), SESSION_LESS_CAPABILITIES set extended
-- **`@platform/agentide` CLI**: `--owner` and `--tier` filters on `capability list`
-- **Doc pack**: 5 docs (GRILL, PRD, TRD, FLOW, IMPL) totalling 1141 lines
-- **Backlog**: BI[6] row shipped (status, what, impl, notes fields updated)
-- **HTML graph**: Tier 2 progress line updated, gateway-core notes field updated to reflect post-BI[6] state
+## Current State
 
-## Key Decisions Made
+- **Map:** issue #8 — `2/7 tickets closed, 5 open`. Local mirror at
+  `agentide/docs/wayfinder/sdk-browser/map.md` kept in sync.
+- **Frontier:** **T5 ([WebSocket transport details](https://github.com/spanexx/agentide/issues/12))** — unblocked, ready to claim.
+- **Also open:** T3 (#10) Browser-aware reconnect, T4 (#11) Frontend DX (prototype),
+  T6 (#13) Package shape, T7 (#14) Boundary doc.
+- **Code:** unchanged. Planning only.
 
-- **Authz wildcard**: 3-line fix in `tierCovers` makes `platform.*.read` cover every read-tier platform cap. Discovered this was broken during TRD review.
-- **4-call migration**: re-register `gateway` with only its 12 caps (registry diff removes 7 legacy caps); then 3 calls for session-manager, capability-registry, plugin-manager. The only path that handles the cross-owner collision on upgrade.
-- **`platform-capabilities` is a registration seam only**: handlers live in gateway-core. The new package owns the *shape* of every platform cap (name, version, permissions, description, owner) but not the runtime implementations.
+## Standing Rules Locked This Session
 
-## Known Caveats
+1. **Every Wayfinder grill resolution appends to that project's
+   `docs/CONTEXT.md` Decisions Log** — no exceptions, no re-ask. Per-Q entries
+   (one line per Q), format matches existing entries.
+2. **Every grill answer follows this order:** (a) plain-English analogy →
+   (b) recommendation stated up front → (c) the why + what it rules out →
+   (d) source citations.
+3. **Plain-English analogy for sdk-browser is an e-commerce website** — product
+   cards = caps, "Add to Cart" buttons = annotated elements, cart service =
+   Gateway, customer = SDK caller.
 
-- **Downgrade is not supported**: rollback to pre-BI[6] would fail the cross-owner collision check. Documented in TRD §4.2. A downgrade requires a manual `agentide capability reset` step (out of scope for v1).
-- **`session.list` returns `[]` placeholder**: SessionManager v1 doesn't expose `listSessions(tenantId)`. v2 enhancement.
-- **CLI filters are O(N+1)**: iterate `list()` → `describe()` per cap. v1 has ~30 caps; sub-millisecond. Future `registry.listByOwner()` helper if catalog grows.
+## Next Session: T5 ([WebSocket transport details](https://github.com/spanexx/agentide/issues/12))
 
-## Next Pack
+### Workflow
 
-The next pack is **BI[7] permission-tiering**. Its docs are not yet drafted. The CLI already filters by tier (read/write), but the actual scope convention enforcement platform-wide is BI[7]'s scope. Per the BACKLOG IMPL:
+1. `workdir = /home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide`
+2. Load skills: `wayfinder` (parent) + `grill-with-docs` (T5 is `wayfinder:grilling`)
+3. Claim T5: `gh issue edit 12 --add-assignee spanexx`
+4. Read ticket body + map body for context (`gh issue view 12 --json title,body,state,labels,assignees,comments`)
+5. Grill one Q at a time using the standing format (analogy → recommendation → why → sources)
+6. Per Q locked: append to GRILL file + append to CONTEXT.md + post progress comment on #12
+7. After all Q's locked: post final resolution comment, close #12, update #8, mirror locally
 
-> Implement the `read`/`act`/`destructive` scope convention platform-wide (not just documented).
+### T5 Question Hints (territory to expect, not pre-decided)
 
-Run `feature-pipeline` from Phase 0 (grill). The authz.ts wildcard fix from BI[6] is a useful precedent for BI[7] — the authz already supports tier-hierarchy (`read < act < destructive` for runtime, `read < write` for platform), but BI[7] probably needs to extend the namespace-scoping further (e.g., `runtime.*.act` covering `runtime.*.read` cross-namespace, similar to `platform.*.read` in BI[6]).
+- Transport: WebSocket vs alternatives (SSE, fetch+POST, long-poll)
+- Subprotocol name (so the WS adapter can route SDK traffic vs other WS clients)
+- Auth handshake shape (reuse sdk-node's HS256 JWT, or browser-specific?)
+- Message framing (JSON over text? binary? msgpack?)
+- Heartbeat / ping interval
+- Reconnect primitive (initial connect + retry) — T3 owns browser-specific lifecycle
+- Error envelope (reuse `sdk.invoke.error` from BI[8b]?)
 
-To pick up BI[7]:
-1. `cd agentide && npm install` (use `npm`, not `pnpm` — documented in BI[6] handoff)
-2. `npm run test` — confirm 308/308 baseline
-3. Create `docs/features/permission-tiering/`
-4. Start the grill with the BI[7] PRD surface
+### Critical Context to Carry Forward
 
-Skill load order for next session: `caveman`, `log-prompt`, `situation-awareness` (reads this handoff directly), `feature-pipeline` (Phase 0).
+- **Wire protocol is fixed** by BI[8b]: `sdk.invoke { callId, name, input, sessionId? }` →
+  `sdk.invoke.result { callId, payload }` or `sdk.invoke.error { callId, code, message }`.
+  SDK-browser must reuse this exact shape — no new wire types.
+- **Auth is fixed** by gateway-core (BI[5] Q2): HS256 JWT with `{ tenantId, callerId }` sub.
+  SDK-browser sends the same token format as sdk-node.
+- **No manifest file** (T2 lock): SDK init takes only
+  `{ gateway, appId, token, observeRoot?, defaultTier?, defaultVersion? }` — `gateway`
+  URL is the WebSocket endpoint.
+- **Reconnect strategy split:** T5 locks the transport-layer primitive; T3 locks
+  browser-specific lifecycle (tab unload, intentional close, visibility).
+- **CORS** is the operator's problem once T5 locks the URL shape — see Not-yet-specified
+  section of map #8.
 
-## Commit history for this session
+## Files Touched This Session
 
-- `83b8b94` feat(platform-capabilities): ship 25 platform caps with real owners + authz wildcard + CLI filters
-- `f0e8258` fix(platform-capabilities): address gap-report findings (AC-3 test, drift 1/2, session.list caveat)
-- `5209a81` docs(backlog): record platform-capabilities ship in HTML sequencing notes
-- `300fb44` Merge pull request #6 from spanexx/feature/platform-capabilities (PR #6 merged)
+- `agentide/docs/features/sdk-browser/GRILL-sdk-browser.txt` (new, T1 + T2 Q1–Q5)
+- `agentide/docs/CONTEXT.md` (6 new Decisions Log entries, line 162 onward)
+- `agentide/docs/wayfinder/sdk-browser/map.md` (frontier + decisions-so-far)
+- `agentide/docs/wayfinder/sdk-browser/tickets/manifest-and-handler-transport-in-browser.md`
+  (closed + resolution)
+- GitHub #8 body updated; #9 closed with resolution comment
 
-## Repo state
+## Helpful Commands
 
-- Local: `main` at 300fb44, clean
-- Remote: `origin/main` at 300fb44
-- Branches: `main` only (local + remote)
-- Stale branches cleaned up: `feature/platform-capabilities`, `feature/gateway-core` (both deleted locally and remotely)
+```bash
+# Set workdir to the agentide repo (the parent cwd is NOT a git repo)
+gh issue list --label wayfinder:grilling --state all
+gh issue view 12 --json title,body,state,labels,assignees,comments
+gh issue edit 12 --add-assignee spanexx
+gh issue comment 12 --body "..."
+gh issue close 12
+gh issue edit 8 --body-file /tmp/opencode/map-body.md
+
+# Append to CONTEXT.md (one line per Q, in the Decisions Log section)
+$EDITOR agentide/docs/CONTEXT.md
+```
+
+## Known Quirks
+
+- `gh issue view <num>` shows a GraphQL "Projects (classic) is being deprecated"
+  warning. Cosmetic; body still renders. Workaround: `--json title,body,...` or
+  `--web`.
+- `gh` must run with `workdir=/home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide`.
+
+## Skills to Load Next Session
+
+- `wayfinder` (parent — already loaded this session)
+- `grill-with-docs` (T5 is grilling)
+- (later, when map closes) `feature-pipeline` for `delivery: feature-pipeline`

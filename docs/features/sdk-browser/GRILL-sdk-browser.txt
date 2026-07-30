@@ -1,0 +1,199 @@
+@platform/sdk-browser - Grill Notes
+
+Status: Phase 0 grilling in progress
+Date: 2026-07-30
+Source: Wayfinder map #8 (sdk-browser), ticket #9 (T2 Manifest and handler transport)
+
+What this feature is about
+
+- Browser-side SDK that lets a web app expose business capabilities to the Gateway,
+  mirroring @platform/sdk-node's role for Node apps.
+- The SDK reads `data-sdk-cap` attributes from the live DOM via MutationObserver and
+  registers each cap with the Gateway. Inbound invocations dispatch as CustomEvents on
+  the annotated element; dev-supplied `addEventListener` handlers respond.
+- Sits inside the page; runtime execution of the actual handler lives in the page's own
+  listener code. Browser Runtime (separate map, #12) is the consumer-facing counterpart
+  that drives the browser, not the registration surface.
+
+What this feature does NOT do
+
+- Does not own a separate capability manifest file (manifest = DOM).
+- Does not maintain a handler registry in the SDK (handlers = page listeners).
+- Does not drive browser automation (that's Browser Runtime).
+- Does not include a marketplace listing, multi-language variants, Chrome DevTools
+  extension, or Service-Worker-based persistence (out of scope for v1).
+
+Scope clarifications
+
+- v1 assumes the same wire protocol as sdk-node (8 lifecycle events, JWT handshake,
+  `sdk.invoke` / `sdk.invoke.result` / `sdk.invoke.error`), reused from
+  `@platform/backend-runtime` (BI[8b]).
+- All gating decisions from T1 (CONTEXT.md:162) remain binding.
+
+Questions and answers locked so far
+
+1. Given T1's DOM-annotation model, do we still need a manifest file at install time?
+   Or does the SDK `init` only take `{ gateway, appId, token }` and rely on
+   `MutationObserver` for the cap inventory?
+
+Answer:
+- No manifest file. `createSdk({ gateway, appId, token, observeRoot?, defaultTier?,
+  defaultVersion? })` — cap inventory comes entirely from `MutationObserver` walking
+  `data-sdk-cap` attributes.
+- Closes ticket sub-questions 1-3 (manifest source, handler source, validation) as
+  moot: no manifest to source, no handler map to load, no manifest schema to validate.
+
+Why:
+- A manifest would be a parallel source of truth devs must keep in sync with the DOM —
+  defeating T1's annotation model.
+- Node SDK needs a manifest because Node has no DOM to introspect; browser SDK has
+  the DOM as its manifest.
+- Dev's handlers live as `addEventListener('sdk:cap:<name>', ...)` on the annotated
+  elements — outside the SDK, so no handler map to load either.
+- Lazy mount is handled by the observer (registers when the element enters the DOM);
+  programmatic invocation from page code uses the SDK's own `invoke()` (same shape
+  as sdk-node).
+- Rules out for v1: caps with no DOM element (use sdk-node for those);
+  programmatic cap registration without a DOM element (defer to v2 unless a real
+  use case shows up).
+
+Source: T1 lock at `agentide/docs/CONTEXT.md:162`; sdk-node's `manifest.ts` shape
+(`packages/sdk-node/src/manifest.ts`) is the parallel we're choosing *not* to mirror.
+
+(No remaining open questions in this section yet — more to follow for cap-extraction
+edge cases: observe scope, attribute set, dedup, removal-on-unmount.)
+
+2. Which `data-sdk-*` attributes does the SDK actually read from annotated elements?
+
+Answer:
+- The SDK reads only `data-sdk-cap` (the cap name) from each annotated element.
+- Tier and version come from config-level defaults applied SDK-wide:
+  `createSdk({ ..., defaultTier: 'act', defaultVersion: '1.0.0' })`.
+- No per-element overrides in v1.
+
+Why:
+- T1's lock authorized the `data-sdk-*` family but did not enumerate its members;
+  T2 fills the family in with restraint.
+- Per-element tier/version overrides fragment the cap model — same cap name
+  registered with different tiers on different elements is a debugging nightmare.
+- Form-fill input mapping is per-element in shape, but is a DX concern that lives in
+  T4 (Frontend developer experience), not a registration concern.
+- Config-level defaults cover the 95% case; the 5% can wait for v2.
+
+Rules out for v1:
+- `data-sdk-tier` per-element override
+- `data-sdk-version` per-element override
+- `data-sdk-input` static default input on the element
+- `data-sdk-target` selector pointing to a different dispatch target
+  (v1 always dispatches on the annotated element itself)
+
+Source: T1 lock at `agentide/docs/CONTEXT.md:162` ("Metadata location = inline
+`data-sdk-*` attributes" — family, not required-many); T4 owns DX surface
+decisions; CONTEXT.md default tier `act` / default version `1.0.0`.
+
+3. What does the SDK observe, and what about pre-mounted elements, shadow DOM, and iframes?
+
+Answer:
+- Initial scan of the observe root on `createSdk()` — picks up all annotated elements
+  already in the DOM.
+- `MutationObserver` watches the observe root for added/removed nodes + attribute
+  changes: `subtree: true, childList: true, attributes: true,
+  attributeFilter: ['data-sdk-cap']`.
+- Default observe root = `document.body`; overridable via
+  `createSdk({ observeRoot: someElement })`.
+- v1 does NOT pierce shadow DOM — `MutationObserver` doesn't observe into shadow
+  roots natively. Devs attach their own observer per root and forward to the SDK
+  via `sdk.observe(rootElement)`.
+- v1 does NOT pierce iframes — cross-origin is impossible; same-origin is out of
+  scope.
+
+Why:
+- Most annotated elements live in the static HTML, not in lazy-loaded JS — initial
+  scan is required, not optional.
+- Shadow DOM piercing is non-trivial and `MutationObserver` doesn't do it natively;
+  explicit `sdk.observe()` per root keeps the design honest.
+- iframe piercing is a security/policy minefield; out of scope for v1.
+
+Rules out for v1:
+- Automatic shadow DOM piercing
+- iframe content observation (cross-origin and same-origin)
+- Configurable `attributeFilter` beyond `data-sdk-cap` (T2 doesn't read other
+  `data-sdk-*` per Q2)
+
+Source: WHATWG DOM Living Standard (`MutationObserver` semantics); Q2 lock
+(only `data-sdk-cap` is read); sdk-node has no analog (no DOM); T1 lock at
+`agentide/docs/CONTEXT.md:162`.
+
+4. If the same `data-sdk-cap="invoice.create"` appears on N elements, do we
+   register once or N times?
+
+Answer:
+- Deduplicate. Register one cap per name.
+- SDK internally tracks the count of annotated elements per cap name.
+- Register when count goes 0 → 1 (first annotated element enters the DOM).
+- Unregister when count goes 1 → 0 (last annotated element leaves the DOM).
+
+Why:
+- The Gateway doesn't care how many UI elements back a cap — it cares that the
+  cap exists.
+- "Which element gets the dispatched event when several are visible" is a
+  runtime question, not a registration question — that's T4 (Frontend developer
+  experience) territory.
+- Counts-based registration is symmetric (add ↔ remove) and idempotent.
+- Matches the principle: *registration = presence of affordance*, not
+  *registration = UI element*.
+
+Rules out for v1:
+- Registering N copies of the same cap with disambiguating suffixes.
+- A `data-sdk-primary` hint to mark a canonical element per cap.
+- Per-element cap identity (e.g., `invoice.create#row-42`).
+
+Source: standard `MutationObserver` add/remove symmetry; T1 lock at
+`agentide/docs/CONTEXT.md:162`; T4 owns DX surface (which element receives the
+dispatched event).
+
+5. When `add_to_cart` is invoked and the page has 50 buttons annotated with
+   `data-sdk-cap="add_to_cart"`, which button(s) receive the dispatched event?
+
+Answer:
+- Fan-out by default. The SDK dispatches a CustomEvent on every annotated
+  element with that cap name.
+- Each listener receives the same `detail: { input, ctx }` and decides whether
+  to act (filter by input match against DOM context like `data-product-id`).
+
+Dev pattern (single delegated listener on `document`):
+  document.addEventListener('sdk:cap:add_to_cart', e => {
+    const btn = e.target.closest('[data-sdk-cap="add_to_cart"]');
+    if (!btn) return;
+    if (Number(btn.dataset.productId) === e.detail.input.productId) {
+      addToCart(btn);
+    }
+  });
+
+Why:
+- The SDK has no way to know which button is "right" for a given input — only
+  the dev knows (via DOM context).
+- Fan-out makes the SDK dumb and the dev explicit — easier to debug than hidden
+  routing.
+- The CustomEvent is a signal, not an action — listeners are cheap; the filter
+  is the dev's job.
+- Matches T1's lock ("CustomEvent DOM dispatch") without forcing the SDK to
+  make per-invocation element-selection decisions.
+
+Rules out for v1:
+- SDK picking one element (which one? first? last? visible? — all arbitrary).
+- Dev-supplied dispatch handler at registration time (this is what sdk-node does;
+  we're choosing not to mirror it).
+- Per-element dispatch targeting via attributes (ruled out in Q2).
+- A "primary element" marker per cap (ruled out in Q4).
+
+Source: standard `CustomEvent` semantics (WHATWG DOM); T1 lock at
+`agentide/docs/CONTEXT.md:162`; Q2 lock (no per-element target attribute); Q4
+lock (one cap per name, fan-out resolves the multi-element case).
+
+T2 (Manifest and handler transport in browser) is fully resolved. The four
+ticket sub-questions (manifest source, handler source, validation, cap inventory
+model) are all closed by Q1 (no manifest), and the extraction edge cases
+(attribute set, observe scope, dedup, dispatch target) are closed by Q2-Q5.
+Awaiting T3 (lifecycle), T4 (DX prototype), T5 (transport), T6 (package shape),
+and T7 (boundary doc) to complete the map.

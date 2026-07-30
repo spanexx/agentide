@@ -66,7 +66,7 @@ Without 8a and 8b, the kernel works but only for the 25 platform caps — runtim
 
 | # | Topic slug | Scope | Depends on | Source doc |
 |---|---|---|---|---|
-| 11 | `sdk-browser` | Register browser capabilities, UI state, browser↔Gateway communication. Package: `@platform/sdk-browser` (Frontend SDK role — single package, no per-language variants since it's inherently browser JS/TS) | `gateway-core`, `capability-registry` | Agentide → Section 6, Phase 4 |
+| 11 | `sdk-browser` | Register browser capabilities, UI state, browser↔Gateway communication. Package: `@platform/sdk-browser` (Frontend SDK role — single package, no per-language variants since it's inherently browser JS/TS). Wayfinder chart live at `docs/wayfinder/sdk-browser/map.md` (destination B — pack shipped via decisions → `delivery: feature-pipeline`); 7 open tickets. | `gateway-core`, `capability-registry` | Agentide → Section 6, Phase 4 |
 | 12 | `browser-runtime` | Launch/close browser, tabs, navigate, click, type, screenshot — session-scoped, owns its own resources | `session-manager`, `sdk-browser`, `permission-tiering` | Runtime Capabilities → Browser Runtime example |
 
 ## Tier 5 — Visibility
