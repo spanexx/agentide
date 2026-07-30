@@ -29,3 +29,15 @@ Phase 7: drift check + ship the gateway-sdk-dispatch pack. Fix the 3 existing li
 Step back from mcp-adapter. User's audit: 4 real inconsistencies need resolution before building the next layer — event-bus doc duplication (event-bus vs event-bus-b), competing lockfiles (npm + pnpm), D-1 session-manager drift, plugin:<id> dispatch seam incomplete. Backlog gap: scripts/backlog/ outside git. Don't proceed to mcp-adapter until drift is resolved.
 
 ---
+
+## 2026-07-30 07:24:25 | source: direct
+
+Tackle audit issues 5 & 6: (5) plugin:<id> dispatch seam in gateway-core/src/dispatch.ts (real work — plugin-manager needs handleInvocation API), (6) scripts/backlog/ — user previously said 'we don't need those' so this is a discussion/decision item, not work.
+
+---
+
+## 2026-07-30 07:45:34 | source: direct
+
+Decision: DEFER Issue 5 (plugin:<id> dispatch seam). Reasons: (1) design question unresolved — how plugins register handler functions (in-process JS / child-process IPC / forked module); (2) no concrete consumer yet (browser-runtime is Tier 4, blocked on BI[8a); (3) current stub is non-blocking with retryable=true; (4) doing it wrong locks in a wrong interface. Recorded as D-29 in drift.md. BI[8a] reopens when BI[12 browser-runtime] starts — browser-runtime IS the first plugin:<id> consumer, so its requirements constrain the API.
+
+---
