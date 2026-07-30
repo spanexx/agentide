@@ -47,3 +47,15 @@ Decision: DEFER Issue 5 (plugin:<id> dispatch seam). Reasons: (1) design questio
 Implement BI[8a] gateway-plugin-dispatch per the GRILL. Phase 1 scaffold + types. Manifest gains runtime.entry field; plugin-manager gains handleInvocation API; dispatch.ts swaps the stub.
 
 ---
+
+## 2026-07-30 09:00:47 | source: feature-pipeline:gateway-plugin-dispatch
+
+Phase 1: write PRD-TRD-gateway-plugin-dispatch.md per skill template. Sections: why, behavioral spec (8 scenarios matching GRILL), simulation contract, technical design (data models + API contracts + deps + architecture), non-goals. 80-150 lines target, hard cap 350.
+
+---
+
+## 2026-07-30 09:09:54 | source: feature-pipeline:gateway-plugin-dispatch
+
+Phase 2: IMPL-gateway-plugin-dispatch.md. PRD-TRD approved with Option B (translate plugin-manager errors to GATEWAY_* codes via kernel try/catch in dispatch.ts). Phases: 1 (already done at 162b4b2) → 2 (concurrent-lifecycle tests) → 3 (gateway error codes) → 4 (dispatch.ts swap) → 5 (integration test) → 6 (drift+sim+ship). Opensrc empty (no new deps). Rollout: zero-migration (no in-the-wild plugins have handlers to migrate to).
+
+---
