@@ -21,6 +21,7 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
+    "@platform/backend-runtime": "workspace:*",
     "@platform/capability-registry": "workspace:*",
     "@platform/event-bus": "workspace:*",
     "@platform/platform-capabilities": "workspace:*",

@@ -22,6 +22,7 @@ function fakeSocket(): WebSocketLike & { isClosed(): boolean; getCloseCode(): nu
   return {
     isClosed: () => closed,
     getCloseCode: () => closeCode,
+    send: () => { /* noop for registry tests */ },
     close: (code?: number) => {
       closed = true;
       if (code !== undefined) closeCode = code;
@@ -57,6 +58,7 @@ describe("ConnectionRegistry", () => {
   it("accept() does not crash when closing the previous socket throws (defensive)", () => {
     const reg = new ConnectionRegistry();
     const oldSock: WebSocketLike = {
+      send: () => { /* noop */ },
       close: () => {
         throw new Error("already closed");
       },

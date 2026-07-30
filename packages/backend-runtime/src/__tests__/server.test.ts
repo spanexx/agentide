@@ -389,3 +389,254 @@ describe("Phase 3: capability registration bridge", () => {
     sock2.close();
   });
 });
+
+describe("Phase 4: dispatch round-trip", () => {
+  let bus: EventBus;
+  let clock: FakeClock;
+  let secret: Uint8Array;
+  let registry: CapabilityRegistry;
+  let runtime: BackendRuntime;
+  let port: number;
+
+  beforeEach(async () => {
+    bus = createEventBus();
+    clock = new FakeClock();
+    secret = secretFrom("test-1");
+    registry = createCapabilityRegistry(bus);
+    runtime = createBackendRuntime({
+      port: 0,
+      tokenSecret: secret,
+      eventBus: bus,
+      capabilityRegistry: registry,
+      clock,
+      handlerTimeoutMs: 5_000,
+    });
+    await runtime.start();
+    const addr = runtime.address();
+    if (!addr) throw new Error("runtime.address() returned null after start()");
+    port = addr.port;
+  });
+
+  afterEach(async () => {
+    await runtime.stop();
+  });
+
+  function wsUrl(): string { return `ws://127.0.0.1:${port}`; }
+
+  async function _connectAndAuthWithRegisteredCap(appId: string, capName: string): Promise<WebSocket> {
+    const events = collectEvents(bus);
+    const sock = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken({ tenantId: "acme", callerId: appId }, secret, clock),
+    }));
+    await waitFor(() => events.accepted.length === 1, 1000);
+    sock.send(JSON.stringify({
+      type: "sdk.capability.register",
+      name: capName,
+      description: `${capName} handler`,
+      version: "1.0.0",
+      permissions: "",
+      tier: "",
+    }));
+    await waitFor(() => registry.describe(capName).capability !== null, 1000);
+    return sock;
+  }
+
+  // Read all incoming messages on a socket into a buffer
+  function startReading(sock: WebSocket): { messages: unknown[]; close: () => void } {
+    const messages: unknown[] = [];
+    const handler = (raw: WebSocket.RawData) => {
+      try {
+        messages.push(JSON.parse(raw.toString()));
+      } catch {
+        // ignore non-JSON
+      }
+    };
+    sock.on("message", handler);
+    return { messages, close: () => sock.off("message", handler) };
+  }
+
+  // Helper: connect + auth + register a cap. Returns the socket so each test
+  // can drive its own dispatch and respond shape.
+
+  it("success: dispatchInvocation returns SDK's payload via sdk.invoke.result", async () => {
+    const events = collectEvents(bus);
+    const sock = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken({ tenantId: "acme", callerId: "invoke-app" }, secret, clock),
+    }));
+    await waitFor(() => events.accepted.length === 1, 1000);
+    sock.send(JSON.stringify({
+      type: "sdk.capability.register",
+      name: "customer.read",
+      description: "x",
+      version: "1.0.0",
+      permissions: "",
+      tier: "",
+    }));
+    await waitFor(() => registry.describe("customer.read").capability !== null, 1000);
+
+    const reader = startReading(sock);
+    const dispatchPromise = runtime.dispatchInvocation(
+      "backend-sdk-invoke-app",
+      { name: "customer.read", version: "1.0.0", type: "business", description: "x", permissions: [], owner: "backend-sdk-invoke-app", tier: null },
+      { id: "c-042" },
+      undefined,
+    );
+
+    // Wait for sdk.invoke to arrive on the socket
+    let invokeMsg: { callId: string } | undefined;
+    await waitFor(() => {
+      invokeMsg = reader.messages.find(
+        (x) => typeof x === "object" && x !== null && (x as { type?: string }).type === "sdk.invoke",
+      ) as { callId: string } | undefined;
+      return invokeMsg !== undefined;
+    }, 2000);
+
+    sock.send(JSON.stringify({
+      type: "sdk.invoke.result",
+      callId: invokeMsg!.callId,
+      payload: { id: "c-042", name: "Customer 042" },
+    }));
+
+    await expect(dispatchPromise).resolves.toEqual({ id: "c-042", name: "Customer 042" });
+    sock.close();
+  });
+
+  it("HANDLER_ERROR maps to GATEWAY_INTERNAL_ERROR via dispatchInvocation", async () => {
+    const events = collectEvents(bus);
+    const sock = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken({ tenantId: "acme", callerId: "err-app" }, secret, clock),
+    }));
+    await waitFor(() => events.accepted.length === 1, 1000);
+    sock.send(JSON.stringify({
+      type: "sdk.capability.register",
+      name: "x.y",
+      description: "x",
+      version: "1.0.0",
+      permissions: "",
+      tier: "",
+    }));
+    await waitFor(() => registry.describe("x.y").capability !== null, 1000);
+
+    const reader = startReading(sock);
+    const dispatchPromise = runtime.dispatchInvocation(
+      "backend-sdk-err-app",
+      { name: "x.y", version: "1.0.0", type: "business", description: "x", permissions: [], owner: "backend-sdk-err-app", tier: null },
+      {},
+      undefined,
+    );
+
+    let invokeMsg: { callId: string } | undefined;
+    await waitFor(() => {
+      invokeMsg = reader.messages.find(
+        (x) => typeof x === "object" && x !== null && (x as { type?: string }).type === "sdk.invoke",
+      ) as { callId: string } | undefined;
+      return invokeMsg !== undefined;
+    }, 2000);
+
+    sock.send(JSON.stringify({
+      type: "sdk.invoke.error",
+      callId: invokeMsg!.callId,
+      code: "HANDLER_ERROR",
+      message: "boom",
+    }));
+
+    await expect(dispatchPromise).rejects.toMatchObject({
+      code: "GATEWAY_INTERNAL_ERROR",
+      retryable: false,
+    });
+    sock.close();
+  });
+
+  it("HANDLER_NOT_FOUND maps to GATEWAY_CAPABILITY_NOT_FOUND via dispatchInvocation", async () => {
+    const events = collectEvents(bus);
+    const sock = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken({ tenantId: "acme", callerId: "nf-app" }, secret, clock),
+    }));
+    await waitFor(() => events.accepted.length === 1, 1000);
+    sock.send(JSON.stringify({
+      type: "sdk.capability.register",
+      name: "x.y",
+      description: "x",
+      version: "1.0.0",
+      permissions: "",
+      tier: "",
+    }));
+    await waitFor(() => registry.describe("x.y").capability !== null, 1000);
+
+    const reader = startReading(sock);
+    const dispatchPromise = runtime.dispatchInvocation(
+      "backend-sdk-nf-app",
+      { name: "x.y", version: "1.0.0", type: "business", description: "x", permissions: [], owner: "backend-sdk-nf-app", tier: null },
+      {},
+      undefined,
+    );
+
+    let invokeMsg: { callId: string } | undefined;
+    await waitFor(() => {
+      invokeMsg = reader.messages.find(
+        (x) => typeof x === "object" && x !== null && (x as { type?: string }).type === "sdk.invoke",
+      ) as { callId: string } | undefined;
+      return invokeMsg !== undefined;
+    }, 2000);
+
+    sock.send(JSON.stringify({
+      type: "sdk.invoke.error",
+      callId: invokeMsg!.callId,
+      code: "HANDLER_NOT_FOUND",
+      message: "no such handler",
+    }));
+
+    await expect(dispatchPromise).rejects.toMatchObject({
+      code: "GATEWAY_CAPABILITY_NOT_FOUND",
+    });
+    sock.close();
+  });
+
+  it("socket closed mid-invoke rejects with GATEWAY_SDK_UNREACHABLE", async () => {
+    const events = collectEvents(bus);
+    const sock = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken({ tenantId: "acme", callerId: "drop-app" }, secret, clock),
+    }));
+    await waitFor(() => events.accepted.length === 1, 1000);
+    sock.send(JSON.stringify({
+      type: "sdk.capability.register",
+      name: "x.y",
+      description: "x",
+      version: "1.0.0",
+      permissions: "",
+      tier: "",
+    }));
+    await waitFor(() => registry.describe("x.y").capability !== null, 1000);
+
+    const dispatchPromise = runtime.dispatchInvocation(
+      "backend-sdk-drop-app",
+      { name: "x.y", version: "1.0.0", type: "business", description: "x", permissions: [], owner: "backend-sdk-drop-app", tier: null },
+      {},
+      undefined,
+    );
+
+    // SDK drops the connection without responding
+    await new Promise((r) => setTimeout(r, 50));
+    sock.close();
+
+    await expect(dispatchPromise).rejects.toMatchObject({
+      code: "GATEWAY_SDK_UNREACHABLE",
+      retryable: true,
+    });
+  });
+});

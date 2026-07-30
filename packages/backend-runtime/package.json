@@ -23,6 +23,7 @@
   "dependencies": {
     "@platform/capability-registry": "workspace:*",
     "@platform/event-bus": "workspace:*",
+    "@platform/gateway-core": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

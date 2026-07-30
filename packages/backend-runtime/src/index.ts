@@ -33,9 +33,11 @@ export type {
 } from "./types.js";
 
 // CID:index-001 - createBackendRuntime
-// Purpose: factory — wires config into the server, exposes the public shape
-// Phase 2: start/stop + address + connectionCount live. dispatchInvocation
-//   remains a stub (throws) until Phase 4 lands the SDK round-trip.
+// Purpose: factory — wires config into the server, exposes the public shape.
+// Phases 2-4 land: start/stop + address + connectionCount + dispatchInvocation.
+//   dispatchInvocation passes `capability.name` through to the dispatcher
+//   (the SDK looks up handlers by name; the rest of the CapabilityRecord
+//   is metadata the dispatcher doesn't need).
 // Uses: server.ts (ServerHandle), types.ts
 // Used by: agentide composition (Phase 6), tests
 export function createBackendRuntime(config: BackendRuntimeConfig): BackendRuntime {
@@ -51,12 +53,12 @@ export function createBackendRuntime(config: BackendRuntimeConfig): BackendRunti
     },
 
     async dispatchInvocation(
-      _owner: string,
-      _capability: CapabilityRecord,
-      _input: BackendValue,
-      _sessionId: string | undefined,
+      owner: string,
+      capability: CapabilityRecord,
+      input: BackendValue,
+      sessionId: string | undefined,
     ): Promise<BackendValue> {
-      throw new Error("Backend Runtime dispatch not yet implemented (Phase 4 stub)");
+      return server.dispatchInvocation(owner, capability.name, input, sessionId);
     },
 
     connectionCount(): number {

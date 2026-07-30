@@ -29,6 +29,7 @@ import { WebSocketServer, type WebSocket as WSWebSocket } from "ws";
 import type { CapabilityRecord } from "@platform/capability-registry";
 import type { BackendRuntimeConfig, BackendValue, Clock } from "./types.js";
 import { ConnectionRegistry } from "./registry.js";
+import { InvocationDispatcher } from "./dispatch.js";
 import { emitConnectionAccepted, emitConnectionClosed } from "./events.js";
 import { verifyToken } from "./verify.js";
 
@@ -37,6 +38,12 @@ export interface ServerHandle {
   stop(): Promise<void>;
   address(): { readonly port: number; readonly host: string } | null;
   connectionCount(): number;
+  dispatchInvocation(
+    owner: string,
+    capabilityName: string,
+    input: BackendValue,
+    sessionId: string | undefined,
+  ): Promise<BackendValue>;
 }
 
 /**
@@ -64,6 +71,9 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
   // handlers must NOT publish a sdk.connection.closed event (the new owner
   // already won). Keyed by socket identity via a WeakMap so we don't leak.
   const replacedSockets = new WeakSet<object>();
+  // Dispatcher is hoisted to the closure scope so dispatchInvocation() (also
+  // in the closure) can see it after start() assigns. Initialized in start().
+  let dispatcher: InvocationDispatcher | null = null;
   let wss: WebSocketServer | null = null;
   let boundAddress: { port: number; host: string } | null = null;
 
@@ -77,7 +87,7 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
    *      its appId, publish sdk.connection.closed {reason:"dropped"}. If a
    *      replacement happened, the registry was already overwritten — no event.
    */
-  function handleConnection(socket: WSWebSocket): void {
+  function handleConnection(socket: WSWebSocket, dispatcher: InvocationDispatcher): void {
     const openedAt = clock.now();
     let authedAppId: string | null = null;
 
@@ -129,8 +139,17 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
         return;
       }
 
-      // Post-auth: process sdk.capability.register (Phase 3). sdk.invoke /
-      // sdk.invoke.result / sdk.invoke.error land in Phase 4.
+      // Post-auth: Phase 4 wires sdk.invoke / sdk.invoke.result /
+      // sdk.invoke.error to the InvocationDispatcher. Phase 3 handles
+      // sdk.capability.register (below).
+      if (isInvokeResultMessage(msg)) {
+        dispatcher.handleResult(msg.callId, msg.payload);
+        return;
+      }
+      if (isInvokeErrorMessage(msg)) {
+        dispatcher.handleError(msg.callId, msg.code, msg.message);
+        return;
+      }
       if (isCapabilityRegisterMessage(msg)) {
         const owner = `backend-sdk-${authedAppId}`;
         // Business caps (the type SDKs register) MUST have tier=null per BI[7]
@@ -158,8 +177,11 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
         void config.capabilityRegistry
           .register(owner, { owner, capabilities: next })
           .catch((err: unknown) => {
-            console.log("[debug] register FAILED", msg.name, err);
+            // Validation errors (e.g. invalid name) — close the socket so the
+            // SDK knows its registration was rejected. capability.clash errors
+            // are also surfaced here.
             safeClose(socket, 1000, "register-failed");
+            void err;
           });
         return;
       }
@@ -177,6 +199,9 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
       if (replacedSockets.has(socket as object)) return; // server-initiated replacement; caller already handled
       const current = registry.get(authedAppId);
       if (!current || current.socket !== socket) return; // registry no longer holds us
+      // Reject every in-flight invocation owned by this appId — the connection
+      // is gone and the SDK can no longer respond. Phase 4 dispatch path.
+      dispatcher.rejectAllPending(authedAppId, "socket closed");
       registry.remove(authedAppId);
       capsByAppId.delete(authedAppId); // also clear the per-connection accumulator
       void config.capabilityRegistry.removeByOwner(`backend-sdk-${authedAppId}`);
@@ -199,8 +224,12 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
    */
   async function start(): Promise<{ readonly port: number; readonly host: string }> {
     if (wss !== null) throw new Error("server already started");
+    if (dispatcher !== null) throw new Error("dispatcher already initialized");
+    // Construct the dispatcher once; every per-connection handler shares it
+    // so that pending invocations are tracked centrally across the server.
+    dispatcher = new InvocationDispatcher(registry, config.handlerTimeoutMs ?? 30_000, clock);
     wss = new WebSocketServer({ port: config.port, host: "127.0.0.1" });
-    wss.on("connection", handleConnection);
+    wss.on("connection", (socket) => handleConnection(socket, dispatcher as InvocationDispatcher));
     await new Promise<void>((resolve, reject) => {
       wss!.once("listening", () => resolve());
       wss!.once("error", (err) => reject(err));
@@ -248,7 +277,17 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
     return registry.count();
   }
 
-  return { start, stop, address, connectionCount };
+  function dispatchInvocation(
+    owner: string,
+    capabilityName: string,
+    input: BackendValue,
+    sessionId: string | undefined,
+  ): Promise<BackendValue> {
+    if (dispatcher === null) throw new Error("dispatcher not initialized; call start() first");
+    return dispatcher.dispatchInvocation(owner, capabilityName, input, sessionId);
+  }
+
+  return { start, stop, address, connectionCount, dispatchInvocation };
 }
 
 function isAuthMessage(value: { readonly [key: string]: BackendValue }): value is { type: "sdk.auth"; token: string } {
@@ -284,6 +323,41 @@ function isCapabilityRegisterErrorMessage(value: { readonly [key: string]: Backe
     value["type"] === "sdk.capability.register.error" &&
     typeof value["name"] === "string" &&
     typeof value["reason"] === "string"
+  );
+}
+
+interface InvokeResultMessage {
+  type: "sdk.invoke.result";
+  callId: string;
+  payload: BackendValue;
+  // Index signature for compatibility with the { [key: string]: BackendValue }
+  // shape produced by JSON.parse; without it the type predicate's parameter
+  // and its narrowed result don't unify.
+  readonly [key: string]: import("./types.js").BackendValue | BackendValue;
+}
+function isInvokeResultMessage(value: { readonly [key: string]: BackendValue }): value is InvokeResultMessage {
+  // callId: required string. payload: required (any BackendValue, including
+  // null). We don't reject null payloads — a handler can legitimately return null.
+  return (
+    value["type"] === "sdk.invoke.result" &&
+    typeof value["callId"] === "string" &&
+    "payload" in value
+  );
+}
+
+interface InvokeErrorMessage {
+  type: "sdk.invoke.error";
+  callId: string;
+  code: string;
+  message: string;
+  readonly [key: string]: import("./types.js").BackendValue;
+}
+function isInvokeErrorMessage(value: { readonly [key: string]: BackendValue }): value is InvokeErrorMessage {
+  return (
+    value["type"] === "sdk.invoke.error" &&
+    typeof value["callId"] === "string" &&
+    typeof value["code"] === "string" &&
+    typeof value["message"] === "string"
   );
 }
 

@@ -110,6 +110,7 @@ export async function createGateway(
   const tenantStore = new TenantStore(tenantsPath, fs);
   await tenantStore.load();
   const secret = await loadOrCreateSecret(secretPath, fs);
+  const backendRuntime = config.backendRuntime;
 
   const startedAt = clock.now();
   const handlers = buildGatewayHandlers({
@@ -141,6 +142,7 @@ export async function createGateway(
         clock,
         handlerTimeoutMs,
         secret,
+        backendRuntime,
       }),
 
     registerAdapter: async (adapter: Adapter): Promise<void> => {

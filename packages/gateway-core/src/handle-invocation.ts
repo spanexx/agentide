@@ -9,6 +9,7 @@
  * Quick lookup: rg -n "CID:handle-" packages/gateway-core/src/handle-invocation.ts
  */
 
+import type { BackendRuntime } from "@platform/backend-runtime";
 import type { EventBus } from "@platform/event-bus";
 import type { CapabilityRegistry } from "@platform/capability-registry";
 import type { SessionManager } from "@platform/session-manager";
@@ -71,6 +72,7 @@ export interface HandleInvocationCtx {
   readonly clock: Clock;
   readonly handlerTimeoutMs: number;
   readonly secret: Uint8Array;
+  readonly backendRuntime?: BackendRuntime;
 }
 
 // CID:handle-001 - handleInvocation
@@ -254,6 +256,7 @@ export async function handleInvocation(
       handlers: ctx.handlers,
       clock: ctx.clock,
       handlerTimeoutMs: ctx.handlerTimeoutMs,
+      backendRuntime: ctx.backendRuntime,
     });
 
     // (9) Audit + event + success return.

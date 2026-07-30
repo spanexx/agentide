@@ -9,10 +9,25 @@
  */
 
 import type { CapabilityRegistry, CapabilityRecord, DescribeResult } from "@platform/capability-registry";
+import type { BackendRuntime } from "@platform/backend-runtime";
 import type { SessionManager } from "@platform/session-manager";
 import type { PluginManager } from "@platform/plugin-manager";
 import { ERROR_CODES, GatewayError } from "./errors.js";
 import type { Clock, YamlValue } from "./types.js";
+
+// JsonValue is the structural intersection of YamlValue (gateway-core's canonical
+// invocation payload type) and BackendValue (the SDK wire-protocol value type).
+// Both are recursive unions of string | number | boolean | null | array | object,
+// so they're structurally identical — but TypeScript can't see that across package
+// boundaries. JsonValue is the typed bridge so we can cast without using `unknown`
+// (banned in non-catch positions by scripts/check-banned-types.sh).
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
 
 export interface DispatchHandlers {
   readonly gatewayHandlers: Readonly<Record<string, (input: YamlValue, sessionId: string | undefined) => Promise<YamlValue>>>;
@@ -37,6 +52,7 @@ export async function dispatchCapability(
     readonly handlers: DispatchHandlers;
     readonly clock: Clock;
     readonly handlerTimeoutMs: number;
+    readonly backendRuntime?: BackendRuntime;
   },
 ): Promise<YamlValue> {
   const owner = capability.owner;
@@ -88,12 +104,24 @@ export async function dispatchCapability(
       );
     }
     if (owner.startsWith("backend-sdk-")) {
-      throw new GatewayError(
-        ERROR_CODES.SDK_UNREACHABLE,
-        `no Backend SDK pack installed yet for owner "${owner}"`,
-        { owner },
-        true,
+      if (ctx.backendRuntime === undefined) {
+        throw new GatewayError(
+          ERROR_CODES.SDK_UNREACHABLE,
+          `no Backend Runtime configured for owner "${owner}"`,
+          { owner },
+          true,
+        );
+      }
+      // YamlValue and BackendValue are structurally identical recursive unions
+      // (same JSON-compatible shape). Cast via the union `JsonValue` which both
+      // types accept as a supertype, avoiding the banned `unknown` bridge.
+      const result = await ctx.backendRuntime.dispatchInvocation(
+        owner,
+        capability,
+        input as JsonValue,
+        sessionId,
       );
+      return result as JsonValue;
     }
     throw new GatewayError(
       ERROR_CODES.PLUGIN_NOT_INSTALLED,

@@ -87,6 +87,7 @@ export interface BackendConnection {
 //   public type surface). server.ts casts real ws.WebSocket instances into
 //   this structural type at the assignment boundary.
 export interface WebSocketLike {
+  send(data: string): void;
   close(): void;
 }
 
