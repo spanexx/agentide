@@ -9,6 +9,10 @@
  *   - disabled:    plugin.disabled
  *   - cleanup:     plugin.cleanup
  *
+ * BI[8a] gateway-plugin-dispatch: adds handlerLoadFailed and handlerInvokeFailed
+ *   for surfacing handler-loading/invocation errors to subscribers. Both are
+ *   fire-and-forget — the synchronous code path doesn't await them.
+ *
  * CID Index:
  * CID:events-001 -> EventPublisher
  * CID:events-002 -> EventPublisher.installed
@@ -18,6 +22,8 @@
  * CID:events-006 -> EventPublisher.enabled
  * CID:events-007 -> EventPublisher.disabled
  * CID:events-008 -> EventPublisher.cleanup
+ * CID:events-009 -> EventPublisher.handlerLoadFailed
+ * CID:events-010 -> EventPublisher.handlerInvokeFailed
  *
  * Quick lookup: rg -n "CID:events-" packages/plugin-manager/src/events.ts
  */
@@ -28,6 +34,8 @@ import type {
   PluginCleanupPayload,
   PluginDisabledPayload,
   PluginEnabledPayload,
+  PluginHandlerErrorPayload,
+  PluginHandlerLoadedPayload,
   PluginInstalledPayload,
   PluginReloadedPayload,
   PluginUninstalledPayload,
@@ -87,5 +95,38 @@ export class EventPublisher {
   cleanup(id: string): void {
     const payload: PluginCleanupPayload = { id };
     void this.eventBus.publish<PluginCleanupPayload>("plugin.cleanup", payload);
+  }
+
+  // CID:events-009 - handlerLoadFailed
+  // Purpose: fire-and-forget notification when a plugin's entry module fails
+  //   to load (HANDLER_LOAD_FAILED). The install record's `lastError` is the
+  //   primary signal; this event is for subscribers (dashboards, alerts) that
+  //   need to react without polling the store.
+  handlerLoadFailed(record: InstallRecord | null, err: Error): void {
+    if (record === null) return;
+    const payload: PluginHandlerLoadedPayload = {
+      id: record.id,
+      version: record.version,
+      loadedAt: Date.now(),
+      ok: false,
+      error: err.message,
+    };
+    void this.eventBus.publish<PluginHandlerLoadedPayload>("plugin.handler.loaded", payload);
+  }
+
+  // CID:events-010 - handlerInvokeFailed
+  // Purpose: fire-and-forget notification when a plugin's handler throws
+  //   during invocation (HANDLER_ERROR). The caller already gets the
+  //   structured PluginManagerError; this event is for ops tooling that
+  //   wants to track which plugin handlers are flaky.
+  handlerInvokeFailed(record: InstallRecord | null, capability: string, err: Error): void {
+    if (record === null) return;
+    const payload: PluginHandlerErrorPayload = {
+      id: record.id,
+      capability,
+      at: Date.now(),
+      error: err.message,
+    };
+    void this.eventBus.publish<PluginHandlerErrorPayload>("plugin.handler.error", payload);
   }
 }

@@ -79,10 +79,16 @@ function coerceManifest(raw: YamlValue): PluginManifest {
   };
 }
 
+// CID:manifest-005 - coerceTypeKey (BI[8a] gateway-plugin-dispatch)
+// Purpose: extract the typed sub-object for the plugin's discriminator key.
+//   For "runtime" plugins, preserves the optional `entry` field (path to a
+//   Node ESM module loaded at install time per BI[8a]). For "service" and
+//   "developer", entry isn't applicable; only `id` is required.
+// Used by: coerceManifest (above).
 function coerceTypeKey(
   value: YamlValue,
   type: PluginType,
-): { id: string } | undefined {
+): { readonly id: string; readonly entry?: string } | undefined {
   if (value === undefined || value === null) return undefined;
   if (!isYamlObject(value)) {
     throw new PluginManagerError(
@@ -98,6 +104,21 @@ function coerceTypeKey(
       `manifest type key "${type}" must have a string "id"`,
       { expected: "string", got: typeof id, field: "id", type },
     );
+  }
+  // For runtime plugins, the optional `entry` field is the path to a Node
+  // ESM module to dynamic-import at install time. We validate it's a string
+  // (or undefined) here; the existence check happens in the loader, not
+  // during manifest parsing.
+  if (type === "runtime") {
+    const entry = value.entry;
+    if (entry !== undefined && typeof entry !== "string") {
+      throw new PluginManagerError(
+        ERROR_CODES.MANIFEST_INVALID,
+        `manifest runtime.entry must be a string (path to a Node ESM module)`,
+        { expected: "string", got: typeof entry, field: "entry" },
+      );
+    }
+    return entry === undefined ? { id } : { id, entry };
   }
   return { id };
 }

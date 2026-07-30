@@ -41,3 +41,9 @@ Tackle audit issues 5 & 6: (5) plugin:<id> dispatch seam in gateway-core/src/dis
 Decision: DEFER Issue 5 (plugin:<id> dispatch seam). Reasons: (1) design question unresolved — how plugins register handler functions (in-process JS / child-process IPC / forked module); (2) no concrete consumer yet (browser-runtime is Tier 4, blocked on BI[8a); (3) current stub is non-blocking with retryable=true; (4) doing it wrong locks in a wrong interface. Recorded as D-29 in drift.md. BI[8a] reopens when BI[12 browser-runtime] starts — browser-runtime IS the first plugin:<id> consumer, so its requirements constrain the API.
 
 ---
+
+## 2026-07-30 08:14:23 | source: feature-pipeline:gateway-plugin-dispatch
+
+Implement BI[8a] gateway-plugin-dispatch per the GRILL. Phase 1 scaffold + types. Manifest gains runtime.entry field; plugin-manager gains handleInvocation API; dispatch.ts swaps the stub.
+
+---

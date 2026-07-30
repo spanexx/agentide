@@ -1,0 +1,11 @@
+runtime:
+  id: browser
+  entry: ./browser-handlers.mjs
+version: "1.0"
+capabilities:
+  - browser.navigate
+  - browser.click
+  - name: browser.screenshot
+    tier: read
+metadata:
+  description: Browser automation runtime with entry point

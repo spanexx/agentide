@@ -46,8 +46,13 @@ export type ManifestCapability = string | { readonly name: string; readonly tier
 // CID:types-002 - PluginManifest
 // Purpose: parsed YAML shape — exactly one of the three type keys per valid manifest
 // Used by: parseManifest + validateManifest; InstallRecord.type derives from manifestType()
+//
+// BI[8a] gateway-plugin-dispatch: `runtime.entry` is the path to a Node ESM module
+// loaded via dynamic import at install time. The module's default export is
+// `{ [capabilityName]: async (input, ctx) => result }`. Optional — plugins without
+// `entry` install cleanly but throw HANDLER_NOT_FOUND on invocation.
 export interface PluginManifest {
-  readonly runtime?: { readonly id: string };
+  readonly runtime?: { readonly id: string; readonly entry?: string };
   readonly service?: { readonly id: string };
   readonly developer?: { readonly id: string };
   readonly version: string;
@@ -166,9 +171,40 @@ export interface PluginCleanupPayload {
   readonly id: string;
 }
 
+// CID:types-017 - PluginHandlerLoadedPayload (BI[8a] gateway-plugin-dispatch)
+// Purpose: payload for plugin.handler.loaded event. Emitted on install/reload
+//   after the entry module is dynamic-imported. ok=true means the handler map
+//   was successfully populated; ok=false means the import or shape check
+//   failed and the install record's lastError field carries the error.
+export interface PluginHandlerLoadedPayload {
+  readonly id: string;
+  readonly version: string;
+  readonly loadedAt: number;
+  readonly ok: boolean;
+  readonly error?: string;
+}
+
+// CID:types-018 - PluginHandlerErrorPayload (BI[8a] gateway-plugin-dispatch)
+// Purpose: payload for plugin.handler.error event. Emitted when a plugin's
+//   handler throws during invocation. The caller already received a structured
+//   PluginManagerError; this event is for ops tooling that tracks flaky handlers.
+export interface PluginHandlerErrorPayload {
+  readonly id: string;
+  readonly capability: string;
+  readonly at: number;
+  readonly error: string;
+}
+
 // CID:types-016 - PluginManager
 // Purpose: public lifecycle API — 9 methods (install, installFromRegistry, update, reload, disable, enable, uninstall, list, get)
 // Used by: every consumer; sole entry point is createPluginManager
+//
+// BI[8a] gateway-plugin-dispatch: adds handleInvocation() so gateway-core can
+// dispatch `owner.startsWith("plugin:")` invocations to the plugin's handler map.
+// Throws HANDLER_NOT_FOUND if the plugin has no entry field, the entry failed to
+// load, or the capability name isn't in the handler map. Throws PLUGIN_DISABLED
+// if the plugin is currently disabled. Returns the handler's return value (any
+// JSON-serializable shape).
 export interface PluginManager {
   install(source: string): Promise<InstallRecord>;
   installFromRegistry(id: string): Promise<InstallRecord>;
@@ -177,6 +213,24 @@ export interface PluginManager {
   disable(id: string): Promise<InstallRecord>;
   enable(id: string): Promise<InstallRecord>;
   uninstall(id: string): Promise<void>;
+  /**
+   * BI[8a] gateway-plugin-dispatch. Invoke a runtime plugin's handler by capability
+   * name. The plugin must have a `runtime.entry` in its manifest; the entry is
+   * loaded via dynamic import at install time. Throws HANDLER_NOT_FOUND or
+   * PLUGIN_DISABLED on lookup failure; throws HANDLER_ERROR if the handler
+   * itself throws.
+   *
+   * @param name Capability name (e.g. "browser.navigate"). Must match a key
+   *   in the plugin's handler map.
+   * @param input The CapabilityInvocation input. Passed through to the handler.
+   * @param sessionId Optional session id from the caller's CanonicalInvocation.
+   *   Forwarded to the handler's context argument.
+   */
+  handleInvocation(
+    name: string,
+    input: YamlValue,
+    sessionId: string | undefined,
+  ): Promise<YamlValue>;
   list(): readonly InstallRecord[];
   get(id: string): InstallRecord | null;
 }

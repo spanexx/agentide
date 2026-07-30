@@ -66,6 +66,12 @@ describe("plugin-manager types", () => {
       disable: async () => record,
       enable: async () => record,
       uninstall: async () => undefined,
+      // BI[8a] gateway-plugin-dispatch: handleInvocation added to the
+      // PluginManager interface. The mock here throws — the type test
+      // only checks the interface shape, not the behavior.
+      handleInvocation: async () => {
+        throw new Error("not used in this test");
+      },
       list: () => [record],
       get: () => record,
     };

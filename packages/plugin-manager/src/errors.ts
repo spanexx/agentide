@@ -15,6 +15,11 @@ import type { PluginError, YamlValue } from "./types.js";
 // CID:errors-001 - ERROR_CODES
 // Purpose: stable string identifiers used across every Plugin Manager error path
 // Used by: parseManifest, validateManifest, install/update/reload/disable/enable/uninstall, factory
+//
+// BI[8a] gateway-plugin-dispatch: adds HANDLER_NOT_FOUND (cap name not in the
+// plugin's handler map, or plugin has no entry field), HANDLER_LOAD_FAILED
+// (entry module failed to dynamic-import at install time), and HANDLER_ERROR
+// (the handler itself threw during invocation).
 export const ERROR_CODES = {
   SOURCE_NOT_FOUND: "PLUGIN_SOURCE_NOT_FOUND",
   SOURCE_UNREADABLE: "PLUGIN_SOURCE_UNREADABLE",
@@ -33,6 +38,9 @@ export const ERROR_CODES = {
   ALREADY_ENABLED: "PLUGIN_ALREADY_ENABLED",
   CLEANUP_TIMEOUT: "PLUGIN_CLEANUP_TIMEOUT",
   MARKETPLACE_UNAVAILABLE: "PLUGIN_MARKETPLACE_UNAVAILABLE",
+  HANDLER_NOT_FOUND: "PLUGIN_HANDLER_NOT_FOUND",
+  HANDLER_LOAD_FAILED: "PLUGIN_HANDLER_LOAD_FAILED",
+  HANDLER_ERROR: "PLUGIN_HANDLER_ERROR",
 } as const;
 
 // CID:errors-002 - PluginManagerError
