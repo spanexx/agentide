@@ -56,6 +56,10 @@ mostly a priority call, not a technical blocker.)*
 | 8a | `gateway-plugin-dispatch` | Replace the `MANAGER_UNAVAILABLE` stub in `packages/gateway-core/src/dispatch.ts` for `owner.startsWith("plugin:")`. Add a `handleInvocation(owner, capability, input)` seam to `@platform/plugin-manager`. Wire the runtime plugin handler registry (currently absent) so that registered runtime plugins can actually serve their declared capabilities end-to-end. | `gateway-core`, `plugin-manager` | Runtime Capabilities → Runtime Registration; BI[6] plugin dispatch gap |
 | 8b | `gateway-sdk-dispatch` | Replace the `SDK_UNREACHABLE` stub for `owner.startsWith("backend-sdk-")`. Promote `@platform/sdk-node`'s WebSocket connection into a first-class Backend Runtime component owned by the gateway. Define the `backend-sdk-*` owner routing so the gateway can invoke a registered SDK handler by owner prefix. | `gateway-core`, `sdk-node` | Business Capabilities; Agentide → Section 6, Phase 3 |
 
+**Status of 8b:** SHIPPED 2026-07-30. New package `@platform/backend-runtime` (`server.ts` + `registry.ts` + `dispatch.ts` + `events.ts` + `verify.ts` + `types.ts`), integration with `gateway-core` (`backendRuntime` ctx field on `dispatch`), integration with `agentide` (`backendRuntimePort` on `CreatePlatformConfig` auto-creates + lifecycle-wires the runtime). 41 vitest files / 439 tests pass; build/lint/typecheck/check-banned-types all clean. Future pack `sdk-browser` reuses the same wire protocol.
+
+**Status of 8a:** NOT STARTED. Stub remains in `packages/gateway-core/src/dispatch.ts:82-89`; no runtime plugin handler registry in `@platform/plugin-manager` yet.
+
 Without 8a and 8b, the kernel works but only for the 25 platform caps — runtime plugin capabilities and remote SDK capabilities are unreachable no matter how many adapters are wired. Everything in Tier 3 (adapters, SDKs) is only *genuinely* usable once 8a and 8b land.
 
 ## Tier 4 — Browser-native capability
