@@ -14,7 +14,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { WsClient } from "../client.js";
 import { createSdk } from "../index.js";
 import type { WsClientMessage } from "../client.js";
-import { dispatchIncoming, makeLogger } from "../invoke.js";
 import { createEventBus, type EventBus, type PlatformEvent } from "@platform/event-bus";
 import type {
   SdkConnectedPayload,
