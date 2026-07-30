@@ -15,7 +15,7 @@ import {
 } from "../index.js";
 
 describe("gateway-core types", () => {
-  it("exports ERROR_CODES with all 16 stable strings", () => {
+  it("exports ERROR_CODES with all 18 stable strings", () => {
     expect(ERROR_CODES.AUTH_FAILED).toBe("GATEWAY_AUTH_FAILED");
     expect(ERROR_CODES.TOKEN_INVALID).toBe("GATEWAY_TOKEN_INVALID");
     expect(ERROR_CODES.TOKEN_EXPIRED).toBe("GATEWAY_TOKEN_EXPIRED");
@@ -29,6 +29,9 @@ describe("gateway-core types", () => {
     expect(ERROR_CODES.SDK_UNREACHABLE).toBe("GATEWAY_SDK_UNREACHABLE");
     expect(ERROR_CODES.MANAGER_UNAVAILABLE).toBe("GATEWAY_MANAGER_UNAVAILABLE");
     expect(ERROR_CODES.HANDLER_TIMEOUT).toBe("GATEWAY_HANDLER_TIMEOUT");
+    // BI[8a] Phase 3: plugin-handler error-path codes
+    expect(ERROR_CODES.HANDLER_NOT_FOUND).toBe("GATEWAY_HANDLER_NOT_FOUND");
+    expect(ERROR_CODES.HANDLER_ERROR).toBe("GATEWAY_HANDLER_ERROR");
     expect(ERROR_CODES.INTERNAL_ERROR).toBe("GATEWAY_INTERNAL_ERROR");
     expect(ERROR_CODES.TENANT_MISMATCH).toBe("GATEWAY_TENANT_MISMATCH");
     expect(ERROR_CODES.INVALID_REQUEST).toBe("GATEWAY_INVALID_REQUEST");

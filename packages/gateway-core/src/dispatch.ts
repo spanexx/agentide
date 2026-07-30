@@ -1,9 +1,11 @@
 /*
  * Code Map: capability invocation dispatch
  * - dispatchCapability: owner-prefix-routed dispatch; returns output or throws GatewayError
+ * - translatePluginError: maps PluginManagerError codes to GATEWAY_* codes (BI[8a] Option B)
  *
  * CID Index:
  * CID:dispatch-001 -> dispatchCapability
+ * CID:dispatch-002 -> translatePluginError
  *
  * Quick lookup: rg -n "CID:dispatch-" packages/gateway-core/src/dispatch.ts
  */
@@ -12,6 +14,7 @@ import type { CapabilityRegistry, CapabilityRecord, DescribeResult } from "@plat
 import type { BackendRuntime } from "@platform/backend-runtime";
 import type { SessionManager } from "@platform/session-manager";
 import type { PluginManager } from "@platform/plugin-manager";
+import { ERROR_CODES as PM_ERROR_CODES, PluginManagerError } from "@platform/plugin-manager";
 import { ERROR_CODES, GatewayError } from "./errors.js";
 import type { Clock, YamlValue } from "./types.js";
 
@@ -76,7 +79,10 @@ export async function dispatchCapability(
     }
     if (owner.startsWith("plugin:")) {
       const pluginId = owner.slice("plugin:".length);
-      // Check install + enabled status for clear error semantics.
+      // Check install + enabled status for clear error semantics. These
+      // mirror PluginManager's own checks; running them here first gives
+      // the operator a stable kernel-level code instead of a handler-side
+      // failure when the plugin is simply not loaded.
       const installed = ctx.pluginManager.list().find((p) => p.id === pluginId);
       if (!installed) {
         throw new GatewayError(
@@ -92,16 +98,26 @@ export async function dispatchCapability(
           { pluginId },
         );
       }
-      // NOTE[agent]: runtime plugin handler dispatch is deferred to a follow-up pack.
-      // The Plugin Manager doesn't yet expose a `handleInvocation(owner, capability, input)`
-      // API that returns the registered handler. When that lands, dispatch replaces
-      // the MANAGER_UNAVAILABLE below with a synchronous handler call.
-      throw new GatewayError(
-        ERROR_CODES.MANAGER_UNAVAILABLE,
-        `runtime plugin dispatch is not yet wired (${capability.name})`,
-        { pluginId, capability: capability.name },
-        true,
-      );
+      // BI[8a] Phase 4: real handler dispatch via pluginManager.handleInvocation.
+      // The PM throws PluginManagerError with codes that map to kernel codes
+      // per the Option B matrix in the GRILL:
+      //   PLUGIN_HANDLER_NOT_FOUND  → GATEWAY_HANDLER_NOT_FOUND
+      //   PLUGIN_HANDLER_ERROR      → GATEWAY_HANDLER_ERROR
+      //   anything else             → GATEWAY_INTERNAL_ERROR
+      // Kernel-level HANDLER_TIMEOUT is enforced by the Promise.race below
+      // (handler exceeded handlerTimeoutMs) and is independent of the PM.
+      try {
+        const result = await ctx.pluginManager.handleInvocation(
+          capability.name,
+          input as JsonValue,
+          sessionId,
+        );
+        return result as JsonValue;
+      } catch (err) {
+        // `err` is `unknown` in strict TS; translatePluginError accepts `Error`.
+        // Non-Error throwables fall through to the generic-internal-error branch.
+        throw translatePluginError(err as Error, pluginId, capability.name);
+      }
     }
     if (owner.startsWith("backend-sdk-")) {
       if (ctx.backendRuntime === undefined) {
@@ -145,6 +161,52 @@ export async function dispatchCapability(
   } finally {
     if (timeoutHandle !== undefined) ctx.clock.clearTimeout(timeoutHandle);
   }
+}
+
+// CID:dispatch-002 - translatePluginError
+// Purpose: map a PluginManagerError to a GatewayError per the Option B matrix
+//   PLUGIN_HANDLER_NOT_FOUND  → GATEWAY_HANDLER_NOT_FOUND  (retryable=false)
+//   PLUGIN_HANDLER_ERROR      → GATEWAY_HANDLER_ERROR      (retryable=false)
+//   anything else             → GATEWAY_INTERNAL_ERROR      (retryable=false)
+// Non-PluginManagerError exceptions are wrapped as GATEWAY_INTERNAL_ERROR
+// so the kernel never leaks an un-classified error to MCP adapters.
+// The originalError and pluginErrorCode are preserved in `details` so
+// operators can drill into the source from the audit log.
+// Caller is expected to pass the caught value; we type the parameter as
+// `Error` to satisfy check-banned-types.sh (no `unknown` in function
+// parameters; `unknown` is only allowed in catch clauses).
+export function translatePluginError(
+  err: Error,
+  pluginId: string,
+  capability: string,
+): GatewayError {
+  if (err instanceof PluginManagerError) {
+    switch (err.code) {
+      case PM_ERROR_CODES.HANDLER_NOT_FOUND:
+        return new GatewayError(
+          ERROR_CODES.HANDLER_NOT_FOUND,
+          err.message,
+          { pluginId, capability, originalError: err.message },
+        );
+      case PM_ERROR_CODES.HANDLER_ERROR:
+        return new GatewayError(
+          ERROR_CODES.HANDLER_ERROR,
+          err.message,
+          { pluginId, capability, originalError: err.message },
+        );
+      default:
+        return new GatewayError(
+          ERROR_CODES.INTERNAL_ERROR,
+          `plugin manager error: ${err.message}`,
+          { pluginId, capability, pluginErrorCode: err.code },
+        );
+    }
+  }
+  return new GatewayError(
+    ERROR_CODES.INTERNAL_ERROR,
+    `unexpected plugin dispatch error: ${err.message}`,
+    { pluginId, capability },
+  );
 }
 
 /**

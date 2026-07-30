@@ -44,6 +44,7 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     fs: config.fs,
     clock: config.clock,
     installRecordPath,
+    cleanupTimeoutMs: config.cleanupTimeoutMs,
   });
 
   // CID:platform-factory-001 - createPlatform

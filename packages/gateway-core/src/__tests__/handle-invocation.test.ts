@@ -267,8 +267,8 @@ describe("Gateway.handleInvocation", () => {
     expect(result).toHaveProperty("error");
     if ("error" in result) {
       // Authz passed (act covers read); dispatch failed for some v1 limitation.
-      // Either PLUGIN_NOT_INSTALLED (no install) or MANAGER_UNAVAILABLE (installed but no handler).
-      expect([ERROR_CODES.PLUGIN_NOT_INSTALLED, ERROR_CODES.MANAGER_UNAVAILABLE]).toContain(result.error.code);
+      // Either PLUGIN_NOT_INSTALLED (no install) or HANDLER_NOT_FOUND (installed but no handler).
+      expect([ERROR_CODES.PLUGIN_NOT_INSTALLED, ERROR_CODES.HANDLER_NOT_FOUND]).toContain(result.error.code);
     }
   });
 
@@ -389,7 +389,7 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
     // v1: not-found-via-version would be CAPABILITY_NOT_FOUND; auto-latest found v2.0.0 → dispatch.
     expect(result).toHaveProperty("error");
     if ("error" in result) {
-      expect([ERROR_CODES.PLUGIN_NOT_INSTALLED, ERROR_CODES.MANAGER_UNAVAILABLE]).toContain(result.error.code);
+      expect([ERROR_CODES.PLUGIN_NOT_INSTALLED, ERROR_CODES.HANDLER_NOT_FOUND]).toContain(result.error.code);
     }
   });
 

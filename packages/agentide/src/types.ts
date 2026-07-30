@@ -39,6 +39,13 @@ export interface CreatePlatformConfig {
   };
   readonly clock?: import("@platform/gateway-core").Clock;
   /**
+   * Optional plugin-manager cleanup-confirmation timeout. When set, this is
+   * forwarded to createPluginManager. Default (in plugin-manager) is 5000ms;
+   * tests typically set a small value (e.g. 50ms) to avoid waiting the full
+   * timeout when a plugin never confirms cleanup.
+   */
+  readonly cleanupTimeoutMs?: number;
+  /**
    * Optional bootstrap tenant. When provided AND the tenant does not already exist,
    * it is created. Pass this from `agentide init` only; other commands should omit it
    * to avoid leaking a "default" tenant into a freshly-init'd install.

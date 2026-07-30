@@ -47,52 +47,74 @@
 
 **Blocked by:** nothing. Phase 2 done.
 
-### Phase 3: gateway-core error codes — ⏳ Pending
+### Phase 3: gateway-core error codes — ✅ Complete 2026-07-30
 
 **Build:**
 - `packages/gateway-core/src/errors.ts` — add two `GATEWAY_*` codes per the approved Option B:
   - `GATEWAY_HANDLER_NOT_FOUND { retryable: false }` — maps from `PLUGIN_HANDLER_NOT_FOUND`.
   - `GATEWAY_HANDLER_ERROR { retryable: false }` — maps from `PLUGIN_HANDLER_ERROR`.
 - PRD-TRD approved a two-error mapping (NOT_FOUND + ERROR). `HANDLER_LOAD_FAILED` does NOT surface as a kernel error; it surfaces only as the `plugin.handler.loaded` event (Phase 1 already has this).
+- `packages/gateway-core/src/__tests__/types.test.ts` — updated snapshot test to count 18 codes (was 16) and assert the two new strings.
 
 **Verify:**
-- [ ] `pnpm --filter @platform/gateway-core build` — compiles.
-- [ ] `pnpm --filter @platform/gateway-core test` — no regressions. (Existing `handle-invocation.test.ts` may need a minimal update if it asserts exact error-code counts.)
+- [x] `pnpm --filter @platform/gateway-core build` — compiles.
+- [x] `pnpm --filter @platform/gateway-core test` — 109/109 pass; snapshot test updated for 18 codes.
+- [x] `vitest run` workspace — 449/449 pass. No regressions.
+- [x] `pnpm -r lint` — clean.
+- [x] `pnpm -r typecheck` — clean.
+- [x] `bash scripts/check-banned-types.sh` — clean.
 
-**Blocked by:** Phase 2 (so the contract is stable before the kernel imports it).
+**Blocked by:** nothing. Phase 3 done.
 
-### Phase 4: dispatch.ts swap — ⏳ Pending
+### Phase 4: dispatch.ts swap — ✅ Complete 2026-07-30
 
 **Build:**
-- `packages/gateway-core/src/dispatch.ts:88-103` — replace the `MANAGER_UNAVAILABLE` stub with a synchronous call to `pluginManager.handleInvocation(name, input, sessionId)`. Wrap in try/catch that translates `PluginManagerError` codes to `GatewayError` codes per PRD-TRD-approved Option B:
-  - `PLUGIN_HANDLER_NOT_FOUND` → `GATEWAY_HANDLER_NOT_FOUND`
-  - `PLUGIN_HANDLER_ERROR` → `GATEWAY_HANDLER_ERROR`
-  - Anything else (registry/lifecycle errors) → pass through unchanged.
-- `packages/gateway-core/src/handle-invocation.ts` — extend the existing plugin-resolution path to populate the same `owner` and `pluginId` lookups that `dispatch.ts` now uses, so `handle-invocation` and `dispatch` don't drift. (Inspect whether `handle-invocation` already has this — if so, mirror its logic.)
+- `packages/gateway-core/src/dispatch.ts:88-119` — replaced the `MANAGER_UNAVAILABLE` stub with a synchronous call to `pluginManager.handleInvocation(name, input, sessionId)`. Wrapped in try/catch that translates `PluginManagerError` codes to `GatewayError` codes per Option B:
+  - `PLUGIN_HANDLER_NOT_FOUND` → `GATEWAY_HANDLER_NOT_FOUND { retryable: false }`
+  - `PLUGIN_HANDLER_ERROR`     → `GATEWAY_HANDLER_ERROR { retryable: false }`
+  - Anything else (incl. non-`PluginManagerError`) → `GATEWAY_INTERNAL_ERROR { retryable: false }`
+- New exported helper `translatePluginError(err, pluginId, capability): GatewayError` in [dispatch.ts:176](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/gateway-core/src/dispatch.ts#L176).
+- New test file [packages/gateway-core/src/__tests__/dispatch.test.ts](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/gateway-core/src/__tests__/dispatch.test.ts) (271 lines, 8 tests) — 4 unit tests for `translatePluginError` (HANDLER_NOT_FOUND, HANDLER_ERROR, unrelated PM code → INTERNAL_ERROR, non-PM error → INTERNAL_ERROR) + 4 integration tests for `dispatchCapability` (handler success, HANDLER_NOT_FOUND, HANDLER_ERROR, PLUGIN_NOT_INSTALLED before PM call).
+- [packages/gateway-core/src/__tests__/handle-invocation.test.ts](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/gateway-core/src/__tests__/handle-invocation.test.ts) — flipped 2 stale `MANAGER_UNAVAILABLE` assertions to `HANDLER_NOT_FOUND` (the old stub is gone).
+- Note: `handle-invocation.ts` already routes through `dispatchCapability` for `owner.startsWith("plugin:")` (line 76 of handle-invocation.ts), so no separate extension was needed there.
 
 **Verify:**
-- [ ] Manual review: `dispatch.ts:88-103` now calls `pluginManager.handleInvocation` instead of throwing `MANAGER_UNAVAILABLE`.
-- [ ] New unit test in `packages/gateway-core/src/__tests__/dispatch.test.ts` (or extend existing) covering Option B mapping — feed `PluginManagerError` codes, expect `GatewayError` codes.
-- [ ] `pnpm --filter @platform/gateway-core test` — passes, including the new mapping test.
+- [x] `pnpm --filter @platform/gateway-core test` — 117/117 pass (was 109; +8).
+- [x] `vitest run` workspace — 457/457 pass (was 449; +8). No regressions.
+- [x] `pnpm -r lint` — clean.
+- [x] `pnpm -r typecheck` — clean.
+- [x] `bash scripts/check-banned-types.sh` — clean.
 
-**Blocked by:** Phase 3 (error codes land first so dispatch can reference them).
+**File size note:** `handle-invocation.test.ts` is 635 lines (pre-existing). Per the workspace rule, it warrants `improve-codebase-architecture` on a future cycle. Not blocking Phase 4.
 
-### Phase 5: integration test — ⏳ Pending
+**Blocked by:** nothing. Phase 4 done.
+
+### Phase 5: integration test — ✅ Complete 2026-07-30
 
 **Build:**
-- Extend `packages/agentide/src/__tests__/backend-runtime.test.ts` (the existing end-to-end integration) OR add `packages/agentide/src/__tests__/gateway-plugin-dispatch.test.ts`:
-  - Stand up `createPlatform({ backendRuntimePort: 0 })` — that wires the runtime, audit, gateway, plugin-manager, and capability registry.
-  - Install a plugin via `createPlatform.backendRuntime.pluginManager.install(...)`.
-  - Invoke via `createPlatform.gateway.handleInvocation(...)` — assert the handler result flows back through the full pipeline.
-  - Cover **all 8 PRD-TRD scenarios** — disabled plugin, missing cap name, handler throws, entry load fails, concurrent invocations, uninstall, etc.
-- This is the test that proves Phase 4's dispatch swap actually works through the full kernel.
+- New file [packages/agentide/src/__tests__/gateway-plugin-dispatch.test.ts](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/agentide/src/__tests__/gateway-plugin-dispatch.test.ts) (350 lines, 8 tests) — real `createPlatform()` wiring, real `.mjs` handler in a tmpdir, real dynamic-import (no mocks). Covers all 8 PRD-TRD scenarios end-to-end.
+- Each scenario: `boot()` → `installAndGrant()` → `sessionCtx()` → invoke → assert. Shared helpers keep each scenario to ~10 lines.
+- Two tiny production changes to make the wiring testable:
+  - `packages/agentide/src/types.ts:84-90` — added optional `cleanupTimeoutMs` to `CreatePlatformConfig` (JSDoc explains why).
+  - `packages/agentide/src/factory.ts:38-42` — forwards `cleanupTimeoutMs` to `createPluginManager` so tests don't wait the 5s default when a fixture plugin never confirms cleanup.
 
 **Verify:**
-- [ ] Integration test passes — all 8 PRD-TRD scenarios green.
-- [ ] `vitest run` workspace — 445+N tests pass (N = integration test count).
-- [ ] `pnpm -r lint && pnpm -r typecheck && bash scripts/check-banned-types.sh` — all clean.
+- [x] Integration test passes — 8/8 PRD-TRD scenarios green.
+- [x] `vitest run` workspace — 465/465 pass (was 457; +8 from Phase 5).
+- [x] `pnpm -r lint` — clean.
+- [x] `pnpm -r typecheck` — clean.
+- [x] `bash scripts/check-banned-types.sh` — clean.
 
-**Blocked by:** Phase 4.
+**File size:** 350 lines exactly (at the 350 limit). Kept tight by extracting `installAndGrant()` + `sessionCtx()` helpers and compressing scenario comments to one-liners.
+
+**Drift surfaced during Phase 5 (all resolved in-test, no new IMPL drift):**
+- *Scenario 6:* the install records `source` as the path passed at install time (`/data/plugins/browser.yaml`). The "operator fixes the file" action must write the new content at that same path — not a new path. Test updated with a comment explaining the gotcha.
+- *Scenario 4:* `unmapped_cap` is unknown to the PM's tier-inferer, so the manifest entry must declare `tier: read` explicitly. Test updated.
+- *Scenario 5:* `pluginManager.handleInvocation` wraps the original error as `plugin "X" handler for "Y" threw: <orig>`, so the test asserts `expect(originalError).toContain("handler exploded")` rather than the exact string.
+- *Scenario 7:* the disabled-plugin pre-check catches `PLUGIN_DISABLED` before the dispatch path runs, so the surface code is `GATEWAY_PLUGIN_DISABLED` (not `GATEWAY_HANDLER_NOT_FOUND`). Test updated; the manifest keeps the plugin in `MANIFEST` (the real one) so install records it; the test then calls `disable()` to trigger the pre-check.
+- *Scenario 7 (regression):* uninstall path needs a `cleanupTimeoutMs` < 5000ms or the test times out. Now configurable via `CreatePlatformConfig`.
+
+**Blocked by:** nothing. Phase 5 done.
 
 ### Phase 6: drift check + post-impl sim + ship — ⏳ Pending
 
