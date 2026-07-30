@@ -15,7 +15,11 @@
   "bin": {
     "agentide": "./dist/cli.js"
   },
-  "files": ["dist", "src", "install.sh"],
+  "files": [
+    "dist",
+    "src",
+    "install.sh"
+  ],
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run",
@@ -24,6 +28,7 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
+    "@platform/backend-runtime": "workspace:*",
     "@platform/capability-registry": "workspace:*",
     "@platform/event-bus": "workspace:*",
     "@platform/gateway-core": "workspace:*",
@@ -32,10 +37,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
-    "eslint": "^10.8.0",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@typescript-eslint/parser": "^8.65.0",
-    "@typescript-eslint/eslint-plugin": "^8.65.0"
+    "eslint": "^10.8.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   }
 }
