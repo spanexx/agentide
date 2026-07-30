@@ -7,7 +7,6 @@ import {
   ERROR_CODES,
   type Clock,
   type FileSystem,
-  type InstallRecord,
 } from "../index.js";
 
 class InMemoryFs implements FileSystem {

@@ -105,17 +105,18 @@ The Backend Runtime owns a single in-memory store:
 
 ```ts
 interface BackendConnection {
-  readonly appId: string;          // stable identifier (JWT 'sub' claim)
-  readonly socket: WebSocket;      // ws library socket handle
-  readonly acceptedAt: number;     // ms timestamp for latencyMs
-  readonly caps: Map<string, RegisteredCapability>;
+  readonly appId: string;             // stable identifier (JWT 'sub' claim)
+  readonly connectedAt: number;       // ms timestamp for latencyMs (renamed from PRD's `acceptedAt`)
+  readonly capabilities: RegisteredCapability[];  // array suffices for v1's small cap counts (renamed from `caps: Map<>`)
+  socket: unknown;                    // ws.WebSocket typed as `unknown` to avoid leaking ws into the public type surface
 }
 
 interface RegisteredCapability {
   readonly name: string;
-  readonly description: string;
   readonly version: string;
-  readonly permissions: string[];  // SDK sends comma-joined; split on receive
+  readonly type: "business";          // literal — required by CapabilityRegistry.validateRecord for business caps
+  readonly description: string;
+  readonly permissions: readonly string[];  // SDK sends comma-joined; split on receive
   readonly tier: CapabilityTier | null;
 }
 ```
@@ -126,35 +127,36 @@ Capabilities are also registered in the shared `CapabilityRegistry` with `owner:
 
 `BackendRuntime` factory:
 ```ts
-function createBackendRuntime(config: BackendRuntimeConfig): Promise<BackendRuntime>
+function createBackendRuntime(config: BackendRuntimeConfig): BackendRuntime
 
 interface BackendRuntimeConfig {
-  readonly port: number;            // default 9100
-  readonly tokenSecret: Buffer;     // shared with @platform/gateway-core for JWT verify
+  readonly port: number;              // default 9100
+  readonly tokenSecret: Uint8Array;   // shared with @platform/gateway-core for JWT verify (Buffer ⊂ Uint8Array; matches gateway-core/auth.ts)
   readonly capabilityRegistry: CapabilityRegistry;  // composite dep
   readonly eventBus: EventBus;
-  readonly clock?: Clock;
-  readonly handlerTimeoutMs?: number;  // default 30_000
+  readonly clock?: Clock;             // per-package Clock (matches session-manager/plugin-manager/gateway-core)
+  readonly handlerTimeoutMs?: number; // default 30_000
 }
 
 interface BackendRuntime {
   start(): Promise<void>;
   stop(): Promise<void>;
   dispatchInvocation(
-    owner: string,                  // "backend-sdk-<appId>"
-    capability: CapabilityRecord,
-    input: YamlValue,
+    owner: string,                    // "backend-sdk-<appId>"
+    capability: CapabilityRecord,     // full CapabilityRecord (not just {name, version} — Phase 4 dispatch needs tier)
+    input: BackendValue,              // recursive scalar/array/object type (avoids `any`/`unknown` per banned-types check)
     sessionId: string | undefined,
-  ): Promise<YamlValue>;            // throws GatewayError on failure
+  ): Promise<BackendValue>;          // throws GatewayError on failure
+  connectionCount(): number;          // returns the current count of connected SDK apps (added beyond v1 PRD for observability)
 }
 ```
 
 Bus events (new):
 - `sdk.connection.accepted { appId: string; gatewayUrl: string; latencyMs: number }`
-- `sdk.connection.closed { appId: string; reason: "explicit" | "error" | "dropped" }`
+- `sdk.connection.closed { appId: string; reason: "explicit" | "dropped" }` — IMPL Phase 2 emits two reasons; the third PRD variant `"error"` is reserved for a future pack that distinguishes error-path close from peer-initiated drop
 
 Wire messages the Backend Runtime SENDS to the SDK (new in this pack):
-- `{type: "sdk.invoke", callId: string, name: string, input: YamlValue, sessionId?: string}` — the call
+- `{type: "sdk.invoke", callId: string, name: string, input: BackendValue, sessionId?: string}` — the call
 
 Wire messages the Backend Runtime RECEIVES from the SDK (already defined by sdk-node):
 - `{type: "sdk.auth", token: string}` — handshake

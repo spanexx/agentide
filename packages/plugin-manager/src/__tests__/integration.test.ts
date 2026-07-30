@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import { createEventBus, type EventBus } from "@platform/event-bus";
+import { createEventBus } from "@platform/event-bus";
 import { createCapabilityRegistry } from "@platform/capability-registry";
 import {
   createPluginManager,
@@ -63,7 +63,7 @@ async function loadFixture(name: string): Promise<string> {
   return readFile(path(name), "utf-8");
 }
 
-async function setup(opts: { cleanupTimeoutMs?: number; installRecordPath?: string } = {}) {
+async function setup(_opts: { cleanupTimeoutMs?: number; installRecordPath?: string } = {}) {
   const fs = new InMemoryFs();
   for (const name of ["browser.yaml", "logging.yaml", "browser-v2.yaml", "malformed.yaml"]) {
     fs.files.set(path(name), await loadFixture(name));

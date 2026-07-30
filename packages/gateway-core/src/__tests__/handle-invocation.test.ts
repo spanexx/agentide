@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createGateway } from "../index.js";
 import { ERROR_CODES } from "../index.js";
 import { issueToken } from "../auth.js";
@@ -9,6 +9,7 @@ import type {
   FileSystem,
   TokenClaims,
 } from "../index.js";
+import type { BackendRuntime, BackendValue } from "@platform/backend-runtime";
 import { createEventBus, type PlatformEvent } from "@platform/event-bus";
 import { createCapabilityRegistry, type CapabilityRecord } from "@platform/capability-registry";
 import { createSessionManager } from "@platform/session-manager";
@@ -92,7 +93,11 @@ function claimsFor(tenantId: string, callerId: string, scope: string[]): TokenCl
   };
 }
 
-async function setup(opts: { plugins?: CapabilityRecord[]; seedTenants?: Array<{ id: string; name: string }> } = {}) {
+async function setup(opts: {
+  plugins?: CapabilityRecord[];
+  seedTenants?: Array<{ id: string; name: string }>;
+  backendRuntime?: BackendRuntime;
+} = {}) {
   const fs = new InMemoryFs();
   // Pre-seed the gateway-secret file with our test secret so loadOrCreateSecret returns it deterministically.
   fs.files.set("/data/gateway-secret", Buffer.from(TEST_SECRET).toString("base64"));
@@ -121,6 +126,7 @@ async function setup(opts: { plugins?: CapabilityRecord[]; seedTenants?: Array<{
     auditLogPath: "/data/audit.log",
     tenantsPath: "/data/tenants.json",
     secretPath: "/data/gateway-secret",
+    ...(opts.backendRuntime !== undefined ? { backendRuntime: opts.backendRuntime } : {}),
   });
   // Auto-seed the "default" tenant (used by most tests). Additional tenants via opts.seedTenants.
   await gateway.createTenant({ id: "default", name: "Default Test Tenant" });
@@ -467,6 +473,132 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
     });
     expect(events).toHaveLength(1);
     expect(events[0].name).toBe("gateway.invocation");
+  });
+
+  it("regression: backend-sdk-* with no backendRuntime configured still returns GATEWAY_SDK_UNREACHABLE", async () => {
+    const { gateway, registry, sm, clock } = await setup();
+    // Register a backend-sdk-* capability so the request reaches dispatch (not CAPABILITY_NOT_FOUND).
+    await registry.register("backend-sdk-acme", {
+      owner: "backend-sdk-acme",
+      capabilities: [{
+        name: "business.foo",
+        version: "1.0.0",
+        type: "business",
+        description: "test sdk cap",
+        permissions: ["runtime.demo.read"],
+        owner: "backend-sdk-acme",
+      }],
+    });
+    // No backendRuntime passed → fallback stub still fires (preserves backward compat).
+    const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["runtime.demo.read"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["runtime.demo.read"] },
+      capability: { name: "business.foo" },
+      input: {},
+      sessionId: sm.create({ ownerId: "alice", adapterType: "mcp" }).id,
+    };
+    const result = await gateway.handleInvocation(invocation);
+    expect(result).toHaveProperty("error");
+    if ("error" in result) {
+      expect(result.error.code).toBe(ERROR_CODES.SDK_UNREACHABLE);
+      expect(result.error.retryable).toBe(true);
+    }
+  });
+
+  it("routes backend-sdk-* through backendRuntime.dispatchInvocation and returns the SDK's payload", async () => {
+    const dispatchInvocation = vi.fn(
+      async (
+        _owner: string,
+        _capability: CapabilityRecord,
+        _input: BackendValue,
+        _sessionId: string | undefined,
+      ): Promise<BackendValue> => ({ greeting: "hello from the SDK" }),
+    );
+    const backendRuntime: BackendRuntime = {
+      start: async () => {},
+      stop: async () => {},
+      dispatchInvocation,
+      connectionCount: () => 1,
+      address: () => null,
+    };
+    const { gateway, registry, sm, clock } = await setup({ backendRuntime });
+    await registry.register("backend-sdk-acme", {
+      owner: "backend-sdk-acme",
+      capabilities: [{
+        name: "business.greet",
+        version: "1.0.0",
+        type: "business",
+        description: "greeting",
+        permissions: ["runtime.demo.read"],
+        owner: "backend-sdk-acme",
+      }],
+    });
+    const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
+    const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["runtime.demo.read"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["runtime.demo.read"] },
+      capability: { name: "business.greet", version: "1.0.0" },
+      input: { name: "world" },
+      sessionId: session.id,
+    };
+    const result = await gateway.handleInvocation(invocation);
+    expect(result).toHaveProperty("output");
+    if ("output" in result) {
+      expect(result.output).toEqual({ greeting: "hello from the SDK" });
+    }
+    // The dispatcher received the full CapabilityRecord (resolved from the registry).
+    expect(dispatchInvocation).toHaveBeenCalledTimes(1);
+    const [ownerArg, capArg, inputArg, sessionArg] = dispatchInvocation.mock.calls[0] ?? [];
+    expect(ownerArg).toMatch(/^backend-sdk-/);
+    expect((capArg as CapabilityRecord).name).toBe("business.greet");
+    expect(inputArg).toEqual({ name: "world" });
+    expect(sessionArg).toBe(session.id);
+  });
+
+  it("surfaces GatewayError thrown from backendRuntime as a structured error response", async () => {
+    const { GatewayError } = await import("../errors.js");
+    const dispatchInvocation = vi.fn(async (): Promise<BackendValue> => {
+      throw new GatewayError(
+        ERROR_CODES.SDK_UNREACHABLE,
+        "no SDK connected for app acme",
+        { owner: "backend-sdk-acme" },
+        true,
+      );
+    });
+    const backendRuntime: BackendRuntime = {
+      start: async () => {},
+      stop: async () => {},
+      dispatchInvocation,
+      connectionCount: () => 0,
+      address: () => null,
+    };
+    const { gateway, registry, sm, clock } = await setup({ backendRuntime });
+    await registry.register("backend-sdk-acme", {
+      owner: "backend-sdk-acme",
+      capabilities: [{
+        name: "business.greet",
+        version: "1.0.0",
+        type: "business",
+        description: "greeting",
+        permissions: ["runtime.demo.read"],
+        owner: "backend-sdk-acme",
+      }],
+    });
+    const session = sm.create({ ownerId: "alice", adapterType: "mcp" });
+    const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["runtime.demo.read"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["runtime.demo.read"] },
+      capability: { name: "business.greet" },
+      input: {},
+      sessionId: session.id,
+    };
+    const result = await gateway.handleInvocation(invocation);
+    expect(result).toHaveProperty("error");
+    if ("error" in result) {
+      expect(result.error.code).toBe(ERROR_CODES.SDK_UNREACHABLE);
+      expect(result.error.retryable).toBe(true);
+      expect(result.error.details).toMatchObject({ owner: "backend-sdk-acme" });
+    }
   });
 });
 

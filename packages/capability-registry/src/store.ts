@@ -40,6 +40,18 @@ export class Store {
     this.owners.set(owner, records);
   }
 
+  // CID:store-008 - removeByOwner
+  // Purpose: drop every record owned by `owner` and return the dropped records
+  //   in insertion order. Returns an empty array if `owner` had no entries —
+  //   idempotent. Used by the Backend Runtime when an SDK disconnects.
+  removeByOwner(owner: string): CapabilityRecord[] {
+    const ownerMap = this.owners.get(owner);
+    if (!ownerMap) return [];
+    const records = [...ownerMap.values()];
+    this.owners.delete(owner);
+    return records;
+  }
+
   // CID:store-004 - allKeys
   // Purpose: global key lookup for clash detection across owners
   allKeys(): Map<string, { record: CapabilityRecord; owner: string }> {

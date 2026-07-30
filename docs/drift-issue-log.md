@@ -548,3 +548,95 @@ the cited file:line ranges. The four design drifts are explicit Accepted drifts 
 "Verified by: drift-sdk-node audit" trails. Re-running `feature-pipeline-review` on
 `sdk-node` should now produce a no-drift (or "major drift = 0") report.
 
+---
+
+## #16 — gateway-sdk-dispatch ship (BI[8b]) — RESOLVED
+
+**Where:** `docs/features/gateway-sdk-dispatch/IMPL-gateway-sdk-dispatch.md` ×
+`packages/backend-runtime/` (new) × `packages/gateway-core/src/dispatch.ts` ×
+`packages/gateway-core/src/types.ts` × `packages/gateway-core/src/factory.ts` ×
+`packages/agentide/src/factory.ts` × `packages/agentide/src/types.ts`.
+
+**Found** by the `feature-pipeline-review` sub-agent on 2026-07-30 (full report at
+`.reports/2026-07-30-drift-gateway-sdk-dispatch.md`).
+
+The implementation is behaviorally sound — all 8 PRD-TRD scenarios are demonstrable
+and tested end-to-end with a real `ws.WebSocket` client. 7 phases shipped across
+~6 hours: scaffold + types → connection lifecycle + auth handshake + registry →
+capability registration bridge → dispatch path (sdk.invoke round-trip + error
+code mapping + timeout) → kernel wiring (replaces `SDK_UNREACHABLE` stub) →
+agentide composition → ship. **Verdict:** ship with minor doc fixes + lint cleanup.
+
+### Doc fixes (resolved this pass)
+
+- **Gap 1 — IMPL Phase 5 said "Set `gateway.config.backendRuntime = backendRuntime`"
+  but `gateway.config` is the input to `createGateway`, not an output.** The
+  correct wire is to pass it through `createGateway(..., { ...config,
+  backendRuntime })` (Phase 5 already wired the `backendRuntime?` ctx field on
+  `dispatch.ts`). **Fix:** IMPL Phase 5 section rewritten to match the actual
+  integration path.
+
+- **Gap 2 — IMPL Phase 6 said "Read `gateway.tokenSecret` (read from existing
+  config)" but `Gateway` doesn't expose the secret.** **Fix:** agentide factory
+  now ensures the secret file exists (bootstraps if missing) and shares the same
+  bytes between `createGateway()` and `createBackendRuntime()`. Documented the
+  intentional duplication of `loadOrCreateSecret` (10 lines, same base64+0600)
+  in the factory code map; alternative was exporting gateway-core's helper, which
+  was a wider API change than this pack wanted.
+
+- **Gap 3 — IMPL didn't say what happens when a session-less business cap is
+  invoked through the SDK.** The integration test hit `GATEWAY_SESSION_REQUIRED`
+  on first attempt because `SESSION_LESS_CAPABILITIES` in `handle-invocation.ts`
+  only lists platform caps. **Fix:** IMPL Phase 6 §Test Strategy updated to call
+  out that business caps require an active session (created via
+  `session.create` capability); integration test updated accordingly.
+
+### Accepted design drifts
+
+- **#D-1: Default port is 0 (OS-assigned) in tests, not 9100 as PRD says.**
+  Intentional — tests need an ephemeral port; the PRD's "default 9100" applies to
+  production operator config. Documented in the test setup; no IMPL change.
+
+- **#D-2: 6 pre-existing lint warnings in `sdk-node` and `plugin-manager`
+  resolved inline as part of Phase 7 cleanup.** Unrelated to this pack but
+  caught by `pnpm -r lint` in the precommit check. Resolved by removing unused
+  imports (`EventBus`, `InstallRecord`) and renaming unused param (`opts` →
+  `_opts`). One ESLint false-positive (exported `dispatchIncoming` / `makeLogger`
+  flagged as unused because they're re-exported, not used internally) resolved by
+  removing the symbol names from the code map comment rather than adding eslint
+  disable directives (which ESLint flagged as "unused directives").
+
+### Companion drift log entries
+
+`drift.md` already contains the open and resolved entries for the previous
+packs. This pack contributed: D-16 — minor doc gaps (3) + accepted design drifts
+(2) per `.reports/2026-07-30-drift-gateway-sdk-dispatch.md`. All resolved inline;
+no Open entries carried forward from BI[8b].
+
+**Remaining follow-up:** none. All 8 PRD-TRD scenarios demonstrable via the new
+integration test. Lint clean (0 warnings, 0 errors across all 9 packages).
+Tests green (439/439). Build/lint/typecheck/check-banned-types all pass.
+
+**What to verify next session:**
+1. Re-run `feature-pipeline-review` on `gateway-sdk-dispatch` — should produce
+   "no major drift" verdict.
+2. Promote `gateway-plugin-dispatch` (BI[8a]) — the sibling stub-removal pack
+   still has not started. Same pattern (kernel wiring + agentide composition)
+   but for `owner.startsWith("plugin:")` instead of `backend-sdk-`.
+3. Begin BI[9] `mcp-adapter` — now that the SDK round-trip works, the first
+   adapter can connect to a running platform and exercise
+   `tools/list` + `tools/call` through the new dispatch path.
+
+## Skills to invoke next
+
+- `situation-awareness` — re-orient after the Phase 7 doc + lint changes
+- `git-flow` — if user wants Phase 7 changes committed
+- `feature-pipeline` — for the next pack (BI[8a] or BI[9])
+
+## Open drift (unrelated, pre-existing)
+
+- **D-1** (session-manager: touch visibility, resource attach state, timeout values)
+  — still in `drift.md:6-12`. Out of scope for this session.
+- **D-14–D-27** (permission-tiering: 7 gaps resolved this session per
+  `drift.md`; carried forward from BI[7] pack).
+

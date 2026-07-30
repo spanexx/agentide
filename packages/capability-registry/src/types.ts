@@ -111,6 +111,7 @@ export interface CapabilityRegistry {
     owner: string,
     manifest: { owner: string; capabilities: readonly CapabilityRecord[] },
   ): Promise<RegisterResult>;
+  removeByOwner(owner: string): Promise<readonly CapabilityRecord[]>;
   list(): readonly CapabilityCard[];
   search(query: string): readonly CapabilityCard[];
   describe(name: string, version?: string): DescribeResult;

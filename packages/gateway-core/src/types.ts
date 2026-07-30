@@ -156,6 +156,7 @@ export interface GatewayConfig {
   readonly clock?: Clock;
   readonly fs?: FileSystem;
   readonly eventBus?: import("@platform/event-bus").EventBus;
+  readonly backendRuntime?: import("@platform/backend-runtime").BackendRuntime;
 }
 
 // CID:types-013 - Adapter

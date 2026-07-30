@@ -25,6 +25,9 @@
     },
     {
       "path": "packages/sdk-node"
+    },
+    {
+      "path": "packages/backend-runtime"
     }
   ]
 }

@@ -1,8 +1,8 @@
 {
-  "name": "@platform/gateway-core",
+  "name": "@platform/backend-runtime",
   "version": "0.0.0",
   "private": true,
-  "description": "In-process control-plane component that authenticates callers, authorizes capability invocations, manages sessions, dispatches to capability handlers, audits every invocation, applies rate limits, and enforces tenant isolation.",
+  "description": "In-process component that accepts WebSocket connections from @platform/sdk-node clients, registers their business capabilities, and dispatches gateway invocations back to the connected SDK handler.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,15 +21,14 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/backend-runtime": "workspace:*",
     "@platform/capability-registry": "workspace:*",
     "@platform/event-bus": "workspace:*",
-    "@platform/platform-capabilities": "workspace:*",
-    "@platform/plugin-manager": "workspace:*",
-    "@platform/session-manager": "workspace:*"
+    "@platform/gateway-core": "workspace:*",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
     "eslint": "^10.8.0",

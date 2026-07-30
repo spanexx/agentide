@@ -1,4 +1,4 @@
-/*
+/**
  * Code Map: invoke() dispatch (Phase 5)
  *
  * Phase 5 supports two flows:
@@ -8,14 +8,14 @@
  *    - Returns the result or throws.
  *    - Used for unit tests and direct scripting.
  *
- * 2. Inbound (gateway-facing): dispatchIncoming(client, msg)
+ * 2. Inbound (gateway-facing):
  *    - Parses a {type: 'sdk.invoke', callId, name, input} message.
  *    - Looks up the handler, calls it.
  *    - Sends result: {type: 'sdk.invoke.result', callId, payload}.
  *    - On error: {type: 'sdk.invoke.error', callId, code, message}.
  *    - Try/catch wraps the handler so a throw doesn't crash the SDK.
  *
- * Phase 6 wires dispatchIncoming to the WsClient's 'message' event.
+ * Phase 6 wires the inbound dispatch to the WsClient's 'message' event.
  * Phase 7 adds SdkEventPublisher so invoke events are emitted on the bus:
  *   - sdk.invoke.started    before dispatch
  *   - sdk.invoke.completed  on success
