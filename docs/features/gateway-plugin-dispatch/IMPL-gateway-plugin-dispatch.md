@@ -29,20 +29,23 @@
 
 **Blocked by:** nothing. Phase 1 done.
 
-### Phase 2: lifecycle-integration tests — ⏳ Pending
+### Phase 2: lifecycle-integration tests — ✅ Complete 2026-07-30
 
 **Build:**
 - Add tests to `packages/plugin-manager/src/__tests__/handler-loading.test.ts`:
-  - **`reload` re-imports handlers`** — install plugin, mutate the entry module on disk, reload, invoke — verify the new handler runs.
+  - **`reload` re-imports handlers** — install plugin, mutate the entry module on disk, reload, invoke — verify the new handler runs.
   - **`uninstall` drops handlers`** — install, uninstall, verify `handleInvocation` for the now-uninstalled cap throws `CAPABILITY_NOT_FOUND` (not `HANDLER_NOT_FOUND`).
   - **`disable` then `enable` round-trip** — install, disable, invoke (fail), enable, invoke (succeed) — same handler map, no re-import.
   - **Startup reinstall loads handlers for persisted plugins** — write a record to the in-mem fs's installRecordPath BEFORE creating the manager; assert that handler is loaded on `createPluginManager`.
 
 **Verify:**
-- [ ] `pnpm --filter @platform/plugin-manager test` — 10/10 tests pass (was 6; +4).
-- [ ] `vitest run` workspace — no regressions.
+- [x] `pnpm --filter @platform/plugin-manager test` — 10/10 tests pass (was 6; +4).
+- [x] `vitest run` workspace — 449/449 pass (was 445; +4). No regressions.
+- [x] `pnpm -r lint` — clean.
+- [x] `pnpm -r typecheck` — clean.
+- [x] `bash scripts/check-banned-types.sh` — clean.
 
-**Blocked by:** Phase 1 (done).
+**Blocked by:** nothing. Phase 2 done.
 
 ### Phase 3: gateway-core error codes — ⏳ Pending
 
@@ -173,4 +176,4 @@ After Phase 6 ships:
 
 5. **`asHandlerMap` ignores non-function entries in a plugin's default export.** That's by design (plugins may export mixed objects: handlers + config helpers). If a plugin's intent is to export ONLY handlers, that's a plugin-author concern — not enforced by us. Document in the Phase 5 README of `handler-loader.ts`.
 
-6. **No pre-impl sim was authored for BI[8a**.** Per the format doc, pre-impl sim mirrors design with hardcoded state; the GRILL served that role here. If a future cycle wants a real pre-impl HTML/JS sim, that's a follow-up — but the GRILL + tests cover the design surface adequately.
+6. **Pre-impl sim exists at `docs/features/gateway-plugin-dispatch/simulate-pre.html`.** Self-contained HTML with hardcoded state, real `<input>` terminal, demo button that runs all 8 PRD-TRD scenarios with PASS/FAIL markers. Playwright-verified (see `test-sim-pre-impl.js`). Per the feature-pipeline skill, the pre-impl sim mirrors design intent BEFORE the contract is locked — it surfaces issues the GRILL didn't catch. Use it to walk a reviewer through the operator flow before they read the PRD-TRD.
