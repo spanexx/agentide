@@ -151,7 +151,7 @@ Every capability, regardless of type, is defined by the same seven pieces of met
 | **Input Schema** | What the capability accepts, validated before execution |
 | **Output Schema** | The structure the capability guarantees on success |
 | **Permissions** | The scope(s) required to invoke it |
-| **Execution Handler** | The function that actually performs the work |
+| **Execution Handler** | The function that actually performs the work. See **Capability Types** for where it lives per type. |
 
 A capability also carries a **Type** field — `business`, `platform`, or `runtime` — which
 determines who implements the handler and where execution happens. See **Capability Types**
@@ -163,6 +163,24 @@ metadata itself. For the full worked schema with concrete field values, see the 
 business` example in **Business Capabilities** (the fullest worked example in the doc set);
 Platform and Runtime Capabilities follow the identical shape with `type: platform` and
 `type: runtime` respectively.
+
+**Where the handler lives, by type** (concrete per the implementation):
+
+- `platform` capabilities: handler is an async function in the `gatewayHandlers` map
+  at `packages/gateway-core/src/factory.ts:265-501` (`buildGatewayHandlers`). The Gateway
+  holds the function reference directly; `dispatch.ts:62-70` calls it synchronously.
+- `business` capabilities: handler lives in the developer's app, behind a
+  `@platform/sdk-node` connection. The Gateway dispatches via the
+  `@platform/backend-runtime` package (BI[8b]); the handler runs in the SDK process
+  and the result comes back over WebSocket. See `docs/features/gateway-sdk-dispatch/`
+  for the wire protocol.
+- `runtime` capabilities: handler lives in the plugin author's module. The Plugin Manager
+  dynamic-imports the module's entry point (declared as `runtime.entry` in the plugin
+  manifest) at install time, gets a `{ [capabilityName]: async (input, ctx) => result }`
+  map, and stores it. `dispatch.ts:72-103` calls the function synchronously via
+  `pluginManager.handleInvocation(capability.name, input, sessionId)`. Implementation
+  lands in BI[8a] `gateway-plugin-dispatch`; design record at
+  `docs/features/gateway-plugin-dispatch/GRILL-gateway-plugin-dispatch.txt`.
 
 ---
 

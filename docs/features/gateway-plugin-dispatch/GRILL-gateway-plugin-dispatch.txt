@@ -1,0 +1,54 @@
+gateway-plugin-dispatch (BI[8a) - Grill Notes
+
+Status: Locked
+Date: 2026-07-30
+Source: BI[8a] from Feature_Backlog.md row 8a; docs/features/gateway-core/IMPL-gateway-core.md Phase 6 (the dispatch table); docs/features/gateway-core/GRILL-gateway-core.txt Q5 (in-process via Plugin Manager); docs/features/plugin-manager/PRD-plugin-manager.md §Out of Scope (handler-loading is deferred); packages/gateway-core/src/dispatch.ts:78-103 (the current stub)
+
+What this feature is about
+
+- Closes the runtime-plugin dispatch path: when `gateway.handleInvocation({capability: {name: "browser.navigate"}})` is called, the dispatch table currently throws `GATEWAY_MANAGER_UNAVAILABLE` for any `owner.startsWith("plugin:")` because the Plugin Manager has no way to actually run the plugin's handler code.
+- After this pack: an installed runtime plugin (e.g. Browser Runtime) can have its declared capabilities invoked end-to-end through the gateway. The handler function lives in the plugin's own module, loaded at install time via dynamic import.
+- Today's plugin manifests only declare capability *metadata* (name, version, permissions, tier). The actual handler function that should run when an agent invokes a runtime plugin cap is undefined — this pack adds the contract.
+- Does NOT: do anything for `service:*` or `developer:*` plugin types (they don't expose capabilities per `docs/architecture/Terminology.md`). Runtime plugins only.
+- Does NOT: introduce process-level isolation between plugin and gateway. v1 plugins run in the same process. Sandbox/isolation is a separate platform concern (matches plugin-manager PRD §Out of Scope "Plugin sandboxing / runtime isolation").
+- Does NOT: change anything about how business (`backend-sdk-*`) or platform (`gateway`, `session-manager`, etc.) caps are dispatched. Those paths are stable.
+- Scope clarifications: agentide meta-package auto-installs plugins that are present at `${dataDir}/plugins/*.yaml` after `agentide init` (per plugin-manager startup reinstall). The entry path is resolved relative to the install source directory, not the gateway cwd. Plugin author writes a Node ES module that exports a default object: `{ [capabilityName]: async (input, ctx) => result }`.
+
+Questions and answers locked so far
+
+1. I want to start by resolving the documentation contradiction: gateway-core's GRILL Q5 says `plugin:<id>` dispatches "in-process via Plugin Manager, which returns the runtime's handler reference." But plugin-manager's PRD §Out of Scope says "the Plugin Manager doesn't define how a plugin's code is loaded or run" and lists it as a "follow-up design pass; v1 is correct to defer it."
+
+Answer:
+- gateway-core's GRILL Q5 is *aspirational* (assumes Plugin Manager will gain a handler API); plugin-manager's PRD is *current* (Plugin Manager doesn't have that API yet). No contradiction to resolve — BI[8a] is exactly the work needed to bring plugin-manager up to the contract gateway-core already expects. This is a real pack, not a design deadlock.
+
+Why:
+- The two docs were written at different times. gateway-core's GRILL was the design intent; plugin-manager's PRD documented what the v1 ship actually built. The gap is the work, not a contradiction.
+- gateway-core/src/dispatch.ts:78-103 has a `NOTE[agent]` comment that already names the future API shape: "The Plugin Manager doesn't yet expose a `handleInvocation(owner, capability, input)` API that returns the registered handler. When that lands, dispatch replaces the MANAGER_UNAVAILABLE below with a synchronous handler call." — so the kernel author already pre-figured the wire.
+- Source: packages/gateway-core/src/dispatch.ts:88-91; docs/features/gateway-core/GRILL-gateway-core.txt:143; docs/features/plugin-manager/PRD-plugin-manager.md:244-267.
+
+2. Do we know enough to design the handler-loading contract, or do we need more info first?
+
+Answer:
+- Yes, we know enough. The architecture doc (`docs/architecture/Capability_System.md:155` + `Runtime_Capabilities.md:50`) names the field on the capability schema (`Execution Handler`) and describes the lifecycle including "Executed — the handler runs." The code path is clear: dispatch needs a synchronous function call; the only question is how the function gets registered.
+- Three options were on the table (in-process JS via dynamic import, child process IPC, WebSocket to a remote runtime). The "obvious" implied by the code is in-process dynamic import — matches the NOTE[agent] comment ("synchronous handler call"), matches the pattern of `platform-*` caps (which also call in-process functions from a handlers map), and is the smallest viable build.
+- No concrete consumer (browser-runtime) is needed to settle this. The handler-loading model is independent of what the handler does once it runs.
+
+Why:
+- The architecture doc explicitly lists `Execution Handler` as a field on the general capability schema. The code's `CapabilityRecord` interface doesn't store a handler because for platform caps the handler is a function in `gateway-core/src/factory.ts:265-501` (the `gatewayHandlers` map), and for business caps the handler is a function in the SDK (accessed via `BackendRuntime`). The "Execution Handler" field is implicit — for runtime caps, it's a function in the plugin's module.
+- Dynamic import is the right primitive: ESM is standard, async by nature, and lets the plugin author write idiomatic Node code without learning a custom protocol. Child process or WebSocket would each require a full IPC surface for a use case we don't have yet.
+- The PHILOSOPHY replaceability test still holds: a future child-process loader is a swappable `PluginLoader` implementation. Today's in-process loader is the first, simplest instance.
+- Source: docs/architecture/Capability_System.md:155, 230; docs/architecture/Runtime_Capabilities.md:50; packages/gateway-core/src/factory.ts:265-501; packages/gateway-core/src/dispatch.ts:88-91.
+
+3. Is the in-process dynamic-import design correct, or am I missing something?
+
+Answer:
+- Yes, this is it. In-process dynamic import. Document when done.
+
+Why:
+- Per the user's explicit confirmation. Implementation details land in the IMPL pack (the next step after this GRILL is locked).
+- This locks the design at the right altitude: the GRILL records *what* and *why*, the IMPL records *how* (file layout, phase order, test strategy). Mixing both here would re-create the doc-bloat that `feature-pipeline` skill explicitly avoids.
+- The "when done" handoff language means: after this pack ships, the architecture doc's "Execution Handler" field gets a concrete explanation linking to the BI[8a] code, so future readers don't have to re-derive it.
+
+No remaining open questions
+
+When all questions resolve, add this section verbatim.
