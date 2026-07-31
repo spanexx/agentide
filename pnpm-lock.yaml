@@ -66,6 +66,9 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(yaml@2.9.0))
+      ws:
+        specifier: ^8.21.1
+        version: 8.21.1
 
   packages/backend-runtime:
     dependencies:
@@ -189,6 +192,9 @@ importers:
       '@platform/capability-registry':
         specifier: workspace:*
         version: link:../capability-registry
+      '@platform/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
