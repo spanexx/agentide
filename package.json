@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Agent Runtime Platform — monorepo root",
   "scripts": {
-    "build": "pnpm -r --if-present run build",
+    "build": "tsc --build --pretty",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "precommit": "bash scripts/check-banned-types.sh && npm run typecheck && npm run lint && npm run build",

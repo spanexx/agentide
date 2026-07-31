@@ -69,6 +69,9 @@ export interface CanonicalInvocation {
 
 // CID:types-004 - GatewayErrorPayload
 // Purpose: structured error shape returned by every failure path; consumers match on `code`, not `message`
+// Locally redefined with YamlValue-aware details (the @platform/errors
+// version uses `unknown` to avoid a YamlValue dependency; the gateway-core
+// boundary tightens back to YamlValue for its public API).
 export interface GatewayErrorPayload {
   readonly code: string;
   readonly message: string;

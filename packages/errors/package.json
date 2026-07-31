@@ -1,8 +1,8 @@
 {
-  "name": "@platform/backend-runtime",
+  "name": "@platform/errors",
   "version": "0.0.0",
   "private": true,
-  "description": "In-process component that accepts WebSocket connections from @platform/sdk-node clients, registers their business capabilities, and dispatches gateway invocations back to the connected SDK handler.",
+  "description": "Shared platform error types — GatewayError + ERROR_CODES, consumed by gateway-core and backend-runtime to avoid a circular dep.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,23 +12,18 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc --build --pretty",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "lint": "eslint src",
     "typecheck": "tsc --build --pretty"
   },
-  "dependencies": {
-    "@platform/capability-registry": "workspace:*",
-    "@platform/errors": "workspace:*",
-    "@platform/event-bus": "workspace:*",
-    "ws": "^8.18.0"
-  },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "@types/ws": "^8.5.13",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
     "eslint": "^10.8.0",

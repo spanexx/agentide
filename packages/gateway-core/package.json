@@ -23,6 +23,7 @@
   "dependencies": {
     "@platform/backend-runtime": "workspace:*",
     "@platform/capability-registry": "workspace:*",
+    "@platform/errors": "workspace:*",
     "@platform/event-bus": "workspace:*",
     "@platform/platform-capabilities": "workspace:*",
     "@platform/plugin-manager": "workspace:*",

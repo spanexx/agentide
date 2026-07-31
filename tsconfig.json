@@ -1,12 +1,15 @@
 // Add a reference here for each package under packages/ as it's implemented.
+// Order is topological: leaves first, dependents after. tsc --build
+// walks the dep graph from these references; ordering ensures the
+// right build sequence on a clean cache.
 {
   "files": [],
   "references": [
     {
-      "path": "packages/application"
+      "path": "packages/errors"
     },
     {
-      "path": "packages/platform-capabilities"
+      "path": "packages/application"
     },
     {
       "path": "packages/event-bus"
@@ -21,16 +24,19 @@
       "path": "packages/plugin-manager"
     },
     {
-      "path": "packages/gateway-core"
+      "path": "packages/platform-capabilities"
     },
     {
-      "path": "packages/agentide"
+      "path": "packages/backend-runtime"
+    },
+    {
+      "path": "packages/gateway-core"
     },
     {
       "path": "packages/sdk-node"
     },
     {
-      "path": "packages/backend-runtime"
+      "path": "packages/agentide"
     }
   ]
 }
