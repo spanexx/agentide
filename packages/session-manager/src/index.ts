@@ -144,7 +144,10 @@ export function createSessionManager(
     events.cleanupResources(sessionId);
     resources.clear(sessionId);
     events.destroyed(destroyed, reason);
-    const archive = clock.setTimeout(() => sessions.delete(sessionId), config.archiveTtlMs ?? DEFAULT_ARCHIVE_TTL_MS);
+    const archive = clock.setTimeout(() => {
+      sessions.delete(sessionId);
+      timers.delete(sessionId);
+    }, config.archiveTtlMs ?? DEFAULT_ARCHIVE_TTL_MS);
     timers.set(sessionId, { archive });
     return destroyed;
   }
@@ -161,6 +164,7 @@ export function createSessionManager(
       resources.detach(sessionId, resourceId);
     },
     listResources: (sessionId) => resources.list(sessionId, sessions.has(sessionId)),
+    _internalTimerCount: () => timers.size,
   };
 }
 

@@ -203,4 +203,21 @@ describe("SessionManager", () => {
     expect(() => manager.resume(session.id)).toThrow(SessionArchivedError);
     expect(events).toEqual(["session.created", "session.cleanup_resources", "session.destroyed"]);
   });
+
+  it("clears the internal timers entry once the archive TTL has elapsed", () => {
+    const clock = new TestClock();
+    const manager = createSessionManager(createEventBus(), { clock, archiveTtlMs: 50 });
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const s = manager.create({ ownerId: "app", adapterType: "mcp" });
+      ids.push(s.id);
+      manager.destroy(s.id);
+    }
+    expect(manager._internalTimerCount()).toBe(5);
+    clock.advance(50);
+    expect(manager._internalTimerCount()).toBe(0);
+    for (const id of ids) {
+      expect(() => manager.getStatus(id)).toThrow(SessionNotFoundError);
+    }
+  });
 });

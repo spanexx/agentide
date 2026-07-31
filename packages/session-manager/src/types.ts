@@ -130,7 +130,7 @@ export interface CleanupResourcesPayload {
 }
 
 // CID:types-013 - SessionManager
-// Purpose: public lifecycle + resource API (8 methods)
+// Purpose: public lifecycle + resource API (9 methods; _internalTimerCount is a test/diagnostic helper)
 export interface SessionManager {
   create(params: CreateSessionParams): SessionRecord;
   resume(sessionId: string): SessionRecord;
@@ -140,6 +140,7 @@ export interface SessionManager {
   attachResource(sessionId: string, resource: ResourceRecord): void;
   detachResource(sessionId: string, resourceId: string): void;
   listResources(sessionId: string): ResourceRecord[];
+  _internalTimerCount(): number;
 }
 
 // CID:types-014 - SessionNotFoundError
