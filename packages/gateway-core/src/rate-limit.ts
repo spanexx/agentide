@@ -68,8 +68,14 @@ export class RateLimiter {
         // for fractional accumulation. (Math.ceil would let a 1ms retry earn 1 token
         // per retry at 10 tokens/sec config — 10x the configured rate.)
         const refilled = Math.floor((elapsedMs * this.config.tokensPerSecond) / 1000);
-        bucket.tokens = Math.min(this.config.capacity, bucket.tokens + refilled);
-        bucket.lastRefillAt = now;
+        if (refilled > 0) {
+          bucket.tokens = Math.min(this.config.capacity, bucket.tokens + refilled);
+          // Advance lastRefillAt by the milliseconds that produced the refilled
+          // tokens, not to `now`. Without this, sub-interval callers lose the
+          // fractional progress every call → permanent starvation when retrying
+          // faster than one-token-per-interval.
+          bucket.lastRefillAt += Math.floor((refilled * 1000) / this.config.tokensPerSecond);
+        }
       }
     }
     return bucket;
