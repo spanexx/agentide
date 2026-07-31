@@ -18,7 +18,7 @@ interface Bucket {
 // CID:rate-001 - RateLimiter
 // Purpose: per-(tenantId, callerId) token bucket; lazy refill on each access; deterministic with injected Clock
 // Used by: handleInvocation pipeline (every invocation consumes 1 token)
-// Used in tests by: 7 cases above covering capacity exhaustion, refill rate, fractional accumulation, capacity cap, key isolation, peek
+// Used in tests by: 9 cases above covering capacity exhaustion, refill rate, fractional accumulation, capacity cap, key isolation, peek, idle eviction
 export class RateLimiter {
   private readonly buckets = new Map<string, Bucket>();
 
@@ -36,6 +36,23 @@ export class RateLimiter {
 
   peek(key: string): number {
     return this.getBucket(key).tokens;
+  }
+
+  bucketCount(): number {
+    return this.buckets.size;
+  }
+
+  sweep(): number {
+    const idleTtlMs = this.config.idleTtlMs ?? 3_600_000;
+    const cutoff = this.clock.now() - idleTtlMs;
+    let removed = 0;
+    for (const [key, bucket] of this.buckets) {
+      if (bucket.lastRefillAt < cutoff) {
+        this.buckets.delete(key);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 
   private getBucket(key: string): Bucket {

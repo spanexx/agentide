@@ -82,4 +82,26 @@ describe("RateLimiter (per-key token bucket)", () => {
     expect(rl.tryConsume("carol")).toBe(true);
     expect(rl.peek("carol")).toBe(99);
   });
+
+  it("evicts buckets idle longer than the configured ttl", () => {
+    const clock = new FakeClock();
+    const rl = new RateLimiter({ ...defaultConfig, idleTtlMs: 1000 }, clock);
+    rl.tryConsume("alice");
+    rl.tryConsume("bob");
+    expect(rl.bucketCount()).toBe(2);
+    clock.advance(1001);
+    rl.sweep();
+    expect(rl.bucketCount()).toBe(0);
+  });
+
+  it("sweep keeps buckets that were touched within the ttl", () => {
+    const clock = new FakeClock();
+    const rl = new RateLimiter({ ...defaultConfig, idleTtlMs: 1000 }, clock);
+    rl.tryConsume("alice");
+    clock.advance(500);
+    rl.tryConsume("bob");
+    clock.advance(600);
+    rl.sweep();
+    expect(rl.bucketCount()).toBe(1);
+  });
 });

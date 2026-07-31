@@ -119,10 +119,11 @@ export interface TokenClaims {
 }
 
 // CID:types-009 - RateLimitBucketConfig
-// Purpose: per-(tenantId, callerId) token bucket config; defaults: capacity 100, refill 10/sec
+// Purpose: per-(tenantId, callerId) token bucket config; defaults: capacity 100, refill 10/sec, idle ttl 1h
 export interface RateLimitBucketConfig {
   readonly capacity: number;
   readonly tokensPerSecond: number;
+  readonly idleTtlMs?: number;
 }
 
 // CID:types-011 - Clock
