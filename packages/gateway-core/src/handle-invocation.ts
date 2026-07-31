@@ -20,6 +20,7 @@ import { ERROR_CODES, GatewayError } from "./errors.js";
 import { verifyToken } from "./auth.js";
 import type { AuditWriter } from "./audit.js";
 import { RateLimiter } from "./rate-limit.js";
+import { validateJsonSchema } from "./json-schema.js";
 import type { TenantStore } from "./tenant-store.js";
 import type {
   CanonicalInvocation,
@@ -27,6 +28,7 @@ import type {
   CallerIdentity,
   Clock,
   GatewayErrorPayload,
+  YamlValue,
 } from "./types.js";
 
 // Per GRILL Q3 / PRD §Product Scope: session-less capabilities are those that don't need a session
@@ -73,6 +75,7 @@ export interface HandleInvocationCtx {
   readonly handlerTimeoutMs: number;
   readonly secret: Uint8Array;
   readonly backendRuntime?: BackendRuntime;
+  readonly tokenLeewayMs?: number;
 }
 
 // CID:handle-001 - handleInvocation
@@ -124,7 +127,7 @@ export async function handleInvocation(
   }
 
   // (2) Verify the JWT — the kernel is the trust boundary. Adapters pass the bearer token they received.
-  const verifyResult = verifyToken(req.token, ctx.clock, ctx.secret);
+  const verifyResult = verifyToken(req.token, ctx.clock, ctx.secret, { leewayMs: ctx.tokenLeewayMs });
   if (!verifyResult.ok) {
     return exitWithError(req, ctx, startedAt, {
       code: verifyResult.code,
@@ -248,8 +251,29 @@ export async function handleInvocation(
   }
 
   // (8) Dispatch.
+  let output: YamlValue;
   try {
-    const output = await dispatchCapability(capability, req.input, req.sessionId, {
+    if (capability.inputSchema !== undefined) {
+      const validation = validateJsonSchema(req.input, capability.inputSchema);
+      if (!validation.ok) {
+        const errorList: YamlValue = validation.errors.map((e) => ({ path: e.path, message: e.message }));
+        await auditError(req, ctx, capability, caller, startedAt, new GatewayError(
+          ERROR_CODES.INVALID_REQUEST,
+          "input does not match capability inputSchema",
+          { capability: req.capability.name, errors: errorList },
+          false,
+        ));
+        return {
+          error: {
+            code: ERROR_CODES.INVALID_REQUEST,
+            message: "input does not match capability inputSchema",
+            details: { capability: req.capability.name, errors: errorList },
+            retryable: false,
+          },
+        };
+      }
+    }
+    output = await dispatchCapability(capability, req.input, req.sessionId, {
       registry: ctx.registry,
       sessionManager: ctx.sessionManager,
       pluginManager: ctx.pluginManager,
@@ -258,6 +282,26 @@ export async function handleInvocation(
       handlerTimeoutMs: ctx.handlerTimeoutMs,
       backendRuntime: ctx.backendRuntime,
     });
+    if (capability.outputSchema !== undefined) {
+      const validation = validateJsonSchema(output, capability.outputSchema);
+      if (!validation.ok) {
+        const errorList: YamlValue = validation.errors.map((e) => ({ path: e.path, message: e.message }));
+        await auditError(req, ctx, capability, caller, startedAt, new GatewayError(
+          ERROR_CODES.INTERNAL_ERROR,
+          "handler output does not match capability outputSchema",
+          { capability: req.capability.name, errors: errorList },
+          true,
+        ));
+        return {
+          error: {
+            code: ERROR_CODES.INTERNAL_ERROR,
+            message: "handler output does not match capability outputSchema",
+            details: { capability: req.capability.name, errors: errorList },
+            retryable: true,
+          },
+        };
+      }
+    }
 
     // (9) Audit + event + success return.
     await auditOk(req, ctx, capability, caller, startedAt);
