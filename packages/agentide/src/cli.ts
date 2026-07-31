@@ -6,6 +6,27 @@
 import { createPlatform } from "./factory.js";
 import type { CliOptions, CliResult } from "./cli-types.js";
 
+let globalHandlersInstalled = false;
+
+export type ErrorSink = (line: string) => void;
+
+const defaultErrorSink: ErrorSink = (line) => {
+  process.stderr.write(`${line}\n`);
+};
+
+export function installGlobalErrorHandlers(sink: ErrorSink = defaultErrorSink): boolean {
+  if (globalHandlersInstalled) return false;
+  globalHandlersInstalled = true;
+  process.on("uncaughtException", (err) => {
+    sink(`CRITICAL UNCAUGHT EXCEPTION: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+  });
+  process.on("unhandledRejection", (reason) => {
+    const msg = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
+    sink(`UNHANDLED PROMISE REJECTION: ${msg}`);
+  });
+  return true;
+}
+
 const HELP = `agentide — Agent Runtime Platform operator CLI
 
 Usage:
@@ -60,6 +81,7 @@ function result(stdout: string, stderr = "", exitCode = 0): CliResult {
 }
 
 export async function runCli(argv: readonly string[], opts: CliOptions): Promise<CliResult> {
+  installGlobalErrorHandlers();
   const { positional, flags } = parseArgs(argv);
   const cmd = positional[0];
 
