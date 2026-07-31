@@ -7,7 +7,8 @@
   },
   "references": [
     { "path": "../event-bus" },
-    { "path": "../capability-registry" }
+    { "path": "../capability-registry" },
+    { "path": "../gateway-core" }
   ],
   "include": ["src/**/*"]
 }
