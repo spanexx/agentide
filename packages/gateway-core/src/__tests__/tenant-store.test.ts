@@ -5,6 +5,8 @@ import type { FileSystem } from "../index.js";
 
 class InMemoryFs implements FileSystem {
   files = new Map<string, string>();
+  pendingWrites = 0;
+  maxConcurrentWrites = 0;
   async readFile(path: string): Promise<string> {
     const content = this.files.get(path);
     if (content === undefined) {
@@ -15,7 +17,11 @@ class InMemoryFs implements FileSystem {
     return content;
   }
   async writeFile(path: string, content: string): Promise<void> {
+    this.pendingWrites += 1;
+    this.maxConcurrentWrites = Math.max(this.maxConcurrentWrites, this.pendingWrites);
+    await new Promise<void>((resolve) => setImmediate(resolve));
     this.files.set(path, content);
+    this.pendingWrites -= 1;
   }
   async exists(path: string): Promise<boolean> {
     return this.files.has(path);
@@ -134,5 +140,14 @@ describe("TenantStore", () => {
     store.set({ id: "a", name: "A2", createdAt: 1, suspended: false });
     expect(store.list().map((t) => t.id)).toEqual(["a", "b"]);
     expect(store.get("a")?.name).toBe("A2");
+  });
+
+  it("concurrent save() calls are serialized (no interleaved file writes)", async () => {
+    const fs = new InMemoryFs();
+    const store = new TenantStore("/data/tenants.json", fs);
+    await store.load();
+    store.set({ id: "a", name: "A", createdAt: 1, suspended: false });
+    await Promise.all([store.save(), store.save(), store.save()]);
+    expect(fs.maxConcurrentWrites).toBe(1);
   });
 });

@@ -42,6 +42,7 @@ function isInstallRecordShape(value: YamlValue): boolean {
 // Used by: createPluginManager factory
 export class InstallStore {
   private readonly records = new Map<string, InstallRecord>();
+  private saveChain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly installRecordPath: string,
@@ -97,7 +98,12 @@ export class InstallStore {
   // Purpose: serialize the in-memory map to JSON and persist atomically (write-temp-then-rename inside fs.writeFile)
   async save(): Promise<void> {
     const payload = JSON.stringify([...this.records.values()], null, 2);
-    await this.fs.writeFile(this.installRecordPath, payload);
+    const next = this.saveChain.then(() => this.fs.writeFile(this.installRecordPath, payload));
+    this.saveChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    await next;
   }
 
   // CID:store-004 - get

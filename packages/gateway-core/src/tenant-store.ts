@@ -17,6 +17,7 @@ import type { FileSystem, TenantRecord, YamlValue } from "./types.js";
 // Used in tests by: 11 cases above covering load/save/round-trip, malformed JSON, insertion order
 export class TenantStore {
   private readonly records = new Map<string, TenantRecord>();
+  private saveChain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly tenantsPath: string,
@@ -70,7 +71,12 @@ export class TenantStore {
 
   async save(): Promise<void> {
     const payload = JSON.stringify([...this.records.values()], null, 2);
-    await this.fs.writeFile(this.tenantsPath, payload);
+    const next = this.saveChain.then(() => this.fs.writeFile(this.tenantsPath, payload));
+    this.saveChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    await next;
   }
 
   get(id: string): TenantRecord | null {

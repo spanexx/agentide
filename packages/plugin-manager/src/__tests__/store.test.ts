@@ -6,6 +6,8 @@ class InMemoryFs implements FileSystem {
   files = new Map<string, string>();
   // Make writeFile fail by toggling this; the store's save() call will throw.
   failOnWrite = false;
+  pendingWrites = 0;
+  maxConcurrentWrites = 0;
 
   async readFile(path: string): Promise<string> {
     const content = this.files.get(path);
@@ -15,7 +17,11 @@ class InMemoryFs implements FileSystem {
 
   async writeFile(path: string, content: string): Promise<void> {
     if (this.failOnWrite) throw new Error("disk full");
+    this.pendingWrites += 1;
+    this.maxConcurrentWrites = Math.max(this.maxConcurrentWrites, this.pendingWrites);
+    await new Promise<void>((resolve) => setImmediate(resolve));
     this.files.set(path, content);
+    this.pendingWrites -= 1;
   }
 
   async exists(path: string): Promise<boolean> {
@@ -155,5 +161,16 @@ describe("InstallStore", () => {
     expect(store.has("browser")).toBe(false);
     store.set(record());
     expect(store.has("browser")).toBe(true);
+  });
+
+  it("concurrent save() calls are serialized (no interleaved file writes)", async () => {
+    const fs = new InMemoryFs();
+    const store = new InstallStore("/data/installed.json", fs);
+    await store.load();
+    store.set(record({ id: "a" }));
+    store.set(record({ id: "b" }));
+    store.set(record({ id: "c" }));
+    await Promise.all([store.save(), store.save(), store.save()]);
+    expect(fs.maxConcurrentWrites).toBe(1);
   });
 });
