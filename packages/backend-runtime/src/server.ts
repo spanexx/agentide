@@ -8,8 +8,10 @@
  * Wire protocol (Phase 2 surface):
  *   - First message after open MUST be {type:"sdk.auth", token: string}.
  *   - Any other message before sdk.auth is silently ignored.
- *   - Bad/expired token → socket closed; no accepted event.
- *   - Good token → registered, sdk.connection.accepted emitted.
+ *   - Bad/expired token → server sends sdk.auth.error {protocolVersion, code, message}
+ *     then closes the socket; no accepted event.
+ *   - Good token → registered, server sends sdk.auth.ack {protocolVersion},
+ *     sdk.connection.accepted emitted.
  *   - SDK closes the socket → sdk.connection.closed {reason:"dropped"}.
  *   - Server replaces an appId's connection → old socket closed (server-initiated).
  *     The old socket's close handler sees the socket is no longer the registered
@@ -17,12 +19,20 @@
  *   - stop() → snapshot+clear the registry, close every socket, publish
  *     sdk.connection.closed {reason:"explicit"} for each appId.
  *
+ * Wire protocol versioning (Phase 2.5):
+ *   - PROTOCOL_VERSION = 1. Every server-to-SDK wire message carries it.
+ *   - SDKs that don't send a version get the v1 protocol (backward compatible).
+ *   - Forward-compat is a future pack (v2 negotiation).
+ *
  * CID Index:
  * CID:server-001 -> createServer
  * CID:server-002 -> handleConnection
  * CID:server-003 -> start (server bound + listening)
  * CID:server-004 -> stop (snapshot+close+publish)
  * CID:server-005 -> address (bound host:port)
+ * CID:server-006 -> PROTOCOL_VERSION
+ * CID:server-007 -> sendAuthAck
+ * CID:server-008 -> sendAuthError
  */
 
 import { WebSocketServer, type WebSocket as WSWebSocket } from "ws";
@@ -32,6 +42,8 @@ import { ConnectionRegistry } from "./registry.js";
 import { InvocationDispatcher } from "./dispatch.js";
 import { emitConnectionAccepted, emitConnectionClosed } from "./events.js";
 import { verifyToken } from "./verify.js";
+
+export const PROTOCOL_VERSION = 1 as const;
 
 export interface ServerHandle {
   start(): Promise<{ readonly port: number; readonly host: string }>;
@@ -110,6 +122,7 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
         if (!isAuthMessage(msg)) return;
         const result = verifyToken(msg.token, clock, config.tokenSecret);
         if (!result.ok) {
+          sendAuthError(socket, result.code);
           safeClose(socket, 1000, "auth-failed");
           return;
         }
@@ -136,6 +149,7 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
           gatewayUrl: `ws://${boundAddress?.host ?? "127.0.0.1"}:${boundAddress?.port ?? config.port}`,
           latencyMs,
         });
+        sendAuthAck(socket);
         return;
       }
 
@@ -373,6 +387,27 @@ function safeClose(socket: WSWebSocket, code: number, reason: string): void {
     socket.close(code, reason);
   } catch {
     // Defensive: ignore double-close.
+  }
+}
+
+function sendAuthAck(socket: WSWebSocket): void {
+  try {
+    socket.send(JSON.stringify({ type: "sdk.auth.ack", protocolVersion: PROTOCOL_VERSION }));
+  } catch {
+    // Defensive: ignore send failures here; the close handler runs.
+  }
+}
+
+function sendAuthError(socket: WSWebSocket, code: "TOKEN_INVALID" | "TOKEN_EXPIRED"): void {
+  try {
+    socket.send(JSON.stringify({
+      type: "sdk.auth.error",
+      protocolVersion: PROTOCOL_VERSION,
+      code,
+      message: code === "TOKEN_EXPIRED" ? "token expired" : "token invalid",
+    }));
+  } catch {
+    // Defensive: ignore send failures here; the close handler runs.
   }
 }
 

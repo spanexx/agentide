@@ -239,6 +239,94 @@ describe("Phase 2: server lifecycle", () => {
   });
 });
 
+describe("Phase 2.5: sdk.auth.ack + protocolVersion", () => {
+  let bus: EventBus;
+  let clock: FakeClock;
+  let secret: Uint8Array;
+  let registry: CapabilityRegistry;
+  let runtime: BackendRuntime;
+  let port: number;
+
+  beforeEach(async () => {
+    bus = createEventBus();
+    clock = new FakeClock();
+    secret = secretFrom("test-1");
+    registry = createCapabilityRegistry(bus);
+    runtime = createBackendRuntime({
+      port: 0,
+      tokenSecret: secret,
+      eventBus: bus,
+      capabilityRegistry: registry,
+      clock,
+    });
+    await runtime.start();
+    const addr = runtime.address();
+    if (!addr) throw new Error("runtime.address() returned null after start()");
+    port = addr.port;
+  });
+
+  afterEach(async () => {
+    await runtime.stop();
+  });
+
+  function wsUrl(): string { return `ws://127.0.0.1:${port}`; }
+
+  function captureMessages(sock: WebSocket): { messages: unknown[]; close: () => void } {
+    const messages: unknown[] = [];
+    const handler = (raw: WebSocket.RawData) => {
+      try {
+        messages.push(JSON.parse(raw.toString()));
+      } catch {
+        // ignore non-JSON
+      }
+    };
+    sock.on("message", handler);
+    return { messages, close: () => sock.off("message", handler) };
+  }
+
+  it("sends sdk.auth.ack with protocolVersion on successful auth", async () => {
+    const sock = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    const reader = captureMessages(sock);
+    sock.send(JSON.stringify({ type: "sdk.auth", token: mintToken({ tenantId: "acme", callerId: "ack-app" }, secret, clock) }));
+
+    await waitFor(() => reader.messages.some((m) => (m as { type?: string }).type === "sdk.auth.ack"), 1000);
+    const ack = reader.messages.find((m) => (m as { type?: string }).type === "sdk.auth.ack") as { protocolVersion: number };
+    expect(ack.protocolVersion).toBe(1);
+    expect(runtime.connectionCount()).toBe(1);
+    sock.close();
+  });
+
+  it("sends sdk.auth.error with protocolVersion before close on bad token", async () => {
+    const sock = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    const reader = captureMessages(sock);
+    sock.send(JSON.stringify({ type: "sdk.auth", token: "not-a-jwt" }));
+
+    await waitFor(() => reader.messages.some((m) => (m as { type?: string }).type === "sdk.auth.error"), 1000);
+    const err = reader.messages.find((m) => (m as { type?: string }).type === "sdk.auth.error") as { protocolVersion: number; code: string; message: string };
+    expect(err.protocolVersion).toBe(1);
+    expect(err.code).toBe("TOKEN_INVALID");
+    expect(typeof err.message).toBe("string");
+    await waitFor(() => sock.readyState === WebSocket.CLOSED, 500);
+    expect(runtime.connectionCount()).toBe(0);
+  });
+
+  it("sends sdk.auth.error with protocolVersion before close on expired token", async () => {
+    const sock = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    const reader = captureMessages(sock);
+    const expiredToken = mintToken({ tenantId: "acme", callerId: "stale", exp: clock.now() - 1 }, secret, clock);
+    sock.send(JSON.stringify({ type: "sdk.auth", token: expiredToken }));
+
+    await waitFor(() => reader.messages.some((m) => (m as { type?: string }).type === "sdk.auth.error"), 1000);
+    const err = reader.messages.find((m) => (m as { type?: string }).type === "sdk.auth.error") as { protocolVersion: number; code: string };
+    expect(err.protocolVersion).toBe(1);
+    expect(err.code).toBe("TOKEN_EXPIRED");
+    await waitFor(() => sock.readyState === WebSocket.CLOSED, 500);
+  });
+});
+
 describe("Phase 3: capability registration bridge", () => {
   let bus: EventBus;
   let clock: FakeClock;
