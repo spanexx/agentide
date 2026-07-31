@@ -44,7 +44,11 @@ export function issueToken(claims: TokenClaims, secret: Uint8Array, _clock: Cloc
 // Purpose: parse JWT, verify HS256 signature with timing-safe compare, check exp against injected clock; reject expired/invalid/tampered
 // Used by: handleInvocation pipeline (every request begins with token verify)
 // Used in tests by: 8 cases above covering round-trip, tamper, expiry, malformed, algorithm confusion
-export function verifyToken(token: string, clock: Clock, secret: Uint8Array): VerifyResult {
+export interface VerifyOptions {
+  readonly leewayMs?: number;
+}
+
+export function verifyToken(token: string, clock: Clock, secret: Uint8Array, options: VerifyOptions = {}): VerifyResult {
   const parts = token.split(".");
   if (parts.length !== 3) {
     return { ok: false, code: ERROR_CODES.TOKEN_INVALID };
@@ -86,7 +90,7 @@ export function verifyToken(token: string, clock: Clock, secret: Uint8Array): Ve
   } catch {
     return { ok: false, code: ERROR_CODES.TOKEN_INVALID };
   }
-  if (typeof claims.exp !== "number" || claims.exp <= clock.now()) {
+  if (typeof claims.exp !== "number" || claims.exp + (options.leewayMs ?? 0) <= clock.now()) {
     return { ok: false, code: ERROR_CODES.TOKEN_EXPIRED };
   }
 

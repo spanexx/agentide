@@ -93,4 +93,20 @@ describe("issueToken + verifyToken (HS256)", () => {
     const token = issueToken(claims(), SECRET, clock);
     expect(token.split(".")).toHaveLength(3);
   });
+
+  it("accepts an expired token within the leeway window", () => {
+    const clock = new FakeClock();
+    const token = issueToken(claims({ exp: 1_700_000_003_600 }), SECRET, clock);
+    clock.nowValue = 1_700_000_003_700;
+    expect(verifyToken(token, clock, SECRET, { leewayMs: 1000 }).ok).toBe(true);
+    clock.nowValue = 1_700_000_004_700;
+    expect(verifyToken(token, clock, SECRET, { leewayMs: 1000 }).ok).toBe(false);
+  });
+
+  it("defaults to no leeway (zero backward-compatible behavior)", () => {
+    const clock = new FakeClock();
+    const token = issueToken(claims({ exp: 1_700_000_003_600 }), SECRET, clock);
+    clock.nowValue = 1_700_000_003_601;
+    expect(verifyToken(token, clock, SECRET).ok).toBe(false);
+  });
 });
