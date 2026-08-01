@@ -17,7 +17,7 @@ The cost of leaving this unsolved: the entire platform is process-local. Operato
 ### Scenario 1: an MCP client connects and lists available capabilities
 
 **Given** the Gateway is running with the MCP adapter listening on port 7100; an MCP client sends `POST /mcp` with a valid bearer token in `Authorization: Bearer <jwt>` and JSON-RPC body `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2025-11-25","io.modelcontextprotocol/clientCapabilities":{"tools":{}}}}}`
-**When** the adapter parses the request and calls `gateway.handleInvocation({token, capability:{name:"capability.list"}, input:{}})`
+**When** the adapter parses the request, decodes the caller's scope from the bearer token, and calls `gateway.handleInvocation({token, capability:{name:"capability.list"}, input:{ scope }})` — the decoded scope is what lets the kernel apply BI[7] tier filtering
 **Then** the adapter returns `{"jsonrpc":"2.0","id":1,"result":{"tools":[<Tool[]>]}}` where each Tool is `{name, description, inputSchema, annotations:{tier}}`. The list honors BI[7] tier filtering: a caller with `platform.*.read` sees only read-tier platform caps.
 
 ### Scenario 2: an MCP client invokes a business capability through the SDK
@@ -34,7 +34,7 @@ The cost of leaving this unsolved: the entire platform is process-local. Operato
 
 ### Scenario 4: MCP client calls a capability that does not exist
 
-**Given** any state
+**Given** any state **with an active session** (the kernel's session check precedes capability resolution, so business-capability calls without a session return `-32006` `GATEWAY_SESSION_REQUIRED` — see error table fallback row — instead of reaching the not-found path)
 **When** an MCP client sends `{"method":"tools/call","params":{"name":"customer.refund","arguments":{}}}`
 **Then** the adapter returns `{"jsonrpc":"2.0","id":<n>,"error":{"code":-32001,"message":"capability 'customer.refund' not found"}}`.
 
@@ -141,7 +141,9 @@ JSON-RPC error codes returned to MCP clients (per `PRD-gateway-core.md:213` and 
 | `GATEWAY_PLUGIN_DISABLED` | `-32004` | runtime plugin paused |
 | `GATEWAY_SDK_UNREACHABLE` | `-32005` | no SDK connection for owner |
 | `GATEWAY_INTERNAL_ERROR` | `-32006` | handler threw |
-| `GATEWAY_HANDLER_TIMEOUT` | `-32007` | handler exceeded timeoutMs |
+| `GATEWAY_HANDLER_TIMEOUT` | *(no JSON-RPC code — superseded)* | handler timeouts return an `isError: true` result, not a JSON-RPC error (see Success response shape; earlier `-32007` mapping deprecated) |
+| `GATEWAY_SESSION_REQUIRED` | `-32006` (fallback) | business capability called without an active session — session check precedes capability resolution |
+| any other unmapped kernel code (`TENANT_MISMATCH`, `INVALID_REQUEST`, …) | `-32006` (fallback) | `{code: -32006, message: "<KERNEL_CODE>: <kernel msg>"}` — kernel error identifiers are echoed in the wire message for unmapped codes |
 | missing protocolVersion in `_meta` | `-32602` | JSON-RPC invalid params |
 | unknown method (`prompts/*`, `resources/*`, etc.) | `-32601` | JSON-RPC method not found |
 | `GATEWAY_AUTH_FAILED` | `-32001` | mapped to capability-not-found (no enumeration of auth state) |
