@@ -188,12 +188,26 @@ export function translatePluginError(
           err.message,
           { pluginId, capability, originalError: err.message },
         );
-      case PM_ERROR_CODES.HANDLER_ERROR:
-        return new GatewayError(
-          ERROR_CODES.HANDLER_ERROR,
-          err.message,
-          { pluginId, capability, originalError: err.message },
-        );
+      case PM_ERROR_CODES.HANDLER_ERROR: {
+        // AUDIT F10 (browser-runtime, user-approved 2026-08-02): additive
+        // envelope extension — pass the plugin-manager-preserved
+        // originalErrorCode + retryable into details when present so
+        // callers can match on the handler's own code (e.g. BROWSER_*).
+        const details: Record<string, JsonValue> = {
+          pluginId,
+          capability,
+          originalError: err.message,
+        };
+        const originalErrorCode = err.details.originalErrorCode;
+        if (typeof originalErrorCode === "string") {
+          details.originalErrorCode = originalErrorCode;
+        }
+        const retryable = err.details.retryable;
+        if (typeof retryable === "boolean") {
+          details.retryable = retryable;
+        }
+        return new GatewayError(ERROR_CODES.HANDLER_ERROR, err.message, details);
+      }
       default:
         return new GatewayError(
           ERROR_CODES.INTERNAL_ERROR,

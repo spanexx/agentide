@@ -119,6 +119,40 @@ describe("translatePluginError (BI[8a] Option B matrix)", () => {
     });
   });
 
+  it("preserves originalErrorCode + retryable from PLUGIN_HANDLER_ERROR details (AUDIT F10)", () => {
+    const err = new PluginManagerError(
+      PM_ERROR_CODES.HANDLER_ERROR,
+      "plugin \"browser\" handler for \"browser.wait\" threw: timed out",
+      {
+        pluginId: "browser",
+        capabilityName: "browser.wait",
+        originalError: "timed out",
+        originalErrorCode: "BROWSER_WAIT_TIMEOUT",
+        retryable: true,
+      },
+    );
+    const translated = translatePluginError(err, "browser", "browser.wait");
+    expect(translated.code).toBe(ERROR_CODES.HANDLER_ERROR);
+    expect(translated.retryable).toBe(false); // envelope stays non-retryable
+    expect(translated.details).toMatchObject({
+      pluginId: "browser",
+      capability: "browser.wait",
+      originalErrorCode: "BROWSER_WAIT_TIMEOUT",
+      retryable: true,
+    });
+  });
+
+  it("does not add originalErrorCode/retryable when absent (backward compat)", () => {
+    const err = new PluginManagerError(
+      PM_ERROR_CODES.HANDLER_ERROR,
+      "handler exploded",
+      { pluginId: "browser", capabilityName: "browser.boom" },
+    );
+    const translated = translatePluginError(err, "browser", "browser.boom");
+    expect(translated.details).not.toHaveProperty("originalErrorCode");
+    expect(translated.details).not.toHaveProperty("retryable");
+  });
+
   it("wraps a non-PluginManagerError as GATEWAY_INTERNAL_ERROR", () => {
     const translated = translatePluginError(
       new Error("kernel panic"),

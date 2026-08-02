@@ -114,6 +114,82 @@ describe("PluginManager.handleInvocation (BI[8a] Phase 1)", () => {
     // Phase 1 doesn't add the entry field; default is undefined.
     // The PluginManifest type still requires runtime to have `id` (existing).
   });
+
+  it("preserves handler error code + retryable in PLUGIN_HANDLER_ERROR details (AUDIT F10)", async () => {
+    // A handler that throws a structured browser-style error (code +
+    // retryable). The wrap must preserve both in details so gateway-core
+    // can pass them to the caller. Uses a real .mjs file on disk like
+    // the reload test — dynamic import needs a real module.
+    const { pm, fs } = await setupWithLoaded(["browser-with-entry.yaml"]);
+    const { writeFile, mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const tmpDir = await mkdtemp(join(tmpdir(), "plugin-f10-"));
+    try {
+      const entryPath = join(tmpDir, "browser-f10.mjs");
+      await writeFile(
+        entryPath,
+        `export default {
+          "browser.wait": async () => {
+            const e = new Error("element never appeared");
+            e.code = "BROWSER_WAIT_TIMEOUT";
+            e.retryable = true;
+            throw e;
+          },
+        };`,
+        "utf-8",
+      );
+      const manifestPath = path("browser-with-entry.yaml");
+      fs.files.set(
+        manifestPath,
+        `runtime:\n  id: browser\n  entry: ${entryPath}\nversion: "1.0"\ncapabilities:\n  - browser.wait\n`,
+      );
+      await pm.install(manifestPath);
+
+      const err = await pm.handleInvocation("browser.wait", {}, undefined).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(PluginManagerError);
+      const pme = err as PluginManagerError;
+      expect(pme.code).toBe("PLUGIN_HANDLER_ERROR");
+      expect(pme.details).toMatchObject({
+        originalErrorCode: "BROWSER_WAIT_TIMEOUT",
+        retryable: true,
+      });
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("adds no originalErrorCode/retryable for plain Errors (backward compat)", async () => {
+    const { pm, fs } = await setupWithLoaded(["browser-with-entry.yaml"]);
+    const { writeFile, mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const tmpDir = await mkdtemp(join(tmpdir(), "plugin-f10b-"));
+    try {
+      const entryPath = join(tmpDir, "browser-plain.mjs");
+      await writeFile(
+        entryPath,
+        `export default {
+          "browser.click": async () => { throw new Error("plain failure"); },
+        };`,
+        "utf-8",
+      );
+      const manifestPath = path("browser-with-entry.yaml");
+      fs.files.set(
+        manifestPath,
+        `runtime:\n  id: browser\n  entry: ${entryPath}\nversion: "1.0"\ncapabilities:\n  - browser.click\n`,
+      );
+      await pm.install(manifestPath);
+
+      const err = await pm.handleInvocation("browser.click", {}, undefined).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(PluginManagerError);
+      const pme = err as PluginManagerError;
+      expect(pme.details).not.toHaveProperty("originalErrorCode");
+      expect(pme.details).not.toHaveProperty("retryable");
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("PluginManifest.runtime.entry (BI[8a] Phase 1)", () => {

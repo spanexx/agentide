@@ -224,10 +224,28 @@ export async function createPluginManager(
         // internals). Audit + re-throw as structured error.
         const e = err instanceof Error ? err : new Error(String(err));
         events.handlerInvokeFailed(store.get(pluginId), name, e);
+        // AUDIT F10 (browser-runtime, user-approved 2026-08-02): additive
+        // envelope extension — when the handler throws an Error carrying a
+        // structured code + retryable flag (e.g. browser-runtime's
+        // BROWSER_* codes), preserve them in details so callers can match
+        // on originalErrorCode and honor retryable. Backward compatible:
+        // plain Errors get no new keys.
+        const structured = err as { code?: string; retryable?: boolean };
+        const details: Record<string, YamlValue> = {
+          pluginId,
+          capabilityName: name,
+          originalError: e.message ?? null,
+        };
+        if (typeof structured.code === "string") {
+          details.originalErrorCode = structured.code;
+        }
+        if (typeof structured.retryable === "boolean") {
+          details.retryable = structured.retryable;
+        }
         throw new PluginManagerError(
           ERROR_CODES.HANDLER_ERROR,
           `plugin "${pluginId}" handler for "${name}" threw: ${e.message ?? "unknown"}`,
-          { pluginId, capabilityName: name, originalError: e.message ?? null },
+          details,
         );
       }
     },
