@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>browser-runtime — pre-impl simulation (design-time)</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --bg-elevated: #1a1f2e;
+    --card: #232938;
+    --border: #2d3344;
+    --fg: #e6e6e6;
+    --muted: #8b95a7;
+    --accent: #6ee7b7;
+    --accent-dim: #34d399;
+    --warn: #fbbf24;
+    --error: #f87171;
+    --info: #60a5fa;
+    --term-bg: #000;
+    --term-fg: #e6e6e6;
+    --term-prompt: #6ee7b7;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; }
+  header {
+    padding: 10px 16px; background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+  header .badge {
+    background: var(--card); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 4px; color: var(--muted); font-size: 10px;
+  }
+  header .sub { color: var(--muted); font-size: 11px; width: 100%; }
+
+  #sess-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 4px; padding: 6px 10px; font-family: ui-monospace, monospace;
+    font-size: 11px; font-weight: 600;
+  }
+  #sess-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  #sess-badge.st-idle #sess-dot { background: var(--muted); }
+  #sess-badge.st-launched #sess-dot { background: var(--accent); }
+  #sess-badge.st-suspended #sess-dot { background: var(--warn); animation: pulse 1.5s ease-in-out infinite; }
+  #sess-badge.st-closed #sess-dot { background: var(--error); }
+  #sess-badge.st-crashed #sess-dot { background: var(--error); animation: pulse 0.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .panel {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px; display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel h2 {
+    margin: 0 0 8px 0; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+
+  /* Session lifecycle strip */
+  .lc { display: flex; align-items: center; gap: 2px; padding: 4px 2px; flex-wrap: wrap; }
+  .lc-step { display: flex; flex-direction: column; align-items: center; gap: 3px; margin-right: 2px; }
+  .lc-dot {
+    width: 12px; height: 12px; border-radius: 50%; background: var(--card);
+    border: 2px solid var(--border);
+  }
+  .lc-dot.a { background: var(--accent); border-color: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .lc-dot.d { background: var(--accent-dim); border-color: var(--accent-dim); }
+  .lc-label { font-size: 8px; color: var(--muted); text-transform: uppercase; white-space: nowrap; }
+  .lc-step.a .lc-label, .lc-step.d .lc-label { color: var(--accent); }
+
+  /* Cap grid */
+  #cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+  .cap-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-left: 3px solid var(--muted); border-radius: 3px;
+    padding: 7px; opacity: 0; transform: translateY(6px);
+    transition: opacity 0.3s, transform 0.3s, border-color 0.3s;
+  }
+  .cap-card.shown { opacity: 1; transform: translateY(0); }
+  .cap-card.r { border-left-color: var(--accent); }
+  .cap-card.a { border-left-color: var(--info); }
+  .cap-card.d { border-left-color: var(--error); }
+  .cap-name { font-family: ui-monospace, monospace; font-weight: 600; color: var(--accent); font-size: 11px; }
+  .cap-meta { color: var(--muted); font-size: 9px; margin: 3px 0; }
+  .cap-tabs { color: var(--info); font-size: 9px; font-family: ui-monospace, monospace; }
+  .empty { color: var(--muted); font-style: italic; padding: 6px; font-size: 11px; }
+
+  /* Browser window (T7 shape A — "The window") */
+  #browser-box {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  #browser-head { display: flex; gap: 6px; padding: 6px 8px; background: var(--card); border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
+  #mode-tag { font-size: 9px; padding: 2px 6px; border-radius: 2px; text-transform: uppercase; font-weight: 600; }
+  #mode-tag.headless { background: var(--card); color: var(--muted); border: 1px solid var(--border); }
+  #mode-tag.headed { background: var(--accent); color: var(--bg); }
+  #tab-bar { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tab-chip {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+    padding: 2px 8px; font-size: 10px; font-family: ui-monospace, monospace;
+    color: var(--muted); cursor: pointer;
+  }
+  .tab-chip.active { border-color: var(--accent); color: var(--accent); }
+  #url-bar {
+    flex: 1; min-width: 160px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 3px 8px; font-size: 10px; color: var(--fg);
+    font-family: ui-monospace, monospace;
+  }
+  #page-box { padding: 10px; display: flex; flex-direction: column; gap: 6px; min-height: 150px; }
+  .pg-title { font-size: 13px; font-weight: 600; color: var(--fg); }
+  .pg-sub { font-size: 10px; color: var(--muted); }
+  .pg-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .pg-input { background: var(--card); border: 1px solid var(--border); color: var(--fg); border-radius: 2px; padding: 3px 6px; font-size: 10px; flex: 1; min-width: 100px; }
+  .pg-btn { background: var(--accent); color: var(--bg); border: none; border-radius: 2px; padding: 3px 10px; font-size: 10px; font-weight: 600; cursor: pointer; }
+  .pg-link { color: var(--info); font-size: 10px; text-decoration: underline; cursor: pointer; }
+  .pg-el { transition: box-shadow 0.2s, border-color 0.2s; }
+  .pg-el.flash { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+  .pg-el.flash-err { box-shadow: 0 0 0 2px var(--error); border-color: var(--error); }
+  .pg-tag { color: var(--muted); font-size: 9px; font-family: ui-monospace, monospace; }
+  #shot-box { display: none; margin-top: 6px; border-top: 1px dashed var(--border); padding-top: 6px; }
+  #shot-box.show { display: block; }
+  #shot-box img { border: 1px solid var(--border); border-radius: 3px; max-width: 100%; max-height: 110px; }
+  #shot-meta { font-size: 9px; color: var(--muted); font-family: ui-monospace, monospace; margin-top: 3px; }
+
+  /* Events log */
+  .log {
+    flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 6px; font-family: ui-monospace, monospace; font-size: 10px;
+    min-height: 0; max-height: 160px;
+  }
+  .log div { padding: 1px 2px; border-left: 2px solid transparent; }
+  .log .evt { border-left-color: var(--accent-dim); }
+  .log .warn { border-left-color: var(--warn); color: var(--warn); }
+  .log .err { border-left-color: var(--error); color: var(--error); }
+  .log .audit { border-left-color: var(--info); }
+  .log .muted { color: var(--muted); }
+
+  /* Terminal */
+  #term-box {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--term-bg); border-radius: 3px; margin-top: 8px;
+    padding: 8px; min-height: 0; overflow: hidden;
+  }
+  #term-log {
+    flex: 1; overflow-y: auto; color: var(--term-fg);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;
+  }
+  #term-log .ok { color: var(--accent); }
+  #term-log .warn { color: var(--warn); }
+  #term-log .err { color: var(--error); }
+  #term-log .info { color: #60a5fa; }
+  #term-log .muted { color: var(--muted); }
+  #term-input-row {
+    display: flex; align-items: center; padding-top: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  }
+  #term-prompt { color: var(--term-prompt); margin-right: 4px; }
+  #term-input {
+    flex: 1; background: transparent; border: none; color: var(--term-fg);
+    font-family: inherit; font-size: inherit; outline: none; caret-color: var(--accent);
+  }
+  .help { padding: 6px 12px; background: var(--bg-elevated); border-top: 1px solid var(--border); display: flex; gap: 8px; font-size: 10px; color: var(--muted); align-items: center; flex-wrap: wrap; }
+  .help code { background: var(--card); padding: 1px 5px; border-radius: 2px; color: var(--accent); }
+  .help button { margin-left: auto; padding: 5px 12px; background: var(--accent); color: var(--bg); border: none; border-radius: 3px; font-weight: 600; cursor: pointer; font-size: 10px; }
+  .help button:hover { opacity: 0.85; }
+  .help button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>browser-runtime</h1>
+  <span class="badge">PRE-IMPL (design-time — no real code)</span>
+  <span id="sess-badge" class="st-idle"><span id="sess-dot"></span><span id="sess-label">session: idle · proc: dead</span></span>
+  <span class="sub">Playwright v1 engine · one Chromium process + one BrowserContext per session · CSS-only selectors · numeric tabId</span>
+</header>
+
+<main>
+  <div class="panel">
+    <div class="section">
+      <h2>Session lifecycle</h2>
+      <div class="lc" id="lc">
+        <div class="lc-step" data-step="idle"><div class="lc-dot"></div><div class="lc-label">idle</div></div>
+        <div class="lc-line" style="width:14px;"></div>
+        <div class="lc-step" data-step="launch"><div class="lc-dot"></div><div class="lc-label">launch</div></div>
+        <div class="lc-line" style="width:14px;"></div>
+        <div class="lc-step" data-step="open"><div class="lc-dot"></div><div class="lc-label">open</div></div>
+        <div class="lc-line" style="width:14px;"></div>
+        <div class="lc-step" data-step="navigate"><div class="lc-dot"></div><div class="lc-label">navigate</div></div>
+        <div class="lc-line" style="width:14px;"></div>
+        <div class="lc-step" data-step="interact"><div class="lc-dot"></div><div class="lc-label">interact</div></div>
+        <div class="lc-line" style="width:14px;"></div>
+        <div class="lc-step" data-step="suspend"><div class="lc-dot"></div><div class="lc-label">suspend</div></div>
+        <div class="lc-line" style="width:14px;"></div>
+        <div class="lc-step" data-step="resume"><div class="lc-dot"></div><div class="lc-label">resume</div></div>
+        <div class="lc-line" style="width:14px;"></div>
+        <div class="lc-step" data-step="close"><div class="lc-dot"></div><div class="lc-label">close</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Browser window <span id="window-note" style="text-transform:none;letter-spacing:0;"></span></h2>
+      <div id="browser-box">
+        <div id="browser-head">
+          <span id="mode-tag" class="headless">headless · no window</span>
+          <div id="tab-bar"><span class="empty" style="padding:0;">no tabs — run <code>launch</code></span></div>
+          <span id="url-bar">about:blank</span>
+        </div>
+        <div id="page-box">
+          <div class="empty">Launch the browser to open a session window.</div>
+        </div>
+        <div id="shot-box"><img id="shot-img" alt="screenshot"><div id="shot-meta"></div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Capabilities (owner: browser · runtime manifest)</h2>
+      <div id="cap-grid"><div class="empty">Not registered — run <code>launch</code>.</div></div>
+    </div>
+
+    <div class="section" style="flex:1; min-height:0;">
+      <h2>Events + audit</h2>
+      <div id="evt-log" class="log"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="padding:0;">
+    <h2 style="padding:12px 12px 0 12px; margin:0;">Terminal</h2>
+    <div id="term-box">
+      <div id="term-log"></div>
+      <div id="term-input-row">
+        <span id="term-prompt">browser@sim ~ $&nbsp;</span>
+        <input id="term-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="help">
+  <span><code>launch [headed]</code> · <code>tab.open &lt;url&gt;</code> · <code>navigate &lt;url&gt;</code> · <code>click #sel</code> · <code>type #sel text</code> · <code>scroll down</code> · <code>wait &lt;sel|ms&gt;</code> · <code>screenshot</code> · <code>suspend</code> · <code>resume</code> · <code>crash</code> · <code>close</code> · <code>help</code></span>
+  <button id="demo-btn">▶ Run full demo</button>
+</div>
+
+<script>
+'use strict';
+
+// ─── DOM refs ────────────────────────────────────────────────────────
+const lcEl = document.getElementById('lc');
+const capGrid = document.getElementById('cap-grid');
+const evtLog = document.getElementById('evt-log');
+const demoBtn = document.getElementById('demo-btn');
+const termLog = document.getElementById('term-log');
+const termInput = document.getElementById('term-input');
+const sessBadge = document.getElementById('sess-badge');
+const sessLabel = document.getElementById('sess-label');
+const modeTag = document.getElementById('mode-tag');
+const tabBar = document.getElementById('tab-bar');
+const urlBar = document.getElementById('url-bar');
+const pageBox = document.getElementById('page-box');
+const windowNote = document.getElementById('window-note');
+const shotBox = document.getElementById('shot-box');
+const shotImg = document.getElementById('shot-img');
+const shotMeta = document.getElementById('shot-meta');
+
+// ─── Design constants (from wayfinder map T1-T7 + GRILL Q1-Q6) ─────
+const IMG_CAP_BYTES = 256 * 1024;          // T3: 256 KiB raw cap (≈85k tokens worst case)
+const DEFAULT_TIMEOUT = 30_000;            // T6: 30s default
+const MAX_TIMEOUT = 120_000;               // T6: 120s cap
+const SCREENSHOT_BYTES = 12_480;           // sim: small inline png
+const BIG_SCREENSHOT_BYTES = 300 * 1024;   // sim: over cap
+
+// T2: 11 capabilities, runtime tiers (read | act | destructive)
+const CAPS = [
+  ['browser.launch',    'act',        'launch browser (mode: headless|headed)'],
+  ['browser.close',     'destructive','close session context + process'],
+  ['browser.navigate',  'act',        'go to url — page-discovery sync point (T4)'],
+  ['browser.click',     'act',        'click CSS selector (button: left)'],
+  ['browser.type',      'act',        'fill selector (delayMs → pressSequentially)'],
+  ['browser.scroll',    'act',        'scroll direction/px or selector'],
+  ['browser.wait',      'read',       'wait: selector state | duration'],
+  ['browser.screenshot','read',       'screenshot: inline base64 | session resource'],
+  ['browser.tab.open',  'act',        'open tab (numeric tabId)'],
+  ['browser.tab.switch','act',        'activate + bring to front'],
+  ['browser.tab.close', 'destructive','close tab (never kills the process)'],
+];
+const TIER_CLASS = { read: 'r', act: 'a', destructive: 'd' };
+
+// ─── Engine state (stubbed design, no real Playwright) ──────────────
+const engine = {
+  phase: 'idle',        // idle | launched | suspended | closed
+  procState: 'dead',    // dead | running | crashed
+  mode: null,           // headless | headed
+  stepIdx: 0,           // deepest lifecycle step reached
+  tabs: [],             // [{ tabId, url, title, caps: [], inputText }]
+  activeTabId: null,
+  nextTabId: 0,
+  capsRegistered: false,
+  lastEvent: null,
+  lastAudit: null,
+};
+
+const LC_STEPS = ['idle', 'launch', 'open', 'navigate', 'interact', 'suspend', 'resume', 'close'];
+
+// ─── Error envelope (T2: GATEWAY_HANDLER_ERROR) ─────────────────────
+function browserError(code, message, retryable) {
+  return { code, message, retryable };
+}
+function errText(e) {
+  return `GATEWAY_HANDLER_ERROR { code: '${e.code}', message: '${e.message}', retryable: ${e.retryable} }`;
+}
+
+// ─── Low-level helpers ──────────────────────────────────────────────
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function emitLog(kind, text) {
+  const el = document.createElement('div');
+  el.className = kind;
+  el.textContent = text;
+  evtLog.prepend(el);
+  engine.lastEvent = text;
+  while (evtLog.children.length > 80) evtLog.removeChild(evtLog.lastChild);
+}
+function termWrite(text, color) {
+  const span = document.createElement('div');
+  span.className = color || '';
+  span.textContent = text;
+  termLog.appendChild(span);
+  termLog.scrollTop = termLog.scrollHeight;
+}
+function termWriteln(text, color) { termWrite(text == null ? '' : text + '\n', color); }
+function setStep(i) {
+  engine.stepIdx = Math.max(engine.stepIdx, i);
+  lcEl.querySelectorAll('.lc-step').forEach((el, idx) => {
+    el.classList.remove('a', 'd');
+    const dot = el.querySelector('.lc-dot');
+    if (dot) dot.classList.remove('a', 'd');
+    if (idx < engine.stepIdx) { el.classList.add('d'); if (dot) dot.classList.add('d'); }
+    else if (idx === engine.stepIdx) { el.classList.add('a'); if (dot) dot.classList.add('a'); }
+  });
+}
+function setSessionState(next, procNote) {
+  engine.phase = next;
+  sessBadge.className = 'st-' + (engine.procState === 'crashed' ? 'crashed' : next);
+  sessLabel.textContent = `session: ${next} · proc: ${engine.procState}${procNote ? ' · ' + procNote : ''}`;
+}
+
+// ─── Browser window render ──────────────────────────────────────────
+function activeTab() {
+  return engine.tabs.find(t => t.tabId === engine.activeTabId) || null;
+}
+function renderWindow() {
+  if (!engine.tabs.length) {
+    tabBar.innerHTML = '<span class="empty" style="padding:0;">no tabs — run <code>launch</code></span>';
+    urlBar.textContent = 'about:blank';
+    pageBox.innerHTML = '<div class="empty">Launch the browser to open a session window.</div>';
+    windowNote.textContent = '';
+    return;
+  }
+  tabBar.innerHTML = '';
+  for (const t of engine.tabs) {
+    const chip = document.createElement('span');
+    chip.className = 'tab-chip' + (t.tabId === engine.activeTabId ? ' active' : '');
+    chip.textContent = `${t.tabId} · ${t.url}`;
+    chip.addEventListener('click', () => runCommand(`tab.switch ${t.tabId}`));
+    tabBar.appendChild(chip);
+  }
+  const t = activeTab();
+  urlBar.textContent = t.url;
+  windowNote.textContent = engine.mode === 'headed' ? '— headed: real window open (T7 shape A)' : '— headless: no visible window';
+  const isShop = t.url.includes('shop.acme.com');
+  const isPlain = t.url.startsWith('about:') || t.url.includes('plain.example.org');
+  if (isShop) {
+    pageBox.innerHTML = `
+      <div class="pg-title">Acme Shop <span class="pg-tag">#shop-root (has sdk-browser → tab-scoped caps)</span></div>
+      <div class="pg-sub">products page · sdk-browser registered ${t.caps.length} cap(s) for tab ${t.tabId}</div>
+      <div class="pg-row"><input class="pg-input pg-el" id="pg-search" placeholder="search products…"><button class="pg-btn pg-el" id="pg-search-btn">Search</button><span class="pg-tag">#search / #search-btn</span></div>
+      <div class="pg-row"><span class="pg-sub">🛍 Agent Notebook — the item the agent is looking at</span><button class="pg-btn pg-el" id="pg-buy-btn" style="background:var(--info);">Buy now</button><span class="pg-tag">#buy-btn</span></div>
+      <div class="pg-row"><span class="pg-link pg-el" id="pg-checkout">checkout →</span><span class="pg-tag">#checkout-link</span></div>
+      <div class="pg-row"><span class="pg-sub">📝 form:</span><input class="pg-input pg-el" id="pg-input" value="${escapeHtml(t.inputText || '')}"><span class="pg-tag">#input (type → fill semantics)</span></div>`;
+  } else if (isPlain) {
+    pageBox.innerHTML = `
+      <div class="pg-title">Plain Example <span class="pg-tag">no sdk-browser → empty caps</span></div>
+      <div class="pg-sub">a static page with no capabilities (legitimate — never an error, T4)</div>
+      <div class="pg-row"><span class="pg-sub">Static content only.</span></div>`;
+  } else {
+    pageBox.innerHTML = `<div class="pg-title">${escapeHtml(t.title)}</div><div class="pg-sub">${escapeHtml(t.url)} — page loaded, caps settled</div>`;
+  }
+}
+// Sim selector → page element id (page uses pg- prefixed ids; sim selectors are the real CSS ones)
+const SEL_MAP = {
+  '#search': '#pg-search',
+  '#search-btn': '#pg-search-btn',
+  '#buy-btn': '#pg-buy-btn',
+  '#checkout-link': '#pg-checkout',
+  '#input': '#pg-input',
+};
+function pageSel(sel) { return SEL_MAP[sel] || sel; }
+
+function flashEl(sel, ok) {
+  const el = document.querySelector(pageSel(sel));
+  if (el) {
+    el.classList.remove('flash', 'flash-err');
+    void el.offsetWidth;
+    el.classList.add(ok ? 'flash' : 'flash-err');
+    setTimeout(() => el.classList.remove('flash', 'flash-err'), 900);
+  }
+}
+
+// ─── Capability cards ───────────────────────────────────────────────
+function renderCaps() {
+  if (!engine.capsRegistered) return;
+  capGrid.innerHTML = '';
+  for (const [name, tier, desc] of CAPS) {
+    const card = document.createElement('div');
+    card.className = `cap-card shown ${TIER_CLASS[tier]}`;
+    card.dataset.cap = name;
+    card.innerHTML = `<div class="cap-name">${name}</div>
+      <div class="cap-meta">tier=${tier} · v1.0.0</div>
+      <div class="cap-tabs">${desc}</div>`;
+    capGrid.appendChild(card);
+  }
+}
+
+// ─── Capability registry events (tab-scoped per T4) ─────────────────
+function registerTabCaps(tabId, names) {
+  const t = engine.tabs.find(x => x.tabId === tabId);
+  if (!t) return;
+  t.caps = names;
+  for (const n of names) {
+    emitLog('evt', `capability.registered { owner: "browser", capability: "${n}", session, tabId: ${tabId} }`);
+  }
+  emitLog('evt', `sdk-browser: caps for tab ${tabId} settled (${names.length} registered)`);
+}
+
+// ─── Capability handlers (mirror locked contracts) ──────────────────
+function requireContext() {
+  if (engine.phase !== 'launched' && engine.phase !== 'suspended') {
+    throw browserError('BROWSER_NO_CONTEXT', 'no browser context — call browser.launch first', false);
+  }
+  if (engine.procState === 'crashed') {
+    throw browserError('BROWSER_CRASHED', 'browser process died (browser.on(disconnected)) — relaunch on next launch', true);
+  }
+  if (engine.phase === 'suspended') {
+    // T5: trust gateway resume-first (session-manager Flow 2 step 6) — sim auto-resumes
+    emitLog('warn', 'gateway resume-first: session resumed before routing capability');
+    engine.phase = 'launched';
+    setStep(LC_STEPS.indexOf('resume'));
+  }
+}
+function requireTab(tabId) {
+  const t = engine.tabs.find(x => x.tabId === tabId);
+  if (!t) throw browserError('BROWSER_TAB_NOT_FOUND', `no tab ${tabId}`, false);
+  return t;
+}
+function resolveTab(tabId) {
+  if (tabId !== undefined) return requireTab(tabId);
+  const t = activeTab();
+  if (!t) throw browserError('BROWSER_NO_CONTEXT', 'no tabs open', false);
+  return t; // default = most recently active tab (T2)
+}
+function createTab(url) {
+  // defensive: never hand out a tabId that already exists (T2: numeric ids, unique per context)
+  let tabId;
+  do { tabId = engine.nextTabId++; } while (engine.tabs.some(t => t.tabId === tabId));
+  const t = { tabId, url, title: url === 'about:blank' ? 'new tab' : url, caps: [], inputText: '' };
+  engine.tabs.push(t);
+  engine.activeTabId = tabId;
+  return t;
+}
+function audit(cap, extra) {
+  const line = `audit { cap: ${cap}${extra ? ', ' + extra : ''} }`;
+  emitLog('audit', line);
+  engine.lastAudit = line;
+}
+
+const CMD = {
+  help: () => ({
+    text: [
+      'Commands (each mirrors a locked decision — map T1-T7, GRILL Q1-Q6):',
+      '  launch [headed]      — browser.launch { mode }; default headless (T1 mode pool);',
+      '                         auto-relaunches after crash; twice → BROWSER_ALREADY_LAUNCHED',
+      '  close [id]           — no id: context teardown + process kill;',
+      '                         id: close just that tab (T2: browser.close { tabId })',
+      '  tab.open <url>       — new tab → { tabId } (first tab = 0)',
+      '  tab.switch <id>      — activate + bring to front → { tabId }',
+      '  tab.close <id>       — close tab → { closed: true } (never kills process)',
+      '  navigate <url> [id] [new] — T4 sync point → { tabId, url, capabilities, capsSettled }',
+      '                         default: navigate existing tab (id occupied → page replaced, T2);',
+      '                         "new" → fresh tab; shop.acme.com → tab-scoped caps;',
+      '                         plain → empty, settled; slow:* → capsSettled:false (never an error)',
+      '  click <sel> [id]     — CSS-only selector; missing → BROWSER_SELECTOR_NOT_FOUND (retryable)',
+      '  type <sel> <text> [id] — fill semantics',
+      '  scroll <down|up> [px] [id] — default one viewport',
+      '  wait <sel> | wait <ms> [id] — T6 both modes; 30s default / 120s cap',
+      '  screenshot [id] [big] [inline|resource] — T3 inline base64 first; 256KiB cap;',
+      '                         big+inline → BROWSER_SCREENSHOT_TOO_LARGE (retryable:false)',
+      '  caps [id]            — capability.list({ tabId }) — T4 filter extension',
+      '  suspend / resume     — T5: suspend KEEPS browser alive; resume instant',
+      '  crash                — simulate process death → BROWSER_CRASHED (retryable:true, GRILL Q4)',
+      '  state                — dump engine state',
+      '  reset                — wipe everything · clear — clear terminal',
+    ].join('\n'), color: 'info' }),
+
+  state: () => ({
+    text: [
+      `session: ${engine.phase} · proc: ${engine.procState} · mode: ${engine.mode || '-'}`,
+      `tabs: ${engine.tabs.map(t => `${t.tabId}:${t.url}`).join(', ') || '(none)'} · active: ${engine.activeTabId}`,
+      `capsRegistered: ${engine.capsRegistered} (${CAPS.length} browser caps) · stepIdx: ${engine.stepIdx}`,
+    ].join('\n'), color: 'info' }),
+
+  launch: async (args) => {
+    if (engine.phase === 'launched' && engine.procState === 'running') {
+      throw browserError('BROWSER_ALREADY_LAUNCHED', 'browser already launched', false);
+    }
+    const want = args[0] || 'headless';
+    const mode = want === 'headed' ? 'headed' : 'headless';
+    if (engine.procState === 'crashed') {
+      termWriteln('→ browser.on(disconnected) fired earlier — auto-relaunching (T1)', 'warn');
+    }
+    engine.mode = mode;
+    engine.procState = 'running';
+    engine.phase = 'launched';
+    engine.nextTabId = 1; // tab 0 created below — ids increment per context (T2)
+    engine.tabs = [{ tabId: 0, url: 'about:blank', title: 'new tab', caps: [], inputText: '' }];
+    engine.activeTabId = 0;
+    engine.capsRegistered = true;
+    setStep(LC_STEPS.indexOf('launch'));
+    setStep(LC_STEPS.indexOf('open'));
+    setSessionState('launched');
+    modeTag.className = mode;
+    modeTag.textContent = mode === 'headed' ? 'headed · window open' : 'headless · no window';
+    emitLog('evt', `browser.launched { mode: "${mode}", process: 1, context: 1, tab: 0 }`);
+    emitLog('evt', `capability.registered ×${CAPS.length} { owner: "browser", manifest: runtime }`);
+    renderCaps();
+    renderWindow();
+    audit('browser.launch', `mode: ${mode}`);
+    return { text: `launched — ${mode}, context ready, tab 0 open. 11 caps registered.`, color: 'ok' };
+  },
+
+  close: (args) => {
+    const tabId = args[0] !== undefined ? Number(args[0]) : undefined;
+    if (tabId !== undefined) {
+      // T2 contract: browser.close { tabId } → close just that tab (context intact)
+      requireContext();
+      requireTab(tabId);
+      engine.tabs = engine.tabs.filter(t => t.tabId !== tabId);
+      if (engine.activeTabId === tabId) {
+        engine.activeTabId = engine.tabs.length ? engine.tabs[engine.tabs.length - 1].tabId : null;
+      }
+      renderWindow();
+      audit('browser.close', `tabId: ${tabId}`);
+      return { text: `{ closed: true } — tab ${tabId} closed (context intact)`, color: 'ok' };
+    }
+    if (engine.phase === 'idle' || engine.phase === 'closed') {
+      throw browserError('BROWSER_CLOSED', 'browser already closed', false);
+    }
+    engine.tabs = [];
+    engine.activeTabId = null;
+    engine.procState = 'dead';
+    engine.phase = 'closed';
+    setStep(LC_STEPS.indexOf('close'));
+    setSessionState('closed');
+    modeTag.className = 'headless';
+    modeTag.textContent = 'headless · no window';
+    emitLog('evt', 'browser.closed { context torn down, process killed }');
+    emitLog('evt', 'session.closed → resource cleanup (screenshots)');
+    renderWindow();
+    shotBox.classList.remove('show');
+    audit('browser.close', 'context: teardown, process: killed');
+    return { text: 'closed — context torn down, Chromium process killed.', color: 'ok' };
+  },
+
+  'tab.open': (args) => {
+    requireContext();
+    const url = args[0] || 'about:blank';
+    const t = createTab(url);
+    setStep(LC_STEPS.indexOf('open'));
+    renderWindow();
+    audit('browser.tab.open', `tabId: ${t.tabId}`);
+    return { text: `tab opened → { tabId: ${t.tabId}, url: ${url} }`, color: 'ok' };
+  },
+
+  'tab.switch': (args) => {
+    requireContext();
+    const tabId = Number(args[0]);
+    const t = requireTab(tabId);
+    engine.activeTabId = tabId;
+    renderWindow();
+    audit('browser.tab.switch', `tabId: ${tabId}`);
+    return { text: `switched → { tabId: ${tabId} } (activate + bring to front)`, color: 'ok' };
+  },
+
+  'tab.close': (args) => {
+    requireContext();
+    const tabId = args[0] !== undefined ? Number(args[0]) : engine.activeTabId;
+    requireTab(tabId);
+    engine.tabs = engine.tabs.filter(t => t.tabId !== tabId);
+    if (engine.activeTabId === tabId) {
+      engine.activeTabId = engine.tabs.length ? engine.tabs[engine.tabs.length - 1].tabId : null;
+    }
+    renderWindow();
+    audit('browser.tab.close', `tabId: ${tabId}`);
+    return { text: `{ closed: true } — tab ${tabId} closed (process still alive)`, color: 'ok' };
+  },
+
+  navigate: async (args) => {
+    requireContext();
+    const url = args[0];
+    if (!url) throw browserError('BROWSER_NAVIGATION_FAILED', 'navigate requires a url', false);
+    // T2 contract: { url, tabId?, newTab?: boolean } — newTab default false: navigate the
+    // EXISTING tab (an occupied id → its page is replaced, never an error);
+    // "new" flag → fresh tab, id handed out by the context (ids never reused).
+    const wantsNew = args.includes('new');
+    const cleanArgs = args.filter(a => a !== 'new');
+    let tabId;
+    if (wantsNew) {
+      tabId = createTab(url).tabId;
+    } else {
+      tabId = cleanArgs[1] !== undefined ? Number(cleanArgs[1]) : engine.activeTabId;
+      requireTab(tabId);
+    }
+    const t = requireTab(tabId);
+    t.url = url;
+    t.title = url;
+    engine.activeTabId = tabId;
+    setStep(LC_STEPS.indexOf('navigate'));
+    renderWindow();
+    await sleep(500); // simulated load
+    let capabilities = [];
+    let capsSettled = true;
+    if (url.includes('slow:')) {
+      // T4: settle timeout — return what's registered so far, never an error
+      capabilities = [];
+      capsSettled = false;
+      emitLog('warn', `caps settle timeout on ${url} → capsSettled:false (never an error)`);
+    } else if (url.includes('shop.acme.com')) {
+      capabilities = ['shop.product.read', 'shop.cart.add', 'shop.cart.view', 'profile.note'];
+      registerTabCaps(tabId, capabilities);
+    } else {
+      capabilities = [];
+      emitLog('evt', `sdk-browser absent on ${url} → empty caps, settled (legitimate)`);
+    }
+    audit('browser.navigate', `tabId: ${tabId}, url: ${url}`);
+    return {
+      text: `{ tabId: ${tabId}, url: ${url}, capabilities: [${capabilities.join(', ')}], capsSettled: ${capsSettled} }`,
+      color: 'ok',
+    };
+  },
+
+  click: (args) => {
+    requireContext();
+    const sel = args[0];
+    if (!sel) throw browserError('BROWSER_SELECTOR_NOT_FOUND', 'click requires a CSS selector', true);
+    const tabId = args[1] !== undefined ? Number(args[1]) : engine.activeTabId;
+    const t = requireTab(tabId);
+    const isShop = t.url.includes('shop.acme.com');
+    const known = isShop && ['#search', '#search-btn', '#buy-btn', '#checkout-link', '#input'].includes(sel);
+    if (!known) {
+      flashEl(sel, false);
+      throw browserError('BROWSER_SELECTOR_NOT_FOUND', `selector "${sel}" not found on tab ${tabId}`, true);
+    }
+    setStep(LC_STEPS.indexOf('interact'));
+    flashEl(sel, true);
+    emitLog('evt', `clicked "${sel}" on tab ${tabId} (left button)`);
+    audit('browser.click', `selector: ${sel}, tabId: ${tabId}`);
+    return { text: `clicked ${sel} on tab ${tabId}.`, color: 'ok' };
+  },
+
+  type: (args) => {
+    requireContext();
+    const sel = args[0];
+    // optional trailing numeric tabId (default: most recently active tab)
+    const lastIsNum = args.length > 1 && /^\d+$/.test(args[args.length - 1]);
+    const tabId = lastIsNum ? Number(args.pop()) : engine.activeTabId;
+    const text = args.slice(1).join(' ').replace(/^"|"$/g, '');
+    if (!sel || !text) throw browserError('BROWSER_SELECTOR_NOT_FOUND', 'type requires <selector> <text>', true);
+    const t = requireTab(tabId);
+    const isShop = t.url.includes('shop.acme.com');
+    const known = isShop && ['#input', '#search'].includes(sel);
+    if (!known) throw browserError('BROWSER_SELECTOR_NOT_FOUND', `selector "${sel}" not found on tab ${tabId}`, true);
+    setStep(LC_STEPS.indexOf('interact'));
+    if (sel === '#input') t.inputText = text;
+    renderWindow();
+    const el = document.querySelector(pageSel(sel));
+    if (el) { el.value = text; flashEl(sel, true); }
+    emitLog('evt', `typed "${text}" into ${sel} (fill semantics)`);
+    audit('browser.type', `selector: ${sel}, chars: ${text.length}`);
+    return { text: `typed ${text.length} chars into ${sel} (fill).`, color: 'ok' };
+  },
+
+  scroll: (args) => {
+    requireContext();
+    const dir = args[0] || 'down';
+    const tabId = args[2] !== undefined ? Number(args[2]) : engine.activeTabId;
+    const t = requireTab(tabId);
+    if (!t) throw browserError('BROWSER_TAB_NOT_FOUND', `no tab ${tabId}`, false);
+    setStep(LC_STEPS.indexOf('interact'));
+    const px = args[1] !== undefined ? Number(args[1]) : null;
+    emitLog('evt', `scrolled ${dir}${px ? ' ' + px + 'px' : ' one viewport'} on tab ${tabId}`);
+    audit('browser.scroll', `direction: ${dir}${px ? ', px: ' + px : ''}, tabId: ${tabId}`);
+    return { text: `scrolled ${dir}${px ? ' ' + px + 'px' : ''}.`, color: 'ok' };
+  },
+
+  wait: async (args) => {
+    requireContext();
+    const arg = args[0];
+    const tabId = args[1] !== undefined ? Number(args[1]) : engine.activeTabId;
+    requireTab(tabId);
+    let modeText;
+    if (arg === undefined) throw browserError('BROWSER_WAIT_TIMEOUT', 'wait requires <selector> or <ms>', true);
+    if (/^\d+$/.test(arg)) {
+      const ms = Number(arg);
+      if (ms > MAX_TIMEOUT) throw browserError('BROWSER_WAIT_TIMEOUT', `timeout ${ms}ms exceeds 120s cap`, true);
+      modeText = `duration ${ms}ms`;
+      await sleep(Math.min(ms, 400)); // sim truncates
+    } else {
+      const sel = arg;
+      const t = activeTab();
+      const known = t && t.url.includes('shop.acme.com') && ['#search', '#search-btn', '#buy-btn', '#checkout-link', '#input'].includes(sel);
+      if (!known) throw browserError('BROWSER_WAIT_TIMEOUT', `selector "${sel}" not visible within ${DEFAULT_TIMEOUT}ms`, true);
+      modeText = `selector ${sel} visible (default 30s → 120s cap)`;
+      await sleep(300);
+    }
+    audit('browser.wait', modeText);
+    return { text: `wait ok — ${modeText}.`, color: 'ok' };
+  },
+
+  screenshot: (args) => {
+    requireContext();
+    const tabId = args[0] !== undefined && /^\d+$/.test(args[0]) ? Number(args[0]) : engine.activeTabId;
+    const t = requireTab(tabId);
+    const big = args.includes('big');
+    const forced = args.includes('inline');
+    const bytes = big ? BIG_SCREENSHOT_BYTES : SCREENSHOT_BYTES;
+    if (bytes > IMG_CAP_BYTES && forced) {
+      // T3: forced inline + oversize → misuse, not retryable
+      throw browserError('BROWSER_SCREENSHOT_TOO_LARGE', `${bytes} bytes exceeds 256KiB cap — use mode: "resource"`, false);
+    }
+    setStep(LC_STEPS.indexOf('interact'));
+    const mode = bytes > IMG_CAP_BYTES ? 'resource' : 'inline'; // T3: mode auto — cap decides
+    let resourceId = null;
+    if (mode === 'resource') resourceId = `res-${Date.now().toString(36)}`;
+    else drawScreenshot(t, bytes);
+    emitLog('evt', `browser.screenshot { mode: ${mode}, bytes: ${bytes}, format: png }${resourceId ? `, resourceId: ${resourceId}` : ''}`);
+    audit('browser.screenshot', `mode: ${mode}, bytes: ${bytes}, format: png`); // audit shape only, never bytes (T3)
+    return {
+      text: `{ format: "png", mode: "${mode}", bytes: ${bytes}${resourceId ? `, resourceId: "${resourceId}"` : ', data: "<base64>"'} }`,
+      color: 'ok',
+    };
+  },
+
+  caps: (args) => {
+    requireContext();
+    const tabId = args[0] !== undefined ? Number(args[0]) : undefined; // T4: optional tabId filter
+    const rows = tabId === undefined
+      ? engine.tabs.flatMap(t => t.caps.map(n => `${n} (tab ${t.tabId})`))
+      : (engine.tabs.find(t => t.tabId === tabId)?.caps || []).map(n => `${n} (tab ${tabId})`);
+    return { text: `capability.list({ ${tabId === undefined ? '' : 'tabId: ' + tabId} }) → [${rows.join(', ') || 'no caps'}]`, color: 'info' };
+  },
+
+  suspend: () => {
+    if (engine.phase !== 'launched') throw browserError('BROWSER_NO_CONTEXT', 'suspend only applies to a launched session', false);
+    engine.phase = 'suspended';
+    setStep(LC_STEPS.indexOf('suspend'));
+    setSessionState('suspended');
+    // T5: browser KEPT ALIVE — no teardown, no new state, memory cost accepted
+    emitLog('evt', 'session.suspended { sessionId, lastActivityAt, suspendedAt } — browser context + process KEPT ALIVE (T5)');
+    emitLog('warn', 'idle Chromium ~150-300MB — accepted (keep-alive knob = v2 candidate)');
+    return { text: 'session suspended — browser kept alive, tabs intact, resume is instant.', color: 'warn' };
+  },
+
+  resume: () => {
+    if (engine.phase !== 'suspended') return { text: 'not suspended — nothing to resume.', color: 'muted' };
+    engine.phase = 'launched';
+    setStep(LC_STEPS.indexOf('resume'));
+    setSessionState('launched');
+    emitLog('evt', 'session.resumed { sessionId } — zero state loss, resume transparent to agent (T5)');
+    return { text: 'resumed — instant, tab 0 still open, auth still valid.', color: 'ok' };
+  },
+
+  crash: () => {
+    if (engine.procState !== 'running') throw browserError('BROWSER_CRASHED', 'no running browser to crash', true);
+    engine.procState = 'crashed';
+    setSessionState('launched', 'crashed');
+    emitLog('err', 'browser.on(disconnected) — Chromium process died mid-session');
+    emitLog('warn', 'in-flight invocation → BROWSER_CRASHED retryable:true (GRILL Q4)');
+    return { text: 'crashed — process dead. Next launch auto-relaunches (T1). In-flight calls got BROWSER_CRASHED.', color: 'err' };
+  },
+
+  reset: () => {
+    engine.phase = 'idle';
+    engine.procState = 'dead';
+    engine.mode = null;
+    engine.stepIdx = 0;
+    engine.tabs = [];
+    engine.activeTabId = null;
+    engine.nextTabId = 0;
+    engine.capsRegistered = false;
+    sessBadge.className = 'st-idle';
+    sessLabel.textContent = 'session: idle · proc: dead';
+    modeTag.className = 'headless';
+    modeTag.textContent = 'headless · no window';
+    capGrid.innerHTML = '<div class="empty">Not registered — run <code>launch</code>.</div>';
+    evtLog.innerHTML = '';
+    shotBox.classList.remove('show');
+    renderWindow();
+    termWriteln('reset — state wiped.', 'muted');
+    return null;
+  },
+
+  clear: () => { termLog.innerHTML = ''; return null; },
+};
+
+// ─── Screenshot rendering (T3: inline base64 — visual feedback) ────
+function drawScreenshot(t, bytes) {
+  const cv = document.createElement('canvas');
+  cv.width = 320; cv.height = 140;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#232938'; ctx.fillRect(0, 0, 320, 140);
+  ctx.fillStyle = '#6ee7b7'; ctx.font = 'bold 13px monospace'; ctx.fillText('browser.screenshot', 10, 20);
+  ctx.fillStyle = '#e6e6e6'; ctx.font = '11px monospace';
+  ctx.fillText('tab ' + t.tabId + ' · ' + t.url.slice(0, 34), 10, 40);
+  ctx.fillStyle = '#fbbf24'; ctx.fillRect(10, 55, 180, 8); // url bar
+  ctx.fillStyle = '#8b95a7'; ctx.font = '10px monospace'; ctx.fillText('inline base64 · ' + bytes + ' bytes', 10, 90);
+  if (t.caps.length) { ctx.fillStyle = '#60a5fa'; ctx.fillText('caps: ' + t.caps.join(', ').slice(0, 44), 10, 108); }
+  const data = cv.toDataURL('image/png');
+  shotImg.src = data;
+  shotMeta.textContent = `inline png · ${bytes} bytes (under 256KiB cap)`;
+  shotBox.classList.add('show');
+}
+
+// ─── Command dispatch (serialized — no interleaving of async commands) ──
+let cmdChain = Promise.resolve();
+
+function runCommand(line) {
+  // Serialize: each command runs only after the previous one settles.
+  cmdChain = cmdChain.then(() => runCommandInner(line)).catch(() => {});
+  return cmdChain;
+}
+
+async function runCommandInner(line) {
+  const parts = line.trim().split(/\s+/);
+  const cmd = parts[0];
+  const args = parts.slice(1);
+  const t = document.createElement('div');
+  t.className = 'muted';
+  t.textContent = `$ ${line}`;
+  termLog.appendChild(t);
+  const handler = CMD[cmd];
+  if (!handler) {
+    termWriteln(`unknown command: ${cmd}. type "help".`, 'err');
+    return;
+  }
+  try {
+    const res = await handler(args);
+    if (res && res.text) {
+      const cls = res.color === 'err' ? 'err' : res.color === 'warn' ? 'warn' : res.color === 'info' ? 'info' : res.color === 'muted' ? 'muted' : 'ok';
+      termWriteln(res.text, cls);
+    }
+  } catch (e) {
+    termWriteln(errText(e), 'err');
+  }
+  termLog.scrollTop = termLog.scrollHeight;
+}
+
+termInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const line = termInput.value;
+    termInput.value = '';
+    runCommand(line);
+  }
+});
+
+// ─── Demo ───────────────────────────────────────────────────────────
+async function runDemo() {
+  demoBtn.disabled = true;
+  const lines = [
+    'launch',
+    'navigate https://shop.acme.com/products',
+    'caps 0',
+    'type #input "find the agent notebook"',
+    'click #search-btn',
+    'scroll down 200',
+    'wait #buy-btn',
+    'screenshot',
+    'navigate https://plain.example.org new',
+    'tab.switch 0',
+    'screenshot 0 big',
+    'screenshot 0 big inline',
+    'suspend',
+    'type #input "still alive after suspend"',
+    'crash',
+    'launch',
+    'close',
+  ];
+  for (const line of lines) {
+    await runCommand(line);
+    await sleep(420);
+  }
+  demoBtn.disabled = false;
+}
+demoBtn.addEventListener('click', runDemo);
+termInput.focus();
+
+// Expose for Playwright
+window.engine = {
+  runCommand,
+  getState: () => ({
+    phase: engine.phase,
+    procState: engine.procState,
+    mode: engine.mode,
+    stepIdx: engine.stepIdx,
+    tabs: engine.tabs.map(t => ({ tabId: t.tabId, url: t.url, caps: t.caps })),
+    caps: engine.capsRegistered ? CAPS.map(c => c[0]) : [],
+    lastEvent: engine.lastEvent,
+    lastAudit: engine.lastAudit,
+  }),
+};
+
+// Initial hint
+termWriteln('browser-runtime pre-impl sim — type "help" for commands, or run the demo.', 'muted');
+</script>
+</body>
+</html>

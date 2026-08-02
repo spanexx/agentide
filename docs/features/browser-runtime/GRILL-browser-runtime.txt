@@ -153,5 +153,38 @@ No remaining open questions
 - Cross-pack scope resolved (Q5); sim surface resolved (Q6).
 - GRILL gate: PASSED (autonomous, pending user review of the six decisions).
 
-Next: Phase 0.5 — pre-impl simulation (simulate-pre.html), design-time
-behavioral check of the locked contract.
+Phase 0.5 findings — pre-impl simulation (2026-08-02, simulate-pre.html)
+
+The pre-impl sim (HTML, interconnected-simulation skill) was built and verified
+with Playwright (25/25 steps + full demo PASS, zero page errors). Building it
+surfaced six findings — none change the locked contract, but the PRD-TRD and the
+implementation MUST honor them:
+
+- F1 tabId uniqueness (T2): launch seeds the tab counter at 1 (tab 0 is created
+  by launch); ids increment per context and are NEVER reused — tab creation
+  guards against handing out an existing id. Found as a real bug in the sim
+  (launch forgot to seed → duplicate tabId 0), fixed + regression-tested. Real
+  code note: after crash-relaunch the BrowserContext is new, so the counter
+  resets — fresh context = fresh ids, consistent with "ids increment per
+  context".
+- F2 navigate targets the EXISTING tab (T2 confirmed): `browser.navigate { url,
+  tabId? }` on an occupied tabId replaces that tab's page — never an error, and
+  it does NOT open a new tab. Fresh tab requires `newTab: true` (sim flag:
+  `navigate <url> new`). The sim mirrors this exactly.
+- F3 browser.close { tabId } (T2 confirmed): with tabId = close just that tab,
+  context intact; omitted = session teardown + process kill. Sim supports both
+  paths.
+- F4 async commands must be serialized: navigate/wait are async (500ms sim
+  load); concurrent dispatch interleaves state. The sim serializes via a command
+  chain. The real gateway already serializes per-invocation — the plugin must
+  not introduce its own concurrency.
+- F5 selector mapping is a sim-only detail: sim page elements are `#pg-*`
+  ids while commands use real CSS selectors (`#input`, `#buy-btn`, ...); a
+  SEL_MAP bridges them for visual flash feedback. The real implementation uses
+  Playwright's real selectors — no mapping.
+- F6 explicit `resume` before a post-suspend cap call is REDUNDANT (T5
+  confirmed): gateway resume-first auto-resumes; the demo now shows
+  suspend → type (auto-resume) with no explicit resume.
+
+Next: PRD-TRD — one doc (Why / What / Simulation contract / Technical design /
+Non-goals), citing these findings where they constrain the implementation.
