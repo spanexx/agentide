@@ -121,6 +121,10 @@ async function runInit(dataDir: string, flags: Record<string, string | boolean>,
     fs: opts.fs,
     dataDir,
     defaultTenant: { id: tenantId, name: tenantName },
+    // BI[9] GRILL Q6 / Plan Decision 7: CLI is short-lived per invocation;
+    // binding 7100 here would waste a port and risk EADDRINUSE races across
+    // rapid back-to-back commands.
+    adapterMcp: false,
   });
   const { token } = await platform.gateway.issueToken({
     tenantId,
@@ -141,6 +145,7 @@ async function runStatus(dataDir: string, opts: CliOptions): Promise<CliResult> 
   const platform = await createPlatform({
     fs: opts.fs,
     dataDir,
+    adapterMcp: false,
   });
   const status = await platform.gateway.status();
   await platform.stop();
@@ -162,6 +167,7 @@ async function runTenant(
   const platform = await createPlatform({
     fs: opts.fs,
     dataDir,
+    adapterMcp: false,
   });
   try {
     if (sub === "create") {
@@ -210,6 +216,7 @@ async function runToken(
   const platform = await createPlatform({
     fs: opts.fs,
     dataDir,
+    adapterMcp: false,
   });
   try {
     const { token } = await platform.gateway.issueToken({ tenantId, callerId, scope });
@@ -229,6 +236,7 @@ async function runCapability(
   const platform = await createPlatform({
     fs: opts.fs,
     dataDir,
+    adapterMcp: false,
   });
   try {
     if (sub === "list") {
@@ -275,6 +283,7 @@ async function runPlugin(subArgs: readonly string[], dataDir: string, opts: CliO
   const platform = await createPlatform({
     fs: opts.fs,
     dataDir,
+    adapterMcp: false,
   });
   try {
     if (sub === "list") {

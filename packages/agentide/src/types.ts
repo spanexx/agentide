@@ -65,6 +65,35 @@ export interface CreatePlatformConfig {
    *   handshake. The secret is read from `secretPath` (or its default).
    */
   readonly backendRuntimePort?: number;
+
+  /**
+   * CID:platform-types-005 - adapterMcp
+   * BI[9] GRILL Q6: when true (default), createPlatform() auto-creates and
+   *   starts an MCP adapter that exposes the registered capability catalog
+   *   as MCP `tools` over Streamable HTTP (POST /mcp). The adapter speaks
+   *   JSON-RPC 2.0, validates the caller's bearer token, and translates
+   *   `tools/call` into `gateway.handleInvocation()`.
+   *
+   *   The CLI sets this to `false` because each CLI invocation spins a
+   *   short-lived platform; binding 7100 per invocation would waste a port
+   *   and risk `EADDRINUSE` races across rapid commands. Daemons and boot
+   *   scripts leave it `true`.
+   */
+  readonly adapterMcp?: boolean;
+
+  /**
+   * CID:platform-types-006 - adapterMcpPort
+   * BI[9]: TCP port the MCP adapter listens on. Default `7100`. Use `0` for
+   *   OS-assigned (tests). Ignored when `adapterMcp: false`.
+   */
+  readonly adapterMcpPort?: number;
+
+  /**
+   * CID:platform-types-007 - adapterMcpHost
+   * BI[9]: bind host for the MCP adapter. Default `"127.0.0.1"`. Ignored
+   *   when `adapterMcp: false`.
+   */
+  readonly adapterMcpHost?: string;
 }
 
 // CID:platform-types-002 - Platform
@@ -87,5 +116,14 @@ export interface Platform {
    * Used by: integration tests, custom boot scripts that want to introspect the runtime.
    */
   readonly backendRuntime?: import("@platform/backend-runtime").BackendRuntime;
+  /**
+   * CID:platform-types-008 - mcpAdapter
+   * BI[9]: present when createPlatform was called with adapterMcp !== false.
+   *   Undefined otherwise. Exposed so tests and operators can introspect the
+   *   bound port (port 0 = OS-assigned at start time) and stop the adapter
+   *   independently of the rest of the platform.
+   * Used by: integration tests, custom boot scripts.
+   */
+  readonly mcpAdapter?: import("@platform/adapter-mcp").McpAdapter;
   stop(): Promise<void>;
 }

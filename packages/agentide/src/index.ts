@@ -7,3 +7,8 @@ export { createPlatform } from "./factory.js";
 export { runCli, installGlobalErrorHandlers } from "./cli.js";
 export type { ErrorSink } from "./cli.js";
 export type { CliOptions, CliResult } from "./cli-types.js";
+
+// CID:agentide-index-001 - MCP adapter re-exports (BI[9] Phase 5)
+// Expose the McpAdapter/McpAdapterConfig types so consumers wiring their
+// own platform can refer to the same shape the meta-package auto-registers.
+export type { McpAdapter, McpAdapterConfig } from "@platform/adapter-mcp";

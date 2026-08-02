@@ -79,6 +79,9 @@ async function boot(): Promise<{ platform: Platform; fs: InMemoryFs }> {
     // The browser-handlers.mjs fixture has no cleanup-confirm hook, so
     // uninstall would otherwise wait the full PM default of 5000ms.
     cleanupTimeoutMs: 50,
+    // BI[9] — keep this suite hermetic; the MCP wiring itself is
+    // exercised in mcp-adapter.test.ts.
+    adapterMcp: false,
   });
   platforms.push(platform);
   return { platform, fs };

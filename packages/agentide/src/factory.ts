@@ -3,21 +3,25 @@
  * - createPlatform: composes the full Tier 1 stack + gateway-core into a single
  *   started Platform handle. Phase 6 (BI[8b]): auto-creates a BackendRuntime
  *   when config.backendRuntimePort is set; lifecycle wired (start after gateway,
- *   stop before).
+ *   stop before). Phase 5 (BI[9]): auto-creates an MCP adapter when
+ *   config.adapterMcp !== false; lifecycle wired (start after gateway, stop
+ *   before backendRuntime).
  *
  * discovery/issues: factory order matters — EventBus first (no deps), then
  *   CapabilityRegistry, then SessionManager, then PluginManager (async factory),
- *   then Gateway. We do NOT register a default adapter — per PHILOSOPHY §
- *   Tiny Kernel, the kernel does not depend on a transport. Operators wire
- *   adapters in their boot script.
+ *   then Gateway. We DO auto-register the MCP adapter per BI[9] GRILL Q6 —
+ *   the meta-package is the intended home for transport wiring. The kernel
+ *   itself remains transport-free (PHILOSOPHY §Tiny Kernel); per-package
+ *   consumers can call createMcpAdapter() directly if they need finer control.
  *
  * Uses: @platform/event-bus, @platform/capability-registry,
  *   @platform/session-manager, @platform/plugin-manager, @platform/gateway-core,
- *   @platform/backend-runtime (Phase 6)
+ *   @platform/backend-runtime (Phase 6), @platform/adapter-mcp (Phase 5/BI[9])
  * Used by: CLI (packages/agentide/src/cli.ts), integration tests, custom operators
  *
  * CID Index:
  * CID:platform-factory-001 -> createPlatform
+ * CID:platform-factory-002 -> mcpAdapter wiring
  */
 
 import { createEventBus } from "@platform/event-bus";
@@ -26,10 +30,13 @@ import { createSessionManager } from "@platform/session-manager";
 import { createPluginManager } from "@platform/plugin-manager";
 import { createGateway } from "@platform/gateway-core";
 import { createBackendRuntime, type BackendRuntime } from "@platform/backend-runtime";
+import { createMcpAdapter, type McpAdapter } from "@platform/adapter-mcp";
 import type { Platform, CreatePlatformConfig } from "./types.js";
 
 const DEFAULT_RATE_LIMIT = { capacity: 100, tokensPerSecond: 50 };
 const DEFAULT_HANDLER_TIMEOUT_MS = 30_000;
+const DEFAULT_ADAPTER_MCP_PORT = 7100;
+const DEFAULT_ADAPTER_MCP_HOST = "127.0.0.1";
 
 export async function createPlatform(config: CreatePlatformConfig): Promise<Platform> {
   const tenantsPath = config.tenantsPath ?? `${config.dataDir}/tenants.json`;
@@ -121,11 +128,34 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     await backendRuntime.start();
   }
 
+  // CID:platform-factory-002 - mcpAdapter wiring (BI[9])
+  // Auto-register the MCP adapter per GRILL Q6 unless the caller opts out
+  // (CLI does, because it spins a short-lived platform per invocation and
+  // binding 7100 races). Order: start AFTER the gateway is built (so the
+  // kernel's invocation pipeline is ready), AFTER the backendRuntime (so
+  // business-cap dispatches have a target). Stop in reverse order: mcpAdapter
+  // first (closes the HTTP port), then backend runtime, so in-flight JSON-RPC
+  // requests get a clean "closed port" rather than a hung dispatch.
+  let mcpAdapter: McpAdapter | undefined;
+  if (config.adapterMcp !== false) {
+    mcpAdapter = createMcpAdapter(gateway, {
+      host: config.adapterMcpHost ?? DEFAULT_ADAPTER_MCP_HOST,
+      port: config.adapterMcpPort ?? DEFAULT_ADAPTER_MCP_PORT,
+    });
+    await mcpAdapter.start();
+  }
+
   let stopped = false;
   const stop = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
-    // Stop the runtime FIRST so in-flight dispatches get rejected with
+    // Stop the MCP adapter FIRST (closes the HTTP port; in-flight JSON-RPC
+    // requests get a clean "port closed" rather than waiting for the
+    // runtime to drain).
+    if (mcpAdapter !== undefined) {
+      await mcpAdapter.stop();
+    }
+    // Stop the runtime NEXT so in-flight dispatches get rejected with
     // GATEWAY_SDK_UNREACHABLE rather than hanging on a closed socket.
     if (backendRuntime !== undefined) {
       await backendRuntime.stop();
@@ -140,6 +170,7 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     pluginManager,
     gateway,
     backendRuntime,
+    mcpAdapter,
     stop,
   };
 }

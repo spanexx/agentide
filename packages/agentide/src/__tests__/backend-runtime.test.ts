@@ -59,6 +59,9 @@ describe("createPlatform + BackendRuntime integration", () => {
         dataDir: "/data",
         defaultTenant: { id: "default", name: "Default" },
         backendRuntimePort: 0, // OS-assigned
+        // BI[9] — keep the backend-runtime suite hermetic; the MCP wiring
+        // is exercised in mcp-adapter.test.ts.
+        adapterMcp: false,
       }),
     );
 
@@ -162,6 +165,7 @@ describe("createPlatform + BackendRuntime integration", () => {
         dataDir: "/data",
         defaultTenant: { id: "default", name: "Default" },
         backendRuntimePort: 0,
+        adapterMcp: false,
       }),
     );
     const addr = platform.backendRuntime?.address();

@@ -28,6 +28,9 @@ describe("createPlatform", () => {
       fs,
       dataDir: "/data",
       defaultTenant: { id: "default", name: "Default" },
+      // BI[9] — keep the hermetic createPlatform suite port-free; the MCP
+      // wiring itself is exercised in mcp-adapter.test.ts.
+      adapterMcp: false,
     });
     expect(platform.gateway).toBeDefined();
     expect(platform.eventBus).toBeDefined();
@@ -35,7 +38,8 @@ describe("createPlatform", () => {
     expect(platform.sessionManager).toBeDefined();
     expect(platform.pluginManager).toBeDefined();
     expect(platform.stop).toBeInstanceOf(Function);
-    // No default adapter registered — operators wire their own (per PHILOSOPHY: kernel doesn't depend on adapter).
+    // No default adapter registered when opted out (per Plan Decision 7).
+    expect(platform.mcpAdapter).toBeUndefined();
     const status = await platform.gateway.status();
     expect(status.tenantCount).toBe(1);
   });
@@ -46,6 +50,7 @@ describe("createPlatform", () => {
       fs,
       dataDir: "/data",
       defaultTenant: { id: "acme", name: "Acme" },
+      adapterMcp: false,
     });
     const { token } = await platform.gateway.issueToken({
       tenantId: "acme",
@@ -61,12 +66,14 @@ describe("createPlatform", () => {
       fs,
       dataDir: "/data",
       defaultTenant: { id: "default", name: "Default" },
+      adapterMcp: false,
     });
     await p1.stop();
     const p2 = await createPlatform({
       fs,
       dataDir: "/data",
       defaultTenant: { id: "default", name: "Default" },
+      adapterMcp: false,
     });
     // same on-disk state means the secret file is byte-identical
     const sec1 = await p1.gateway["status"]; // not testing internals — just verifying p2 wired up
@@ -81,6 +88,7 @@ describe("createPlatform", () => {
       fs,
       dataDir: "/data",
       defaultTenant: { id: "default", name: "Default" },
+      adapterMcp: false,
     });
     await platform.stop();
     await platform.stop(); // must not throw

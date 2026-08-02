@@ -33,6 +33,9 @@
       "path": "packages/gateway-core"
     },
     {
+      "path": "packages/adapter-mcp"
+    },
+    {
       "path": "packages/sdk-node"
     },
     {

@@ -1,8 +1,8 @@
 {
-  "name": "@platform/agentide",
+  "name": "@platform/adapter-mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "Meta-package composing Tier 1 components + gateway-core; ships the `agentide` CLI for operators.",
+  "description": "MCP (Model Context Protocol) adapter — exposes registered capabilities as MCP tools over Streamable HTTP; translates MCP JSON-RPC messages into canonical gateway.handleInvocation() calls.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,14 +12,7 @@
       "import": "./dist/index.js"
     }
   },
-  "bin": {
-    "agentide": "./dist/cli.js"
-  },
-  "files": [
-    "dist",
-    "src",
-    "install.sh"
-  ],
+  "files": ["dist", "src"],
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run",
@@ -28,17 +21,17 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/adapter-mcp": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@platform/errors": "workspace:*",
+    "@platform/gateway-core": "workspace:*"
+  },
+  "devDependencies": {
     "@platform/backend-runtime": "workspace:*",
     "@platform/capability-registry": "workspace:*",
     "@platform/event-bus": "workspace:*",
-    "@platform/gateway-core": "workspace:*",
     "@platform/plugin-manager": "workspace:*",
-    "@platform/session-manager": "workspace:*"
-  },
-  "devDependencies": {
+    "@platform/session-manager": "workspace:*",
     "@types/node": "^22.10.0",
-    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@typescript-eslint/parser": "^8.65.0",
     "eslint": "^10.8.0",

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../backend-runtime" },
+    { "path": "../capability-registry" },
+    { "path": "../errors" },
+    { "path": "../event-bus" },
+    { "path": "../gateway-core" },
+    { "path": "../plugin-manager" },
+    { "path": "../session-manager" }
+  ]
+}
