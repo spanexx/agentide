@@ -3,7 +3,7 @@
 > **Map title:** browser-runtime — finding the way to a shipped
 > `@platform/browser-runtime` Runtime Plugin.
 >
-> **Status:** charting complete (4/7 tickets closed). Live tracker:
+> **Status:** charting complete (5/7 tickets closed). Live tracker:
 > this file + the 7 child ticket files.
 
 ## Destination
@@ -79,13 +79,12 @@ happens via `delivery: feature-pipeline` once the way is clear.
 | 1 | Engine and browser lifecycle research | `research` ✅ closed | Capability contracts |
 | 2 | Capability contracts | `grilling` ✅ closed | — |
 | 3 | Screenshot payload | `grilling` ✅ closed | — |
-| 4 | sdk-browser coupling after navigate | `grilling` | — |
+| 4 | sdk-browser coupling after navigate | `grilling` ✅ closed | — |
 | 5 | BrowserContext suspend/resume | `grilling` | — |
 | 6 | browser.wait semantics | `grilling` ✅ closed | — |
 | 7 | Human observability in v1 | `prototype` | — |
 
-**Frontier (open + unblocked):** sdk-browser coupling after navigate
-(T4). T4, T5 are open; T7 becomes unblocked once T4/T5 close.
+**Frontier (open + unblocked):** BrowserContext suspend/resume (T5).
 
 ## Decisions so far
 
@@ -125,6 +124,17 @@ happens via `delivery: feature-pipeline` once the way is clear.
   auto); forced inline + oversize → `BROWSER_SCREENSHOT_TOO_LARGE`
   retryable false; resources session-owned, `session.closed`
   cleanup.
+
+- [**sdk-browser coupling after navigate**](tickets/sdk-browser-coupling-after-navigate.md)
+  (T4, closed 2026-08-02) — navigate is the sync point: output
+  `{ tabId, url, capabilities, capsSettled }`, waits for sdk-browser's
+  "caps registered" signal (event-bus, per session), timeout → empty
+  caps + `capsSettled: false`, never an error (plain pages are
+  legitimate); tab-scoped registrations — sdk-browser registers with
+  session+tabId owner metadata, `capability.list` gains optional
+  `tabId` filter (**extends shipped capability-registry contract**);
+  re-read via re-navigate or filtered list; `browser.page.read` ruled
+  out. Agent loop (sdk-browser T1) now has its sync point.
 
 - [**browser.wait semantics**](tickets/browser-wait-semantics.md)
   (T6, closed 2026-08-02) — waits for a condition AND has a
