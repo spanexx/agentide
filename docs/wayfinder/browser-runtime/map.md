@@ -3,7 +3,7 @@
 > **Map title:** browser-runtime — finding the way to a shipped
 > `@platform/browser-runtime` Runtime Plugin.
 >
-> **Status:** charting complete (2/7 tickets closed). Live tracker:
+> **Status:** charting complete (3/7 tickets closed). Live tracker:
 > this file + the 7 child ticket files.
 
 ## Destination
@@ -77,15 +77,16 @@ happens via `delivery: feature-pipeline` once the way is clear.
 | # | Ticket | Type | Blocks |
 |---|---|---|---|
 | 1 | Engine and browser lifecycle research | `research` ✅ closed | Capability contracts |
-| 2 | Capability contracts | `grilling` | Screenshot payload, sdk-browser coupling, suspend/resume, browser.wait |
+| 2 | Capability contracts | `grilling` ✅ closed | — |
 | 3 | Screenshot payload | `grilling` | Human observability |
 | 4 | sdk-browser coupling after navigate | `grilling` | — |
 | 5 | BrowserContext suspend/resume | `grilling` | — |
 | 6 | browser.wait semantics | `grilling` ✅ closed | — |
 | 7 | Human observability in v1 | `prototype` | — |
 
-**Frontier (open + unblocked):** Capability contracts (T2).
-Everything else is blocked until Capability contracts resolves.
+**Frontier (open + unblocked):** Screenshot payload (T3). Everything
+else is blocked until Capability contracts resolves — T3/T4/T5 are
+now unblocked; T3 is the next frontier.
 
 ## Decisions so far
 
@@ -101,6 +102,19 @@ Everything else is blocked until Capability contracts resolves.
   lifecycle via `browser.on('disconnected')` + auto-relaunch,
   `context.close()` on `session.closed`, zombie-prevention exit
   handler.
+
+- [**Capability contracts**](tickets/capability-contracts.md)
+  (T2, closed 2026-08-02) — all 11 caps' contracts locked, plain
+  data only: CSS-only selectors; numeric `tabId` (first tab 0,
+  optional everywhere, default most-recently-active); per-cap
+  input/output shapes (see ticket table); `BROWSER_*` error codes
+  pass through the `GATEWAY_HANDLER_ERROR` envelope; retryable
+  policy = timeout/race retryable (`BROWSER_WAIT_TIMEOUT`,
+  `BROWSER_SELECTOR_NOT_FOUND/TIMEOUT`, `BROWSER_NAVIGATION_TIMEOUT`,
+  `BROWSER_LAUNCH_FAILED`), misuse not (`BROWSER_NO_CONTEXT`,
+  `BROWSER_ALREADY_LAUNCHED`, `BROWSER_TAB_NOT_FOUND`,
+  `BROWSER_CLOSED`, `BROWSER_NAVIGATION_FAILED`); screenshot input
+  locked, output deferred to T3.
 
 - [**browser.wait semantics**](tickets/browser-wait-semantics.md)
   (T6, closed 2026-08-02) — waits for a condition AND has a
