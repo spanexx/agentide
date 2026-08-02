@@ -170,22 +170,17 @@ is clear. Route: feature-pipeline for the package build.
   a headed window. Streaming/recording/remote-viewing/event
   persistence/cross-session views → dashboard-core (BI[13]); Chrome
   DevTools (#14) stays out. Remaining fog (binary management,
-  concurrency, crash recovery, proxy) rides into the feature-pipeline
-  GRILL.
+  concurrency, crash recovery, proxy) rode into the feature-pipeline
+  GRILL and is RESOLVED — see GRILL-browser-runtime.txt Q1–Q4
+  (2026-08-02): @playwright/browser-chromium dep, no hard concurrency
+  cap (documented guidance), BROWSER_CRASHED retryable:true,
+  Playwright default network.
 
 ## Not yet specified
 
-- **Browser binary management** — how/where Playwright browsers get
-  installed (download at plugin install? system Chrome? version
-  pinning). Likely graduates from the Engine research ticket.
-- **Concurrency limits** — one Chromium process, many
-  BrowserContexts: caps on simultaneous sessions/contexts, memory
-  pressure handling.
-- **Crash recovery** — what happens when the browser process dies
-  mid-session: error surfaced to in-flight invocations, context
-  state, retry semantics.
-- **Network/proxy isolation** — per-context proxy or interception
-  needs beyond defaults.
+- *(None — all fog resolved in the feature-pipeline GRILL, 2026-08-02.
+  Cross-pack tabId filter on capability.list (T4) lands in the same
+  pipeline per GRILL Q5.)*
 
 ## Out of scope
 

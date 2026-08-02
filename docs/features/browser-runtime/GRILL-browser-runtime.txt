@@ -1,0 +1,157 @@
+@platform/browser-runtime - Grill Notes
+
+Status: LOCKED (2026-08-02) — wayfinder map complete (7/7 tickets); six grill
+questions resolved autonomously (user unavailable; delegated decision-making,
+pending user review). No open questions.
+Date: 2026-08-02
+Source: Wayfinder map #12 (browser-runtime), tickets T1-T7; grill session after
+map completion, route: feature-pipeline
+
+What this feature is about
+
+- Runtime capability pack that drives a real browser on behalf of an agent
+  session: launch/close browser, open/list/close tabs, navigate, click, type,
+  screenshot, wait. Engine: Playwright v1 (CDP/Rust rebuild = v2, out of scope).
+- Session-scoped: one Chromium process + one BrowserContext per session;
+  explicit `browser.launch`, `browser.tab.*` sub-namespace, session suspend
+  keeps the browser alive, `session.closed` tears it down.
+- Registers ~11 capabilities with the capability-registry as owner `browser`
+  (Runtime Manifest `runtime: { id: browser }`), dispatched in-process by the
+  Gateway through `plugin:browser` owner.
+- Delivers human observability in v1 as shape A "The window": headed mode +
+  screenshot-on-demand, zero new surface (no event feed — that is
+  dashboard-core BI[13] scope).
+
+What this feature does NOT do
+
+- Does not build a CDP (raw) engine or Rust rebuild (v2).
+- Does not stream screenshots/events to a dashboard (dashboard-core BI[13]).
+- Does not include Chrome DevTools extension integration (#14).
+- Does not include a plugin-marketplace listing.
+- Does not implement text=/role= selectors (CSS-only in v1).
+- Does not add per-context proxy/interception config in v1 (defaults only).
+- Does not add a hard concurrency cap or new launch-time session limits in v1.
+
+Scope clarifications
+
+- Extends the SHIPPED capability-registry contract: `capability.list` gains an
+  optional `tabId` filter (T4). This pipeline modifies `packages/capability-registry`
+  in the same PR scope.
+- Extends the T2 error-code table with one new code: BROWSER_CRASHED
+  (retryable: true) — see Q4.
+- Binary strategy: depends on `@playwright/browser-chromium` (exact-pin) — the
+  browser binary lands with the package install, no extra ops step (Q1).
+- Driver-first rule stands: plain-data `BrowserDriver` interface, zero Playwright
+  types leak into the public surface.
+- Package lives at `packages/browser-runtime`, published as `@platform/browser-runtime`.
+
+Baseline locked via wayfinder map (T1-T7, binding)
+
+- T1 Engine research: Playwright v1; mode pool (default headless, lazy headed);
+  driver-first rule; binary via @playwright/browser-chromium exact-pin; lifecycle:
+  one process + one context per session; browser.on('disconnected') + auto-relaunch
+  on next launch; context.close() on session.closed; zombie exit handler.
+- T2 Capability contracts: 11 capabilities; CSS-only selectors; numeric tabId
+  (first tab 0, default = most-recently-active); BROWSER_* error codes through
+  GATEWAY_HANDLER_ERROR envelope; retryable = timeout/race only.
+- T3 Screenshot payload: inline base64 first, 256 KiB cap, session Resource over
+  cap, BROWSER_SCREENSHOT_TOO_LARGE; payload `{ format, mode: 'inline'|'resource',
+  data?, resourceId?, bytes }`.
+- T4 sdk-browser coupling: navigate sync point `{ tabId, url, capabilities,
+  capsSettled }`; capability.list tabId filter (this pipeline).
+- T5 Suspend/resume: keep context + process alive; one listener, 3 events
+  (suspended/resumed no-op, session.closed = teardown); trust gateway
+  resume-first; ~150-300 MB idle memory accepted; keep-alive knob = v2 candidate.
+- T6 browser.wait semantics: both modes (selector / time); 30s default, 120s cap;
+  BROWSER_WAIT_TIMEOUT retryable: true.
+- T7 Human observability: v1 = shape A "The window" (headed + screenshot-on-demand).
+
+Questions and answers locked so far
+
+1. How does the Chromium binary get installed?
+
+Answer:
+- Depend on `@playwright/browser-chromium` (exact-pin) as a direct dependency of
+  `@platform/browser-runtime`. The browser binary is downloaded at install time
+  by the package's postinstall and is guaranteed present whenever the pack is
+  installed. No separate ops/plugin-install step.
+- Why: plugin-manager installs the package; a dependency that self-provisions
+  the binary means install == usable, zero extra steps for ops. The
+  `playwright-core install chromium` route was rejected: it adds a manual step
+  that is easy to forget and silently breaks launch at runtime.
+- Decision record: CONTEXT.md (browser-runtime binary strategy, 2026-08-02).
+
+2. Caps on simultaneous browser sessions in v1?
+
+Answer:
+- No hard cap in v1. One Chromium process hosts many BrowserContexts; each
+  session = one context. Document ~10-20 concurrent sessions per host as
+  practical guidance (memory-bound); operators control the envelope via host
+  environment. A BROWSER_LIMIT_REACHED code is NOT added.
+- Why: contexts in a shared process are comparatively cheap; a hard cap adds
+  contract surface (new code, new failure modes) with no demonstrated need.
+  Consistent with the T5 keep-alive-knob stance: no config/limit knobs until a
+  real need exists. Revisit in v2 if memory pressure becomes measurable.
+- Decision record: CONTEXT.md (browser-runtime concurrency limits, 2026-08-02).
+
+3. Do v1 sessions need custom network/proxy configuration?
+
+Answer:
+- No. v1 uses Playwright's default network stack; each BrowserContext already
+  isolates cookies/storage/state (locked in T1). Per-context proxy/interception
+  options (`proxy: { server }`) are a v2 candidate.
+- Why: no agent-loop use case surfaced in any ticket; proxy config adds option
+  surface plus credential-handling questions for zero current value.
+- Decision record: CONTEXT.md (browser-runtime network isolation, 2026-08-02).
+
+4. What error surfaces when the browser process crashes mid-invocation?
+
+Answer:
+- New error code BROWSER_CRASHED, retryable: true, surfaced through the same
+  GATEWAY_HANDLER_ERROR envelope as all BROWSER_* codes. The session is marked
+  dead; the next browser.launch auto-relaunches (T1). BROWSER_CLOSED keeps
+  meaning "browser intentionally closed (browser.close / session end)" and stays
+  retryable: false.
+- Why: T2's retryable policy is "timeout/race retryable, misuse not". A crash is
+  definitionally a race, not misuse; reusing BROWSER_CLOSED would mislabel a
+  recoverable condition as terminal, and its retryable:false flag would make
+  agents abandon sessions that a simple relaunch fixes. Precedent: LAUNCH_FAILED
+  is already retryable: true — a crash is the mid-flight sibling of a failed
+  launch. One extra code keeps the retryable semantics honest.
+- NOTE: This deviates from the agent's initial recommendation (reuse
+  BROWSER_CLOSED); the recommendation was reversed during writing for the
+  policy-consistency reason above. Flagged for user review.
+- Decision record: CONTEXT.md (browser-runtime crash error code, 2026-08-02).
+
+5. T4 locked `capability.list` tabId filter — extend shipped capability-registry
+   now, or defer?
+
+Answer:
+- Extend now, in this pipeline, same PR scope. `list()` gains an optional
+  `tabId` filter; capability-registry remains backward compatible (no-arg list
+  unchanged).
+- Why: T4's navigate output carries capabilities and the agent loop re-reads a
+  tab's caps by tabId; shipping browser-runtime without the filter ships a
+  half-contract and forces a follow-up cross-pack change. The registry change is
+  small and additive.
+- Decision record: CONTEXT.md (capability.list tabId filter, 2026-08-02).
+
+6. Pre-impl and post-impl simulation surface: HTML or CLI?
+
+Answer:
+- HTML simulation (interconnected-simulation skill, `simulate-pre.html` then a
+  distinct `simulate.html`), same style as sdk-browser's.
+- Why: browser state is inherently visual (tabs, URLs, screenshots); an HTML
+  page with a terminal pane + state cards + live event log shows the agent loop
+  against the browser far better than a CLI. Matches sibling-pack convention.
+- Decision record: CONTEXT.md (browser-runtime sim surface, 2026-08-02).
+
+No remaining open questions
+
+- All wayfinder-map fog items resolved: binary management (Q1), concurrency
+  limits (Q2), network/proxy isolation (Q3), crash recovery (Q4 + T1).
+- Cross-pack scope resolved (Q5); sim surface resolved (Q6).
+- GRILL gate: PASSED (autonomous, pending user review of the six decisions).
+
+Next: Phase 0.5 — pre-impl simulation (simulate-pre.html), design-time
+behavioral check of the locked contract.
