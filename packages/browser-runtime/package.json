@@ -1,0 +1,40 @@
+{
+  "name": "@platform/browser-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Browser Runtime plugin — drives a real Chromium via Playwright on behalf of an agent session: launch/close browser, open/list/close tabs, navigate, click, type, scroll, wait, screenshot, query.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "manifest.yaml"
+  ],
+  "scripts": {
+    "build": "tsc --build --pretty",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "typecheck": "tsc --build --pretty"
+  },
+  "dependencies": {
+    "@playwright/browser-chromium": "1.62.1",
+    "playwright-core": "1.62.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "eslint": "^10.8.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "yaml": "^2.8.0"
+  }
+}

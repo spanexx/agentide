@@ -1,0 +1,35 @@
+# Browser Runtime plugin manifest
+# 12 capabilities; tiers declared explicitly where the shipped verb
+# tables do not infer the right tier (audit Finding 9):
+#   - launch: in no verb list (must declare) — act
+#   - screenshot: "shot" not in READ_VERBS (must declare) — read
+#   - close: ACT_VERBS contains "close", but browser.close without tabId
+#     tears down the session context — destructive
+#   - tab.switch: "switch" not in any verb list (must declare) — act
+#   - tab.close: same — destructive
+# Remaining caps infer cleanly: query/scroll/wait = read/act via tables,
+# navigate/click/type = act, tab.open = act (open).
+runtime:
+  id: browser
+  entry: ./dist/index.js
+version: "1.0"
+capabilities:
+  - name: browser.launch
+    tier: act
+  - browser.navigate
+  - browser.click
+  - browser.type
+  - browser.scroll
+  - browser.wait
+  - name: browser.screenshot
+    tier: read
+  - browser.query
+  - name: browser.close
+    tier: destructive
+  - browser.tab.open
+  - name: browser.tab.switch
+    tier: act
+  - name: browser.tab.close
+    tier: destructive
+metadata:
+  description: Browser automation runtime (Playwright, session-scoped)

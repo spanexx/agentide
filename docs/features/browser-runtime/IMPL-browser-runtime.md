@@ -234,14 +234,45 @@ start in parallel with Phase 1 work.
 
 ## Dependency Analysis (opensrc)
 
-- **playwright-core@1.62.1** — Apache-2.0, active (Microsoft, ~weekly
-  releases). Why: driver engine without downloading browsers. Call
-  pattern: `chromium.launch`/`browser.newContext`/`page.evaluate` —
-  never the `playwright` test-runner package.
+Findings below verified against actual dependency source — both from the
+installed package artifacts (the exact shipped code, via
+`node_modules/.pnpm/...`) and the `opensrc` repo clone at
+`~/.opensrc/repos/github.com/microsoft/playwright/1.62.1` (cross-check
+landed 2026-08-02; note: the retry clone fetched `main` =
+`1.63.0-next`, NOT the v1.62.1 tag — API surface cross-checks below
+re-verified on main, but the installed 1.62.1 artifacts remain
+authoritative for exact behavior).
+
+- **playwright-core@1.62.1** — Apache-2.0 (LICENSE + package.json
+  confirm), active (Microsoft, ~weekly releases). Why: driver engine
+  without downloading browsers. Call pattern (verified in
+  `types/types.d.ts` + `lib/coreBundle.js`):
+  - `chromium.launch(options?: LaunchOptions)` — `headless` defaults
+    `true`; `executablePath`, `channel`, `args`, `timeout` all optional.
+    Hermetic install flag `_isHermeticInstallation: true` on the
+    chromium executable entry (Registry in `coreBundle.js`).
+  - `browser.on('disconnected')` — confirmed event on `Browser`
+    (types.d.ts L10855): fires when the browser process detaches —
+    exactly the Q4 crash signal.
+  - `browser.newContext()` — per-session isolation (T1); `page.evaluate`
+    for the DOM-read settle (F11).
+  - Never the `playwright` test-runner package.
 - **@playwright/browser-chromium@1.62.1** — Apache-2.0, active,
   exact-pinned (Q1). Why: binary self-provisions at install time;
-  install == usable, zero ops steps. Alternatives: `playwright-core
-  install chromium` (manual step, rejected Q1); CDP raw (v2).
+  install == usable, zero ops steps. Verified internals:
+  - `install.js` → `registry.installBrowsersForNpmInstall(['chromium',
+    'chromium-headless-shell', 'ffmpeg'])`.
+  - `browsers.json`: chromium revision **1234** = Chrome for Testing
+    151.0.7922.34; binary lands at
+    `~/.cache/ms-playwright/chromium-1234/` (verified downloaded during
+    Phase 2 `pnpm install`: headless shell 151.0.7922.34 v1234 +
+    chromium-1234 + ffmpeg-1011; fallback ubuntu24.04-x64 build on this
+    OS).
+  - Registry resolves the executable via
+    `findExecutablePath(dir, 'chromium')` — no manual path wiring
+    needed.
+  - Alternatives: `playwright-core install chromium` (manual step,
+    rejected Q1); CDP raw (v2).
 - No other new deps; all `@platform/*` are workspace packages.
 
 ## Rollout
@@ -254,9 +285,13 @@ start in parallel with Phase 1 work.
 
 ## Risk Notes
 
-- Playwright 1.62.x is new (pinned exact) — verify the chromium binary
-  download works in this environment before Phase 3 (`pnpm install`
-  exercises it).
+- ~~Playwright 1.62.x is new (pinned exact) — verify the chromium binary
+  download works in this environment before Phase 3~~ — RESOLVED during
+  Phase 2: `pnpm install` downloaded chromium-1234 + headless-shell-1234
+  + ffmpeg-1011 successfully (with `allowBuilds` approval in
+  `pnpm-workspace.yaml`). Note: pnpm 11 blocks build scripts by default —
+  the `allowBuilds: '@playwright/browser-chromium': true` entry is
+  REQUIRED for the binary to self-provision.
 - Phase 4 settle timing: stability re-read must use short bounded waits
   to keep navigate latency sane (target <2s on typical pages).
 - D-40 (sdk-browser register bug) is OUT of scope — DOM-read settle is
