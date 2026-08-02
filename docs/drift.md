@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-02  **Open:** 4  **Resolved:** 27  **Critical/High:** 1
+**Last updated:** 2026-08-02  **Open:** 2  **Resolved:** 38  **Critical/High:** 1
 
 ## Open
 
@@ -10,22 +10,6 @@
   - Owner: sdk-browser pack
   - To fix: sdk-browser sends `version` + `description` + `permissions` in the register frame (parity with sdk-node), or backend-runtime defaults version "1"/description=name. Flagged for user review; NOT fixed in browser-runtime scope.
   - Related: AUDIT F11-b (browser-runtime); backend-runtime
-
-- **D-41** (High, 2026-08-02, reporter: browser-runtime audit F10) — Handler error code + retryable are dropped by the shipped plugin dispatch path; the capability-contracts claim that BROWSER_* codes ride in the envelope details is unsupported by code.
-  - Doc claim: "preserves the `BROWSER_*` code in the structured details; the caller-visible error code is the `BROWSER_*` one" (`docs/wayfinder/browser-runtime/tickets/capability-contracts.md:63-70` — corrected this session to match the resolution below)
-  - Code reality: handler throw → `PluginManagerError(PLUGIN_HANDLER_ERROR, ..., { pluginId, capabilityName, originalError: e.message })` — code + retryable dropped (`packages/plugin-manager/src/index.ts:218-226`); → `GatewayError(GATEWAY_HANDLER_ERROR, ..., { pluginId, capability, originalError: err.message })` with retryable defaulting false (`packages/gateway-core/src/dispatch.ts:167-170`, `packages/errors/src/index.ts` constructor)
-  - Why matters: the retryable policy for browser-runtime (BROWSER_WAIT_TIMEOUT/BROWSER_SELECTOR_NOT_FOUND/BROWSER_NAVIGATION_TIMEOUT/BROWSER_LAUNCH_FAILED/BROWSER_CRASHED = retryable:true) is unexpressible through the plugin path as shipped — agents would never retry recoverable browser failures
-  - Owner: cross-pack audit (plugin-manager + gateway-core)
-  - To fix: additive envelope extension in browser-runtime PRD-TRD scope — plugin-manager preserves `originalErrorCode` + `retryable` in PLUGIN_HANDLER_ERROR details when the handler throws an Error carrying them; gateway-core passes them into GATEWAY_HANDLER_ERROR details. Backward compatible. Flagged for user review.
-  - Related: D-40; PRD-TRD-gateway-plugin-dispatch.md:48 (only promises message preservation)
-
-- **D-42** (Medium, 2026-08-02, reporter: browser-runtime audit F10) — `session.closed` does not exist; session teardown/resource events are `session.destroyed` / `session.cleanup_resources`.
-  - Doc claim: "`session.closed` tears it down" / "context.close() on session.closed" / "resources session-owned, `session.closed` cleanup" (`docs/features/browser-runtime/GRILL-browser-runtime.txt` T1/T5; `docs/wayfinder/browser-runtime/map.md` T3/T5 bullets; `docs/CONTEXT.md` T3/T4/T5 entries — all corrected this session)
-  - Code reality: event names are `session.created`, `session.suspended`, `session.resumed`, `session.cleanup_resources`, `session.destroyed` (`packages/session-manager/src/events.ts:5-11`, `CID:events-001`)
-  - Why matters: browser-runtime's teardown listener would subscribe to a nonexistent event; suspend/teardown behavior silently broken
-  - Owner: browser-runtime (docs) — resolved this session
-  - To fix: docs corrected (GRILL, map.md, CONTEXT.md); PRD-TRD must use the real event names
-  - Related: none
 
 - **D-43** (Medium, 2026-08-02, reporter: browser-runtime audit F12) — backend-runtime replaces the first connection on duplicate appId: two tabs of the same app evict each other at the gateway.
   - Doc claim: T4 "two tabs of the same app are distinguishable" (`docs/wayfinder/browser-runtime/map.md` T4 bullet; `docs/CONTEXT.md` T4 entry — corrected this session with the limitation)
@@ -39,8 +23,36 @@
 
 ## Resolved
 
+- **D-41** (Resolved 2026-08-02, browser-runtime drift review) — Handler error code + retryable now ride the envelope: plugin-manager preserves `originalErrorCode` + `retryable` in PLUGIN_HANDLER_ERROR details (`packages/plugin-manager/src/index.ts:229-243`), gateway-core passes them into GATEWAY_HANDLER_ERROR details (`packages/gateway-core/src/dispatch.ts:194-207`). Verified by tests `dispatch.test.ts:122-152` + `handler-loading.test.ts:154-187`; commit `5ee1cab`. Doc claim in capability-contracts corrected this session.
+  - Verified by: drift review sub-agent (`.reports/2026-08-02-1536-drift-browser-runtime.md`) + code re-read.
+- **D-42** (Resolved 2026-08-02, browser-runtime drift review) — Docs corrected (GRILL, map.md, CONTEXT.md) to the real event names; lifecycle.ts subscribes `session.created` (no-op), `session.suspended`/`session.resumed` (no-ops), `session.destroyed` (close), `session.cleanup_resources` (purge). Test suite covers the wiring (31/31).
+  - Verified by: drift review sub-agent + code re-read this session.
+- **BR-1** (Resolved 2026-08-02, browser-runtime post-impl drift review) — `driver.close()` closed the context but never the browser → chromium process leaked per session (PRD S8 "process exits" unimplemented). Fixed: `close()` now calls `refs_.browser.close()` (try/catch) after context.close(); relaunch-after-close test still green (31/31).
+  - Verified by: code edit + full test rerun.
+- **BR-2** (Resolved 2026-08-02, browser-runtime post-impl drift review) — F8 data-less elements emitted the plain duplicate selector (not reusable; capability-contracts.md promised nth-of-type). Fixed: `query()` fallback now emits `tag:nth-of-type(n)` computed among same-tag siblings.
+  - Verified by: code edit + full test rerun.
+- **BR-4** (Resolved 2026-08-02, browser-runtime post-impl drift review) — sim S6 screenshot scenario ran inline mode on the big news page (would error). Fixed: S6 navigates to shop.example before the inline screenshot, news.example before resource mode.
+  - Verified by: sim verify script PASS after fix.
+- **BR-5** (Resolved 2026-08-02, browser-runtime post-impl drift review) — sim S7 crash step checked for a thrown error, but `crashSimulate` returns `{ crashed: true, code: 'BROWSER_CRASHED' }`. Fixed: scenario now expects the returned object.
+  - Verified by: sim verify script PASS after fix.
+- **BR-6** (Resolved 2026-08-02, browser-runtime post-impl drift review) — sim `typeText` never threw AMBIGUOUS on multi-match, unlike real `resolveLocator` (driver.ts). Fixed: typeText throws `BROWSER_SELECTOR_AMBIGUOUS` when >1 match without instance; S8 now types `instance 1`.
+  - Verified by: sim verify script PASS after fix.
+- **BR-7** (Resolved 2026-08-02, browser-runtime post-impl drift review) — IMPL Phase 4 verify bullet promised "never-appearing caps → capsSettled:false", contradicting empty-page-settles-true (snapshot.ts:57-60). Fixed: bullet now says continuously-mutating page → capsSettled:false after timeout; empty page settles immediately true.
+  - Verified by: doc edit.
+- **BR-8** (Resolved 2026-08-02, browser-runtime post-impl drift review) — lifecycle comment listed `session.created` but no subscription existed. Fixed: explicit no-op subscription added (session is lazy per T5).
+  - Verified by: code edit + full test rerun.
+- **BR-9** (Resolved 2026-08-02, browser-runtime post-impl drift review) — IMPL/PRD dep lists promised `@platform/*` workspace deps; shipped package.json carries none (self-contained: playwright-core + @playwright/browser-chromium only). Fixed: IMPL Dependency Analysis now records shipped reality as authoritative.
+  - Verified by: doc edit.
+- **BR-3** (Accepted drift, 2026-08-02, browser-runtime post-impl drift review) — post-impl sim `simulate.html` is a hand-mirror HTML stub of the shipped semantics, not the real package driver. Accepted direction per pre-impl contract (matches D-38 sdk-browser precedent where the pre-impl sim is archived and the post-impl sim is standalone); browser-runtime's real driver is a Node package that can't be driven from a browser page.
+  - Resolution: documented; pre-impl sim archived to `docs/features/browser-runtime/archive/simulate-pre.html`.
+  - Verified by: drift review sub-agent + sim verify script.
 - **D-37** (Accepted drift, 2026-08-02, sdk-browser drift review) — GRILL T3 Q3 locks a best-effort wire send `{ type: "sdk.disconnect", reason: "pagehide" }` BEFORE `close(1000, "pagehide")`. The implementation sends the close frame only; no wire message.
   - Doc claim: "Try to send `{ type: "sdk.disconnect", reason: "pagehide" }` via `WebSocket.send(...)`" (`docs/features/sdk-browser/GRILL-sdk-browser.txt:344-346`)
+  - Code reality: `onPageHide` → `client.disconnect("pagehide")` → `ws.close(1000, reason)` only (`packages/sdk-browser/src/lifecycle.ts:38-44`, `client.ts:113-121`)
+  - Why matters: without a wire message the gateway can't unregister the cap until TCP timeout; but nothing server-side consumes `sdk.disconnect` (backend-runtime has no handler; sdk-node sends none), and PRD-TRD Scenario 9 wording matches the code — the close frame is the effective signal.
+  - Resolution: GRILL T3 Q3 amended 2026-08-02 with an additive note (verbatim answer preserved) citing this drift ID.
+  - Verified by: drift review sub-agent (`.reports/20260802-0659-drift-sdk-browser.md`), re-read of `lifecycle.ts:38-44`, post-impl sim scenario 7 (pagehide persisted) + test suite 61/61.
+- **D-38** (Accepted drift, 2026-08-02, sdk-browser drift review) — Post-impl sim at `packages/agentide/scripts/simulate-sdk-browser.mjs` is a standalone Node ESM script driving real `@platform/sdk-browser` dist (not browser HTML like the pre-impl `simulate-pre.html`).
   - Code reality: `onPageHide` → `client.disconnect("pagehide")` → `ws.close(1000, reason)` only (`packages/sdk-browser/src/lifecycle.ts:38-44`, `client.ts:113-121`)
   - Why matters: without a wire message the gateway can't unregister the cap until TCP timeout; but nothing server-side consumes `sdk.disconnect` (backend-runtime has no handler; sdk-node sends none), and PRD-TRD Scenario 9 wording matches the code — the close frame is the effective signal.
   - Resolution: GRILL T3 Q3 amended 2026-08-02 with an additive note (verbatim answer preserved) citing this drift ID.

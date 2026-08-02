@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>browser-runtime · post-impl simulation</title>
+<style>
+  :root {
+    --bg: #101418; --panel: #161c22; --card: #1c242c; --border: #2a3440;
+    --fg: #d8e0e8; --dim: #8a97a3; --ok: #3fb27f; --warn: #d9a03f;
+    --err: #d95555; --info: #4a9fd8; --act: #b07fd9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 "SF Mono", Menlo, Consolas, monospace;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font-size: 14px; margin: 0; letter-spacing: .5px; }
+  header .tag { font-size: 10px; color: var(--dim); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 10px; }
+  #sess-badge { margin-left: auto; font-size: 11px; padding: 3px 10px;
+    border-radius: 12px; border: 1px solid var(--border); color: var(--dim); }
+  #sess-badge.live { color: var(--ok); border-color: var(--ok); }
+  #sess-badge.dead { color: var(--err); border-color: var(--err); }
+  main { display: grid; grid-template-columns: 1fr 320px; gap: 0; height: calc(100vh - 45px); }
+  #left { display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+  #browser-pane { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  #browser-head { display: flex; gap: 8px; align-items: center; padding: 8px 12px;
+    border-bottom: 1px solid var(--border); background: var(--panel); font-size: 11px; }
+  #mode-tag { padding: 2px 8px; border-radius: 10px; background: var(--card);
+    border: 1px solid var(--border); color: var(--dim); }
+  #mode-tag.live { color: var(--ok); border-color: var(--ok); }
+  #tab-bar { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
+  .tab-chip { padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px;
+    cursor: pointer; color: var(--dim); font-size: 11px; white-space: nowrap; }
+  .tab-chip.active { background: var(--card); color: var(--fg); border-color: var(--info); }
+  .tab-chip .dot { color: var(--err); }
+  #url-bar { font-size: 11px; color: var(--info); max-width: 320px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #page-box { flex: 1; overflow: auto; padding: 12px; background: #0b0e12; }
+  #page-box .empty { color: var(--dim); font-size: 12px; text-align: center; margin-top: 40px; }
+  .shop { max-width: 640px; margin: 0 auto; }
+  .shop h3 { margin: 4px 0 12px; color: var(--fg); font-size: 13px; }
+  .pg-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .pg-input { flex: 1; background: var(--card); border: 1px solid var(--border);
+    color: var(--fg); border-radius: 3px; padding: 5px 8px; font: inherit; font-size: 12px; }
+  .pg-btn { background: var(--card); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 5px 12px; cursor: pointer; font: inherit; font-size: 12px; }
+  .pg-btn:hover { border-color: var(--info); }
+  .pg-btn.gone { opacity: .25; text-decoration: line-through; cursor: default; }
+  .pg-tag { font-size: 10px; color: var(--dim); }
+  #shot-row { padding: 8px 12px; border-top: 1px solid var(--border); display: none; gap: 10px; align-items: center; }
+  #shot-img { max-height: 120px; border: 1px solid var(--border); border-radius: 3px; }
+  #shot-meta { font-size: 10px; color: var(--dim); }
+  #right { display: flex; flex-direction: column; overflow: hidden; }
+  #cap-pane { border-bottom: 1px solid var(--border); padding: 10px; }
+  #cap-pane h2 { font-size: 11px; margin: 0 0 8px; color: var(--dim); letter-spacing: 1px; text-transform: uppercase; }
+  #cap-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .cap-card { background: var(--card); border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px 7px; font-size: 10px; }
+  .cap-card .n { color: var(--fg); }
+  .cap-card .cnt { float: right; color: var(--dim); }
+  .cap-card .tr { display: inline-block; font-size: 9px; padding: 0 5px; border-radius: 8px; margin-top: 2px; }
+  .tr.r { background: #17301f; color: var(--ok); }
+  .tr.a { background: #2f2438; color: var(--act); }
+  .tr.d { background: #3a1d1d; color: var(--err); }
+  .settle { font-size: 9px; color: var(--warn); float: right; }
+  #evt-pane { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  #evt-pane h2 { font-size: 11px; margin: 10px 12px 4px; color: var(--dim); letter-spacing: 1px; text-transform: uppercase; }
+  #evt-log { flex: 1; overflow-y: auto; padding: 4px 12px 10px; font-size: 11px; }
+  .evt { border-left: 2px solid var(--border); padding: 1px 8px; margin: 3px 0; color: var(--dim); }
+  .evt.sess { border-color: var(--info); color: var(--fg); }
+  .evt.ok { border-color: var(--ok); color: var(--ok); }
+  .evt.err { border-color: var(--err); color: var(--err); }
+  .evt.warn { border-color: var(--warn); color: var(--warn); }
+  #term-pane { border-top: 1px solid var(--border); height: 210px; display: flex; flex-direction: column; background: var(--panel); }
+  #term-log { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 12px; }
+  .tl { margin: 2px 0; white-space: pre-wrap; word-break: break-all; }
+  .tl .p { color: var(--act); }
+  .tl.ok { color: var(--ok); } .tl.err { color: var(--err); } .tl.dim { color: var(--dim); }
+  #term-input-row { display: flex; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--border); }
+  #term-input { flex: 1; background: var(--card); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 6px 10px; font: inherit; font-size: 12px; outline: none; }
+  #term-input:focus { border-color: var(--info); }
+  #scen-bar { display: flex; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
+  .scen-btn { background: var(--card); border: 1px solid var(--border); color: var(--fg);
+    border-radius: 3px; padding: 5px 10px; font: inherit; font-size: 11px; cursor: pointer; }
+  .scen-btn:hover { border-color: var(--info); }
+  .scen-btn.primary { border-color: var(--info); color: var(--info); }
+  #scen-status { width: 100%; font-size: 10px; color: var(--dim); }
+  .scen-step { color: var(--warn); }
+  .scen-step.done { color: var(--ok); }
+  .scen-step.fail { color: var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧭 browser-runtime</h1>
+  <span class="tag">post-impl sim · mirrors shipped driver (144fb88)</span>
+  <span id="sess-badge">session: idle · proc: dead</span>
+</header>
+
+<main>
+  <div id="left">
+    <div id="browser-pane">
+      <div id="browser-head">
+        <span id="mode-tag">headless · no window</span>
+        <div id="tab-bar"><span class="empty" style="color:var(--dim);font-size:11px;">no tabs — run <code>launch</code></span></div>
+        <span id="url-bar">about:blank</span>
+      </div>
+      <div id="page-box"><div class="empty">Simulated browser window.<br>Run <code>launch</code> then <code>navigate</code> — or hit <b>▶ Run full demo</b>.</div></div>
+      <div id="shot-row"><img id="shot-img" alt="screenshot"><span id="shot-meta"></span></div>
+    </div>
+    <div id="scen-bar">
+      <button class="scen-btn primary" id="demo-btn">▶ Run full demo</button>
+      <button class="scen-btn" id="scen-reset">↺ Reset</button>
+      <span style="color:var(--dim);font-size:11px;">scenarios:</span>
+      <span id="scen-btns"></span>
+      <span id="scen-status">idle</span>
+    </div>
+  </div>
+
+  <div id="right">
+    <div id="cap-pane">
+      <h2>Capability snapshot (data-sdk-cap)</h2>
+      <div id="cap-grid"><div class="empty" style="color:var(--dim);font-size:10px;">Not registered — run <code>launch</code>.</div></div>
+    </div>
+    <div id="evt-pane">
+      <h2>Event log (lifecycle bus D-42)</h2>
+      <div id="evt-log"></div>
+    </div>
+  </div>
+
+  <div id="term-pane">
+    <div id="term-log"></div>
+    <div id="term-input-row">
+      <span id="term-prompt" style="color:var(--act);">browser@sim $&nbsp;</span>
+      <input id="term-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </div>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+// ─────────────────────────────────────────────────────────────────────
+// POST-IMPL SIM — mirrors the SHIPPED implementation (packages/browser-runtime)
+// Verified semantics carried over from runtime.test.ts (31/31 green):
+//  · errors carry BROWSER_* codes + retryable flag (errors.ts)
+//  · launch seeds tab 0; ids ascend; ALREADY_LAUNCHED when live
+//  · navigate: F7 destructive guard (different url + caps) -> NAVIGATION_DESTRUCTIVE
+//  · query: address is `tag[data-*="v"]` when attr sits ON the matched el
+//    (self-address fix), else `ancestorTag[attr] ${sel}`; reusable verbatim
+//  · click: no instance on multi-match -> SELECTOR_AMBIGUOUS; 1-based instance
+//  · wait selector -> WAIT_TIMEOUT retryable; wait time -> sleep
+//  · screenshot: <= 256KiB inline, else resource mode (forced inline -> TOO_LARGE)
+//  · crash: CRASHED retryable; relaunch resets tab counter (Q4)
+//  · lifecycle: suspended/resumed no-op, cleanup_resources purges shot-*,
+//    destroyed closes context
+// ─────────────────────────────────────────────────────────────────────
+
+const $ = (id) => document.getElementById(id);
+const termInput = $("term-input"), termLog = $("term-log");
+const sessBadge = $("sess-badge"), modeTag = $("mode-tag");
+const tabBar = $("tab-bar"), urlBar = $("url-bar"), pageBox = $("page-box");
+const capGrid = $("cap-grid"), evtLog = $("evt-log");
+const shotRow = $("shot-row"), shotImg = $("shot-img"), shotMeta = $("shot-meta");
+const scenStatus = $("scen-status");
+
+// ─── constants (mirror errors.ts / IMPL) ────────────────────────────
+const ERR = {
+  ALREADY_LAUNCHED: "BROWSER_ALREADY_LAUNCHED",
+  CRASHED: "BROWSER_CRASHED",
+  TAB_NOT_FOUND: "BROWSER_TAB_NOT_FOUND",
+  NAVIGATION_DESTRUCTIVE: "BROWSER_NAVIGATION_DESTRUCTIVE",
+  NAVIGATION_FAILED: "BROWSER_NAVIGATION_FAILED",
+  SELECTOR_AMBIGUOUS: "BROWSER_SELECTOR_AMBIGUOUS",
+  SELECTOR_NOT_FOUND: "BROWSER_SELECTOR_NOT_FOUND",
+  WAIT_TIMEOUT: "BROWSER_WAIT_TIMEOUT",
+  SCREENSHOT_TOO_LARGE: "BROWSER_SCREENSHOT_TOO_LARGE",
+};
+const IMG_CAP_BYTES = 256 * 1024;
+const RETRYABLE = new Set(["BROWSER_WAIT_TIMEOUT", "BROWSER_SELECTOR_NOT_FOUND",
+  "BROWSER_SELECTOR_TIMEOUT", "BROWSER_NAVIGATION_TIMEOUT",
+  "BROWSER_LAUNCH_FAILED", "BROWSER_CRASHED"]);
+
+const CAPS = [
+  ["browser.launch", "act", "launch browser (mode: headless|headed)"],
+  ["browser.close", "destructive", "close session context (process shared)"],
+  ["browser.navigate", "act", "go to url — page-discovery sync point"],
+  ["browser.click", "act", "click CSS selector (instance: 1-based)"],
+  ["browser.type", "act", "fill selector (delayMs → pressSequentially)"],
+  ["browser.scroll", "act", "scroll direction/px or selector"],
+  ["browser.wait", "read", "wait: selector state | duration"],
+  ["browser.screenshot", "read", "screenshot: inline base64 | session resource"],
+  ["browser.query", "read", "count + reusable addresses (F8)"],
+  ["browser.tab.open", "act", "open tab (numeric tabId)"],
+  ["browser.tab.switch", "act", "activate tab"],
+  ["browser.tab.close", "destructive", "close tab (never kills process)"],
+];
+const TIER_CLASS = { read: "r", act: "a", destructive: "d" };
+
+// ─── engine state (mirrors session.ts + driver.ts) ──────────────────
+const engine = {
+  phase: "idle",        // idle | launched | suspended | closed | crashed
+  procState: "dead",    // dead | running | crashed
+  mode: null,
+  tabs: [],             // [{ tabId, url, title, caps, inputText }]
+  activeTabId: -1,
+  nextTabId: 0,         // launch seeds 0; relaunch resets
+  ctxGeneration: 0,
+  shotSeq: 0,
+};
+const LC_STEPS = ["idle", "launch", "open", "navigate", "interact", "suspend", "resume", "close"];
+
+function browserError(code, message) {
+  return { code, message, retryable: RETRYABLE.has(code) };
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function esc(s) { return String(s).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function json(v) { return JSON.stringify(v, null, 1); }
+
+// ─── logging ────────────────────────────────────────────────────────
+function tl(text, cls) {
+  const el = document.createElement("div");
+  el.className = "tl" + (cls ? " " + cls : "");
+  el.innerHTML = text;
+  termLog.appendChild(el);
+  termLog.scrollTop = termLog.scrollHeight;
+}
+function emit(kind, text) {
+  const el = document.createElement("div");
+  el.className = "evt " + kind;
+  el.textContent = text;
+  evtLog.appendChild(el);
+  evtLog.scrollTop = evtLog.scrollHeight;
+}
+function setBadge() {
+  const live = engine.phase === "launched";
+  sessBadge.className = live ? "live" : engine.phase === "closed" ? "dead" : "";
+  sessBadge.textContent = `session: ${engine.phase} · proc: ${engine.procState}`;
+  modeTag.className = live ? "live" : "";
+  modeTag.textContent = `${engine.mode ?? "headless"} · ${engine.procState === "running" ? "running" : engine.procState === "crashed" ? "crashed" : "no window"}`;
+}
+function renderTabs() {
+  if (engine.tabs.length === 0) {
+    tabBar.innerHTML = '<span class="empty" style="color:var(--dim);font-size:11px;">no tabs — run <code>launch</code></span>';
+    urlBar.textContent = "about:blank";
+    return;
+  }
+  tabBar.innerHTML = "";
+  for (const t of engine.tabs) {
+    const chip = document.createElement("span");
+    chip.className = "tab-chip" + (t.tabId === engine.activeTabId ? " active" : "");
+    chip.innerHTML = `<span class="dot">●</span> tab ${t.tabId} · ${esc(t.title)}`;
+    chip.onclick = () => switchTab(t.tabId);
+    tabBar.appendChild(chip);
+  }
+  const act = engine.tabs.find(t => t.tabId === engine.activeTabId);
+  urlBar.textContent = act ? act.url : "about:blank";
+}
+function renderCaps() {
+  const act = engine.tabs.find(t => t.tabId === engine.activeTabId);
+  if (!act || act.caps.length === 0) {
+    capGrid.innerHTML = '<div class="empty" style="color:var(--dim);font-size:10px;">' +
+      (engine.phase === "idle" ? "Not registered — run <code>launch</code>." : "No data-sdk-cap elements on this page.") + "</div>";
+    return;
+  }
+  capGrid.innerHTML = "";
+  for (const c of act.caps) {
+    const card = document.createElement("div");
+    card.className = "cap-card";
+    card.innerHTML = `<span class="n">${esc(c.name)}</span><span class="cnt">×${c.count}</span>` +
+      `<br><span class="tr ${TIER_CLASS[c.tier]}">${c.tier}</span>` +
+      (act.capsSettled === false ? `<span class="settle">unsettled</span>` : "");
+    capGrid.appendChild(card);
+  }
+}
+function renderPage() {
+  const act = engine.tabs.find(t => t.tabId === engine.activeTabId);
+  if (!act) { pageBox.innerHTML = '<div class="empty">no active tab</div>'; return; }
+  if (act.url === "about:blank") {
+    pageBox.innerHTML = '<div class="empty">tab ' + act.tabId + ' — about:blank (no caps)</div>';
+    return;
+  }
+  if (act.url.includes("shop.example")) {
+    pageBox.innerHTML = `<div class="shop">
+      <h3>🛍 Shop — 3 items (each button has data-pid)</h3>
+      <div class="pg-row"><span class="pg-sub" style="color:var(--dim);font-size:11px;">query .add-cart → addresses are self-anchored: button[data-pid="200"]</span></div>
+      ${[200, 202, 204].map(pid =>
+        `<div class="pg-row"><input class="pg-input" value="Item ${pid} — $${pid}.00" disabled>` +
+        `<button class="pg-btn${act.removed?.includes(pid) ? " gone" : ""}" data-pid="${pid}" data-inst="${[200, 202, 204].indexOf(pid) + 1}">add ${pid}</button>` +
+        `<span class="pg-tag">.add-cart[data-pid="${pid}"]</span></div>`).join("")}
+      <div class="pg-row"><span class="pg-sub" style="color:var(--dim);font-size:11px;">#buy-btn</span>
+        <button class="pg-btn" id="pg-buy-btn" style="background:var(--info);">Buy now</button>
+        <span class="pg-tag">#buy-btn (single match → direct address)</span></div>
+    </div>`;
+  } else if (act.url.includes("news.example")) {
+    pageBox.innerHTML = `<div class="shop"><h3>📰 News — page with data-sdk-cap widget</h3>
+      <div class="pg-row"><span class="pg-sub" style="color:var(--dim);font-size:11px;">data-sdk-cap="browser.click" on this page</span></div>
+      <div class="pg-row"><span style="background:var(--card);padding:10px;border-radius:4px;" data-sdk-cap="browser.click" data-sdk-cap-name="article-widget">article widget</span></div>
+      <div class="pg-row"><span class="pg-tag">navigating here from shop.example → NAVIGATION_DESTRUCTIVE</span></div></div>`;
+  } else {
+    pageBox.innerHTML = `<div class="empty">${esc(act.url)}<br>no cap elements</div>`;
+  }
+}
+
+// ─── snapshot settle (mirror snapshot.ts: F11) ──────────────────────
+const STABILITY_WAIT_MS = 150;
+const SETTLE_TIMEOUT_MS = 2000;
+function readCaps(page) {
+  // pages carry caps; shop/news pages have explicit sets, blank pages none
+  const byName = new Map();
+  if (page.url.includes("shop.example")) {
+    for (const pid of [200, 202, 204]) {
+      if (!page.removed?.includes(pid)) byName.set("browser.click", (byName.get("browser.click") ?? 0) + 1);
+    }
+  }
+  if (page.url.includes("news.example")) {
+    byName.set("browser.click", 1);
+  }
+  const out = [];
+  for (const [name, count] of byName) {
+    const meta = CAPS.find(c => c[0] === name);
+    out.push({ name, tier: meta ? meta[1] : "read", count, registered: true });
+  }
+  return out;
+}
+async function captureSnapshot(page) {
+  if (page.url === "about:blank") return { capabilities: [], capsSettled: true };
+  if (page.mutating) {
+    // continuously mutating page → never settles (F11 timeout)
+    await sleep(SETTLE_TIMEOUT_MS);
+    return { capabilities: readCaps(page), capsSettled: false };
+  }
+  const a = readCaps(page);
+  await sleep(STABILITY_WAIT_MS);
+  const b = readCaps(page);
+  return { capabilities: b, capsSettled: JSON.stringify(a) === JSON.stringify(b) };
+}
+
+// ─── fake DOM for query/click on shop page ──────────────────────────
+function shopButtons(page) {
+  if (!page.url.includes("shop.example")) return [];
+  return [200, 202, 204]
+    .map((pid, i) => ({ pid, instance: i + 1 }))
+    .filter(b => !page.removed?.includes(b.pid));
+}
+function resolveQuery(page, selector, instance) {
+  let els;
+  if (selector.includes("data-pid")) {
+    const m = selector.match(/data-pid="(\d+)"/);
+    els = m ? shopButtons(page).filter(b => b.pid === Number(m[1])) : [];
+  } else if (selector === ".add-cart") {
+    els = shopButtons(page);
+  } else if (selector === "#buy-btn") {
+    els = page.url.includes("shop.example") ? [{ pid: "buy", instance: 1 }] : [];
+  } else {
+    els = [];
+  }
+  if (instance !== undefined) {
+    const el = els.find(e => e.instance === instance);
+    els = el ? [el] : [];
+  }
+  return els;
+}
+function addressOf(el) {
+  // F8 self-anchor: attr on the matched element → `tag[attr]` (reusable)
+  if (el.pid === "buy") return "#buy-btn";
+  return `button[data-pid="${el.pid}"]`;
+}
+
+// ─── lifecycle helpers ──────────────────────────────────────────────
+function publish(event, payload) {
+  emit("sess", `▶ ${event}${payload ? " " + json(payload).replace(/\n/g, " ") : ""}`);
+  if (event === "session.cleanup_resources") {
+    engine.shotSeq = 0;
+    emit("ok", "  purged shot-* files from resourceDir");
+  }
+}
+function phase(p) { engine.phase = p; setBadge(); }
+
+// ─── capabilities (mirror handlers.ts, 12 + capability.list) ────────
+async function capabilityList(tabId) {
+  const t = engine.tabs.find(x => x.tabId === tabId);
+  if (!t) throw browserError(ERR.TAB_NOT_FOUND, `tab ${tabId} not found`);
+  return captureSnapshot(t);
+}
+
+async function launch(mode) {
+  if (engine.phase === "launched") {
+    throw browserError(ERR.ALREADY_LAUNCHED, "browser already launched");
+  }
+  engine.mode = mode ?? "headless";
+  engine.tabs = [{ tabId: 0, url: "about:blank", title: "new tab", caps: [], capsSettled: true }];
+  engine.activeTabId = 0;
+  engine.nextTabId = 1;
+  engine.ctxGeneration++;
+  engine.procState = "running";
+  phase("launched");
+  publish("session.created", { mode: engine.mode });
+  emit("ok", "  tab 0 created (F1)");
+  return { launched: true, mode: engine.mode };
+}
+
+async function openTab() {
+  requireLive();
+  const t = { tabId: engine.nextTabId++, url: "about:blank", title: "new tab", caps: [], capsSettled: true };
+  engine.tabs.push(t);
+  engine.activeTabId = t.tabId;
+  phase("launched");
+  emit("sess", `  tab ${t.tabId} opened + active`);
+  return { tabId: t.tabId };
+}
+
+async function switchTab(tabId) {
+  requireLive();
+  const t = engine.tabs.find(x => x.tabId === tabId);
+  if (!t) throw browserError(ERR.TAB_NOT_FOUND, `tab ${tabId} not found`);
+  engine.activeTabId = tabId;
+  emit("sess", `  active → tab ${tabId}`);
+  return { tabId };
+}
+
+async function closeTab(tabId) {
+  requireLive();
+  const idx = engine.tabs.findIndex(x => x.tabId === tabId);
+  if (idx < 0) throw browserError(ERR.TAB_NOT_FOUND, `tab ${tabId} not found`);
+  engine.tabs.splice(idx, 1);
+  if (engine.activeTabId === tabId) {
+    engine.activeTabId = engine.tabs.length ? Math.min(...engine.tabs.map(t => t.tabId)) : -1;
+  }
+  emit("ok", `  tab ${tabId} closed — context intact (${engine.tabs.length} left)`);
+  return { closed: true };
+}
+
+async function close() {
+  if (engine.phase === "closed" || engine.phase === "idle") return { closed: true };
+  engine.tabs = [];
+  engine.activeTabId = -1;
+  engine.procState = "dead";
+  phase("closed");
+  publish("session.cleanup_resources", {});
+  publish("session.destroyed", {});
+  return { closed: true };
+}
+
+async function navigate(tabId, url, opts) {
+  requireLive();
+  const t = engine.tabs.find(x => x.tabId === tabId);
+  if (!t) throw browserError(ERR.TAB_NOT_FOUND, `tab ${tabId} not found`);
+  const prev = t.url;
+  const hadCaps = t.caps.length > 0;
+  if (!opts?.newTab && hadCaps && prev !== url && !prev.includes("about:blank") && !t.destructiveBypass) {
+    throw browserError(ERR.NAVIGATION_DESTRUCTIVE,
+      `navigate ${url} would destroy ${t.caps.length} cap(s) on tab ${tabId} (F7 guard)`);
+  }
+  if (url.includes("shop.example")) {
+    t.url = url; t.title = "Shop"; t.removed = [];
+  } else if (url.includes("news.example")) {
+    t.url = url; t.title = "News"; t.removed = [];
+  } else if (url.includes("never.example")) {
+    t.url = url; t.title = "Unreachable";
+    throw browserError(ERR.NAVIGATION_FAILED, `net::ERR_NAME_NOT_RESOLVED (${url})`);
+  } else {
+    t.url = url; t.title = new URL(url).hostname;
+  }
+  t.caps = [];
+  const snap = await captureSnapshot(t);
+  t.caps = snap.capabilities;
+  t.capsSettled = snap.capsSettled;
+  emit("ok", `  tab ${tabId} → ${t.url} (caps: ${t.caps.length})`);
+  return { tabId, url: t.url, capabilities: t.caps, capsSettled: t.capsSettled };
+}
+
+async function query(selector) {
+  requireLive();
+  const act = activeTab();
+  const els = resolveQuery(act, selector);
+  return { matches: els.length, addresses: els.map(addressOf) };
+}
+
+async function click(selector, opts) {
+  requireLive();
+  const act = activeTab();
+  const els = resolveQuery(act, selector, opts?.instance);
+  if (els.length === 0) {
+    throw browserError(ERR.SELECTOR_NOT_FOUND, `selector "${selector}" matched 0 elements (instance: ${opts?.instance ?? 1})`);
+  }
+  if (els.length > 1 && opts?.instance === undefined) {
+    throw browserError(ERR.SELECTOR_AMBIGUOUS, `selector "${selector}" matched ${els.length}; pass instance (1-based)`);
+  }
+  const el = els[0];
+  if (el.pid !== "buy") {
+    act.removed = [...(act.removed ?? []), el.pid];
+    emit("ok", `  clicked button[data-pid="${el.pid}"] → removed from DOM`);
+  } else {
+    emit("ok", "  clicked #buy-btn");
+  }
+  return { clicked: true };
+}
+
+async function typeText(selector, text, opts) {
+  requireLive();
+  const act = activeTab();
+  const els = resolveQuery(act, selector, opts?.instance);
+  if (els.length === 0) throw browserError(ERR.SELECTOR_NOT_FOUND, `selector "${selector}" matched 0`);
+  if (els.length > 1 && opts?.instance === undefined) {
+    throw browserError(ERR.SELECTOR_AMBIGUOUS, `selector "${selector}" matched ${els.length}; pass instance (1-based)`);
+  }
+  act.inputText = text;
+  emit("ok", `  typed "${text}" into ${selector}`);
+  return { typed: true };
+}
+
+async function waitSelector(selector, timeoutMs) {
+  requireLive();
+  const act = activeTab();
+  const deadline = Date.now() + (timeoutMs ?? 30000);
+  while (Date.now() < deadline) {
+    const els = resolveQuery(act, selector);
+    if (els.length > 0) return { waited: true };
+    await sleep(25);
+  }
+  throw browserError(ERR.WAIT_TIMEOUT, `selector "${selector}" did not appear within ${timeoutMs}ms`);
+}
+
+async function waitTime(ms) {
+  requireLive();
+  await sleep(ms);
+  return { waited: true };
+}
+
+// fake 1x1 png (tiny) vs big fake buffer for oversize
+const TINY_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+async function screenshot(opts) {
+  requireLive();
+  const act = activeTab();
+  const big = act.url.includes("news.example");
+  const bytes = big ? 314_572 : 12_480; // 307 KiB vs 12 KiB
+  const mode = opts?.mode ?? (big ? "resource" : "inline");
+  if (mode === "inline" && bytes > IMG_CAP_BYTES) {
+    throw browserError(ERR.SCREENSHOT_TOO_LARGE, `${bytes} bytes exceeds 256 KiB inline cap`);
+  }
+  if (mode === "resource") {
+    const resourceId = `shot-${act.tabId}-${Date.now()}.png`;
+    engine.shotSeq++;
+    emit("ok", `  wrote ${resourceId} (${bytes} bytes) to resourceDir`);
+    return { mode: "resource", resourceId, bytes };
+  }
+  return { mode: "inline", bytes, format: "png", data: TINY_PNG, dataLength: TINY_PNG.length };
+}
+
+function crashSimulate() {
+  if (engine.phase !== "launched") throw browserError(ERR.CRASHED, "no running browser to crash");
+  engine.procState = "crashed";
+  engine.tabs = [];
+  engine.activeTabId = -1;
+  engine.nextTabId = 0;
+  phase("crashed");
+  publish("session.cleanup_resources", {});
+  emit("err", "  browser process died (CDP kill) — session dead");
+  return { crashed: true, code: ERR.CRASHED };
+}
+
+function requireLive() {
+  if (engine.phase === "crashed") {
+    throw browserError(ERR.CRASHED, "browser crashed — relaunch required (Q4)");
+  }
+  if (engine.phase !== "launched") {
+    throw browserError("BROWSER_NO_CONTEXT", "no launched browser — run launch");
+  }
+}
+function activeTab() {
+  const t = engine.tabs.find(x => x.tabId === engine.activeTabId);
+  if (!t) throw browserError(ERR.TAB_NOT_FOUND, "no active tab");
+  return t;
+}
+
+// ─── command dispatch ───────────────────────────────────────────────
+const COMMANDS = {
+  launch: async (args) => launch(args[0] === "headed" ? "headed" : "headless"),
+  "tab.open": async () => openTab(),
+  "tab.switch": async (args) => switchTab(Number(args[0])),
+  "tab.close": async (args) => closeTab(Number(args[0])),
+  close: async () => close(),
+  navigate: async (args) => navigate(engine.activeTabId, args[0], { newTab: args[1] === "newTab" }),
+  query: async (args) => query(args[0]),
+  click: async (args) => {
+    const inst = args.findIndex(a => a === "instance") >= 0
+      ? Number(args[args.findIndex(a => a === "instance") + 1]) : undefined;
+    return click(args[0], { instance: inst });
+  },
+  type: async (args) => typeText(args[0], args.slice(1).join(" ")),
+  wait: async (args) => args[0] === "selector"
+    ? waitSelector(args[1], Number(args[2] ?? 30000))
+    : waitTime(Number(args[1] ?? 200)),
+  screenshot: async (args) => screenshot({ mode: args[0] === "resource" ? "resource" : args[0] === "inline" ? "inline" : undefined }),
+  "crash-simulate": async () => crashSimulate(),
+  suspend: async () => { phase("suspended"); publish("session.suspended", {}); return { suspended: true }; },
+  resume: async () => { phase("launched"); publish("session.resumed", {}); return { resumed: true }; },
+  help: async () => "launch | navigate <url> | query <sel> | click <sel> [instance N] | type <sel> <text> |\nwait selector <sel> [ms] | wait time <ms> | screenshot [inline|resource] | tab.open | tab.switch N |\ntab.close N | close | suspend | resume | crash-simulate | demo | reset",
+};
+
+async function runCommand(line) {
+  const parts = line.trim().split(/\s+/);
+  const name = parts[0];
+  const cmd = COMMANDS[name];
+  if (!cmd) {
+    tl(`<span class="p">$ ${esc(line)}</span><br><span class="err">unknown command: ${esc(name)} (try: help)</span>`);
+    return;
+  }
+  tl(`<span class="p">$ ${esc(line)}</span>`);
+  try {
+    const out = await cmd(parts.slice(1));
+    tl(`<span class="ok">→ ${esc(json(out))}</span>`);
+  } catch (e) {
+    tl(`<span class="err">→ GATEWAY_HANDLER_ERROR { code: '${e.code}', retryable: ${e.retryable}, message: '${esc(e.message)}' }</span>`);
+    emit("err", `  ${e.code} (retryable: ${e.retryable}) — ${e.message}`);
+  }
+  renderTabs(); renderCaps(); renderPage(); setBadge();
+}
+
+// ─── scenario runner (PRD-TRD Simulation Contract, in order) ────────
+const SCENARIOS = [
+  { name: "S1 launch + ALREADY_LAUNCHED", cmds: [
+    ["launch", { launched: true, mode: "headless" }],
+    ["launch", "BROWSER_ALREADY_LAUNCHED"],
+  ]},
+  { name: "S4 query/click F8", cmds: [
+    ["navigate https://shop.example/", { matches: undefined }],
+    ["query .add-cart", { matches: 3 }],
+    ["click .add-cart", "BROWSER_SELECTOR_AMBIGUOUS"],
+    ["click .add-cart instance 2", { clicked: true }],
+  ]},
+  { name: "S2+3 navigate + destructive", cmds: [
+    ["navigate https://news.example/", { capsSettled: true }],
+    ["navigate https://google.com", "BROWSER_NAVIGATION_DESTRUCTIVE"],
+  ]},
+  { name: "S6 screenshot", cmds: [
+    ["navigate https://shop.example/", undefined],
+    ["screenshot", { mode: "inline" }],
+    ["navigate https://news.example/", undefined],
+    ["screenshot", { mode: "resource" }],
+  ]},
+  { name: "S5 wait", cmds: [
+    ["wait selector .never-appears 400", "BROWSER_WAIT_TIMEOUT"],
+    ["wait time 200", { waited: true }],
+  ]},
+  { name: "S7 crash + relaunch", cmds: [
+    ["crash-simulate", { crashed: true }],
+    ["launch", { launched: true }],
+    ["tab.open", { tabId: 1 }],
+  ]},
+  { name: "S8 suspend/resume", cmds: [
+    ["navigate https://shop.example/", undefined],
+    ["type .add-cart instance 1 hello", undefined],
+    ["suspend", { suspended: true }],
+    ["resume", { resumed: true }],
+    ["query .add-cart", { matches: 3 }],
+  ]},
+  { name: "S9 tab lifecycle", cmds: [
+    ["tab.open", undefined],
+    ["tab.switch 1", { tabId: 1 }],
+    ["tab.close 1", { closed: true }],
+    ["close", { closed: true }],
+  ]},
+];
+
+let scenarioIdx = -1;
+async function runScenario(i) {
+  const sc = SCENARIOS[i];
+  if (!sc) return;
+  scenarioIdx = i;
+  const stepEls = [];
+  renderScenarioStatus();
+  for (const [cmd, want] of sc.cmds) {
+    const stepEl = document.createElement("span");
+    stepEl.className = "scen-step";
+    stepEl.textContent = cmd;
+    scenStatus.appendChild(stepEl);
+    scenStatus.appendChild(document.createTextNode("  "));
+    await runCommand(cmd);
+    if (want === undefined) {
+      stepEl.classList.add("done");
+    } else if (typeof want === "string") {
+      const last = [...termLog.querySelectorAll(".tl.err")].pop();
+      stepEl.classList.add(last && last.textContent.includes(want) ? "done" : "fail");
+    } else {
+      const last = [...termLog.querySelectorAll(".tl.ok")].pop();
+      stepEl.classList.add(last && last.textContent.includes(`"${Object.keys(want)[0]}"`) ? "done" : "fail");
+    }
+  }
+}
+
+function renderScenarioStatus() {
+  scenStatus.innerHTML = "";
+  if (scenarioIdx >= 0) {
+    scenStatus.appendChild(document.createTextNode(`scenario ${scenarioIdx + 1}/${SCENARIOS.length}: `));
+  }
+}
+
+// ─── demo mode (full agent loop) ────────────────────────────────────
+async function runDemo() {
+  const steps = [
+    "launch",
+    "navigate https://shop.example/",
+    "query .add-cart",
+    "click .add-cart instance 2",
+    "type .add-cart item-202",
+    "screenshot",
+    "wait time 150",
+    "wait selector #buy-btn 500",
+    "screenshot resource",
+    "tab.open",
+    "tab.switch 1",
+    "close",
+  ];
+  for (const c of steps) await runCommand(c);
+}
+
+// ─── wiring ─────────────────────────────────────────────────────────
+termInput.addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter") return;
+  const line = termInput.value.trim();
+  termInput.value = "";
+  if (!line) return;
+  if (line === "demo") return runDemo();
+  if (line === "reset") return resetAll();
+  await runCommand(line);
+});
+
+function resetAll() {
+  engine.phase = "idle"; engine.procState = "dead"; engine.mode = null;
+  engine.tabs = []; engine.activeTabId = -1; engine.nextTabId = 0; engine.ctxGeneration++;
+  engine.shotSeq = 0; scenarioIdx = -1;
+  termLog.innerHTML = ""; evtLog.innerHTML = ""; capGrid.innerHTML = "";
+  shotRow.style.display = "none"; scenStatus.textContent = "idle";
+  renderTabs(); renderPage(); setBadge();
+  tl("<span class='dim'>browser-runtime post-impl sim — type help for commands, or run: demo</span>");
+}
+
+$("demo-btn").addEventListener("click", runDemo);
+$("scen-reset").addEventListener("click", resetAll);
+
+// per-scenario buttons
+{
+  const wrap = $("scen-btns");
+  SCENARIOS.forEach((sc, i) => {
+    const b = document.createElement("button");
+    b.className = "scen-btn";
+    b.textContent = sc.name;
+    b.addEventListener("click", () => runScenario(i));
+    wrap.appendChild(b);
+  });
+}
+
+resetAll();
+tl("<span class='dim'>browser-runtime post-impl sim — mirrors shipped code (commit 144fb88).</span>");
+tl("<span class='dim'>type <b>help</b> for commands · <b>demo</b> for the agent loop · scenario buttons above.</span>");
+renderScenarioStatus();
+</script>
+</body>
+</html>

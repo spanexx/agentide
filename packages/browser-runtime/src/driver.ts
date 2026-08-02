@@ -150,6 +150,8 @@ export function createDriver(
     // ------------------------------------------------------------------- close
     // Idempotent: closing an already-closed/dead browser is a no-op
     // (never throws CLOSED — callers may close defensively).
+    // Closes the BROWSER too (not just the context) so the chromium
+    // process exits — no per-session leak (drift BR-1).
     async close() {
       if (!state.launched || state.dead || refs === null) return;
       const refs_ = refs;
@@ -162,7 +164,16 @@ export function createDriver(
         }
       }
       refs_.browser.off("disconnected", onDisconnected);
-      await refs_.context.close();
+      try {
+        await refs_.context.close();
+      } catch {
+        // context may already be gone after a crash — fine
+      }
+      try {
+        await refs_.browser.close();
+      } catch {
+        // browser may already be gone after a crash — fine
+      }
       refs = null;
       state.tabs.clear();
       state.launched = false;
@@ -276,7 +287,12 @@ export function createDriver(
             } else if (attr !== null && anchor !== null) {
               out.push(`${anchor.tagName.toLowerCase()}[${attr}] ${sel}`);
             } else {
-              out.push(sel);
+              // data-less element: nth-of-type within its parent so the
+              // address stays reusable (capability-contracts F8)
+              const tag = el.tagName.toLowerCase();
+              const siblings = Array.from(el.parentElement?.children ?? []);
+              const nth = siblings.filter((s) => s.tagName.toLowerCase() === tag).indexOf(el) + 1;
+              out.push(`${tag}:nth-of-type(${nth})`);
             }
           }
           return out;

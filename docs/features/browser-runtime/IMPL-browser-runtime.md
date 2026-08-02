@@ -114,8 +114,9 @@
 - [ ] F7 guard fires on different-url navigate with caps; same-url
   re-navigate OK; `newTab: true` OK
 - [ ] DOM-read settle: fixture page with delayed cap injection →
-  capsSettled:true after stability; never-appearing caps → capsSettled:false
-  after timeout
+  capsSettled:true after stability; continuously-mutating page →
+  capsSettled:false after 2s timeout; empty page settles immediately
+  (true, no wait)
 - [ ] `capability.list({ tabId })` returns per-tab snapshot; no-arg list
   unchanged
 
@@ -274,6 +275,13 @@ authoritative for exact behavior).
   - Alternatives: `playwright-core install chromium` (manual step,
     rejected Q1); CDP raw (v2).
 - No other new deps; all `@platform/*` are workspace packages.
+
+**Shipped reality (drift BR-9):** `packages/browser-runtime/package.json`
+carries NO `@platform/*` workspace deps — the package is fully
+self-contained (`playwright-core` + `@playwright/browser-chromium` only;
+`@platform/errors` was removed as dead weight during implementation).
+The dependency lists above are historical planning; the shipped manifest
+is authoritative.
 
 ## Rollout
 

@@ -39,6 +39,9 @@ export function attachLifecycle(
   bus: LifecycleBus,
 ): { dispose(): void } {
   const subs = [
+    bus.subscribe("session.created", () => {
+      /* no-op: session is lazy — browser launches on first cap (T5) */
+    }),
     bus.subscribe("session.suspended", () => {
       /* no-op: keep alive, DOM intact (T5) */
     }),
@@ -73,9 +76,9 @@ async function purgeResources(session: Session): Promise<void> {
   const dir = session.state.resourceDir;
   try {
     const entries = await readdir(dir);
-    const shots = entries.filter((name) => name.startsWith("shot-"));
+    const shots = entries.filter((name: string) => name.startsWith("shot-"));
     await Promise.all(
-      shots.map((name) => rm(`${dir}/${name}`, { force: true })),
+      shots.map((name: string) => rm(`${dir}/${name}`, { force: true })),
     );
   } catch {
     // resource dir absent or unreadable — nothing to purge
