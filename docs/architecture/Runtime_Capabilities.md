@@ -103,6 +103,9 @@ Each runtime owns its own namespace.
 
 ## Browser Runtime
 
+*(future — see `browser-runtime`, backlog #12: no implementation ships in v1; this
+namespace is the specified, canonical example only.)*
+
 ```
 browser.navigate
 

@@ -437,7 +437,7 @@ ticket, works differently from grilling).
 
 Source: Wayfinder map #8 (sdk-browser), ticket T6 (package-shape-and-dependencies).
 
-### T6 / Q1 — Build output (HELD 2026-08-01 — not locked, pending T4)
+### T6 / Q1 — Build output (RESOLVED 2026-08-01 via T4 D1 — was HELD pending T4)
 
 Question: should @platform/sdk-browser ship ESM-only, or ESM plus an IIFE
 bundle?
@@ -461,8 +461,10 @@ Why:
 
 Source: T6 ticket sub-Q 1; wayfinder map.md "Not yet specified" (Bundle vs
 ESM-only); sibling pack sdk-node `package.json` (`"type": "module"`,
-`exports` with `import` only). Reopens when T4 prototype completes; T6 Q2's
-`browser` field rides on this outcome.
+`exports` with `import` only). **RESOLVED by T4 D1 (2026-08-01):** Shape A
+(bundler import) is canonical v1 install → ESM-only stands, no IIFE build,
+no `browser` field in v1; IIFE/CDN is a v1.1 follow-up ticket (trigger: a
+real no-bundler consumer). See "T4 / D1" below.
 
 ### T6 / Q2 — package.json exports (locked 2026-08-01)
 
@@ -668,3 +670,60 @@ Why:
 
 Source: T4 ticket "What I don't know" (framework helpers); v2-deferral
 pattern across T1/T2/T3 grills.
+
+### T4 / D3 — Connection-state surface (locked 2026-08-02)
+
+Question: how does v1 surface connection state to UI code ("connecting",
+"reconnecting", "disconnected") without forcing the consumer to subscribe
+to all 8 lifecycle events?
+
+Answer:
+- **`sdk.onStateChange(cb)`** — a dedicated callback, invoked only on
+  actual transitions, with exactly four states:
+  `connecting | connected | reconnecting | disconnected` (no duplicate
+  callbacks for the same state; synchronous `sdk.state().connectionState`
+  getter returns the current value for render-on-load).
+- The 8 lifecycle events stay as-is for tooling/logging; `onStateChange`
+  is the UI-facing surface, not an event-bus subscription.
+- v1 API adds exactly one function + one field on the existing `state()`
+  getter. No framework helpers (D2), no new event.
+
+Why:
+- The T4 prototype already demonstrates the pattern
+  (`sdk-core.js` `setConnState` → `stateCbs.forEach(cb => cb(next))`;
+  both shape pages drive their lifecycle badge from it; Playwright 4/4).
+  Reacting to the artifact is the whole point of a prototype ticket.
+- sdk-node parity: sdk-node exposes `state().phase`
+  (`init|connected|registered|disconnected`) but no callback and no
+  `reconnecting` state — its consumers are servers; sdk-browser's
+  consumers are UIs, where "reconnecting" (hidden tab, offline, T3
+  gates) is a state the user must SEE. The callback closes the
+  "subscribe to all 8 events and derive phase yourself" gap the ticket
+  named.
+- Rules out: (B) fold into the 8 events only (forces every UI consumer
+  to re-derive state across events — exactly the friction D3 asked to
+  avoid; one missed event = wrong badge); (C) an additional unified
+  `sdk.state` event on the event-bus (the event-bus is an internal
+  surface — sdk-node's own consumers subscribe via `sdk.on`, not the
+  bus; zero named consumers for a second path).
+
+Source: T4 ticket "What I don't know" (connection-state); prototype
+`sdk-core.js` (lines 19-20, 33-36, 53-68, 202-217); sdk-node
+`src/types.ts` `Phase` (no `reconnecting`); T3 grills (visibility /
+online-offline gates produce the `reconnecting` state).
+
+### T4 — Resolution summary (2026-08-02)
+
+T4 (Frontend developer experience, `wayfinder:prototype`) closed with all
+three decisions locked:
+
+| Decision | Locked | Answer |
+|---|---|---|
+| D1 canonical install | 2026-08-01 | Shape A — bundler import, ESM-only (resolves T6 Q1) |
+| D2 framework helpers | 2026-08-01 | None in v1; punt to v2 (named trigger) |
+| D3 connection-state | 2026-08-02 | `sdk.onStateChange(cb)` (4 states) + `sdk.state().connectionState` |
+
+Prototype artifact: `prototypes/sdk-browser-dev-experience/`
+(Playwright 4/4). Delivery route: `delivery: feature-pipeline` after T7
+(sdk-browser and browser-runtime boundary doc) closes — T7 is the last
+open ticket on the map.

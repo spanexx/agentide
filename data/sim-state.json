@@ -1471,6 +1471,622 @@
         "denyReason": "GATEWAY_TOKEN_EXPIRED",
         "durationMs": 0
       }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.490Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457484,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.list",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 4
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.493Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457492,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.495Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457494,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 1
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.498Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457497,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.500Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457499,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.502Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457501,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.504Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457503,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.506Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457505,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.509Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457507,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 1
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.511Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457510,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.513Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457512,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.515Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457514,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.517Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457516,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.519Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457518,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.521Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457520,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.523Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457522,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.524Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457524,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.526Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457525,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.528Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457527,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.530Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457529,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.532Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457531,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.534Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457533,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.535Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457535,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.537Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457536,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.539Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457538,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.541Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457540,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.543Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457542,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
+    },
+    {
+      "ts": "2026-08-02T02:57:37.545Z",
+      "name": "gateway.invocation",
+      "payload": {
+        "schemaVersion": 1,
+        "ts": 1785639457544,
+        "tenantId": "acme",
+        "caller": {
+          "id": "bootstrap",
+          "scope": [
+            "*"
+          ]
+        },
+        "capability": {
+          "name": "capability.describe",
+          "version": "1.0.0"
+        },
+        "owner": "capability-registry",
+        "status": "ok",
+        "durationMs": 0
+      }
     }
   ],
   "plugins": [],
@@ -1986,6 +2602,14 @@
       "capability": "capability.list",
       "status": "ok",
       "detail": "code=-32001, message=GATEWAY_AUTH_FAILED",
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-02T02:57:37.564Z",
+      "caller": "bootstrap",
+      "capability": "capability.list",
+      "status": "ok",
+      "detail": "27 tools visible; read.inputSchema verified",
       "channel": "mcp"
     }
   ]

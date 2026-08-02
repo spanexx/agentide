@@ -101,9 +101,10 @@ customer.read
 customer.create
 order.submit
 inventory.update
-browser.navigate
-browser.click
 ```
+
+(Browser automation capabilities like `browser.navigate` are exposed by the
+`browser-runtime` plugin — backlog #12 — not by applications.)
 
 Agents interact with **Capabilities**, never directly with APIs.
 
@@ -342,24 +343,30 @@ Runs inside browser applications. Concrete package: `@platform/sdk-browser`.
 
 Responsibilities:
 
-- Register browser capabilities
-- Navigation
-- UI state
-- Browser communication
+- Register application capabilities from the page (DOM-annotation model —
+  annotated elements carry `data-sdk-*` attributes; see **Capability System**
+  and the sdk-browser wayfinder map)
+- UI state: the live, dev-controlled catalog of the page's annotated
+  capabilities, scoped to the current page. The SDK keeps it in sync with the
+  DOM (initial scan on `createSdk()` + `MutationObserver` walking
+  `data-sdk-cap`), so the Gateway always sees what the page currently exposes
+  — it is *not* a separate state object or store
+- Browser communication: WebSocket transport to the Gateway (same wire
+  protocol as the Backend SDK)
+- Dispatch capability invocations back to the page as DOM events (CustomEvent
+  fan-out; the app's own listeners handle them)
 
 Example capabilities:
 
 ```
-browser.navigate
-
-browser.click
-
-browser.input
-
-browser.read
-
-browser.scroll
+customer.read
+order.submit
 ```
+
+**Boundary at a glance:** the Frontend SDK is installed *inside* the app and
+registers capabilities owned by the app — same role as `@platform/sdk-node`
+in a Node app. Browser automation capabilities (`browser.*`) are provided by
+`browser-runtime` (Runtime Plugin, backlog #12), not by the SDK.
 
 ---
 
@@ -372,7 +379,7 @@ Execution happens inside runtimes, which together form the Execution Plane (see
 
 ## Browser Runtime
 
-**Status: built.** Responsible for:
+**Status: not yet built (backlog #12).** Specified to be responsible for:
 
 - Launching browsers
 - Managing tabs

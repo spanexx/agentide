@@ -1,7 +1,7 @@
 # Frontend developer experience
 
 **Type:** `wayfinder:prototype` (HITL)
-**Status:** open (D1 locked; D2 + D3 pending)
+**Status:** closed (D1 + D2 locked 2026-08-01; D3 locked 2026-08-02)
 **Blocks:** — (the prototype, once approved, becomes part of the IMPL phases
 not a successor ticket).
 
@@ -66,4 +66,31 @@ dev-experience shape. Build a rough prototype, link it as an asset, iterate.
     `sdk-core.js`).
 - **D2 (framework helpers):** locked 2026-08-01 — none in v1; punt to
   v2 (trigger: first framework team asks).
-- **D3 (connection-state surface):** pending.
+- **D3 (connection-state surface):** locked 2026-08-02 — `sdk.onStateChange(cb)`
+  (4 states: `connecting | connected | reconnecting | disconnected`, callback
+  fires only on real transitions) + `sdk.state().connectionState` sync getter
+  for render-on-load. The 8 lifecycle events stay for tooling/logging; the
+  callback is the UI-facing surface, not an event-bus subscription. v1 API
+  adds exactly one function + one field on the existing `state()` getter.
+  Rules out: (B) fold into the 8 events only — every UI consumer would have
+  to derive state across events (one missed event = wrong badge); (C) an
+  additional unified `sdk.state` event on the event-bus — internal surface,
+  zero named consumers. sdk-node parity: `state().phase` exists but has no
+  callback and no `reconnecting` state (servers vs UIs).
+
+## Resolution (2026-08-02)
+
+All three decisions locked — ticket closed.
+
+- Prototype artifact (link): `prototypes/sdk-browser-dev-experience/`
+  (README.md, index.html, shape-a.html, shape-b.html, sdk-core.js,
+  demo-doc.js, tests/t4.spec.cjs). Playwright CLI check 4/4.
+- Chosen install path: **Shape A (bundler import, ESM)** — D1.
+- Framework-native helpers: **none in v1** — D2 (punt to v2, named trigger).
+- Connection-state surface: **`sdk.onStateChange(cb)` + `sdk.state().connectionState`** — D3.
+- Verification: D3 pattern exercised by both shape pages' lifecycle badges
+  (`sdk-core.js` `setConnState` → `stateCbs`), covered by the 4/4 Playwright
+  run and the interconnected sim (`sim-state.json` footer on both pages).
+- Delivery tag: `delivery: feature-pipeline` — route fires after T7
+  (sdk-browser and browser-runtime boundary doc) closes; T7 is the last
+  open ticket on the map.

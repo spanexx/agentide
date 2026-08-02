@@ -64,3 +64,27 @@ Phase 2: IMPL-gateway-plugin-dispatch.md. PRD-TRD approved with Option B (transl
 
 Invoke wayfinder skill on "sdk-browser" — destination B (pack shipped).
 ---
+
+## 2026-08-02 | source: user-prompt
+
+how do i run the post simulate simulation interactive and give me the commands
+
+---
+
+## 2026-08-02 | source: handoff
+
+Invoke handoff skill — write session handoff + breadcrumb (interactive sim verified, git-flow commits 2-4 pending).
+
+---
+
+## 2026-08-02 05:18:54 | source: wayfinder:sdk-browser
+
+Wayfinder work-through: sdk-browser map (frontier T4 prototype / T7 task). Continue from map.md, resolve next decision ticket.
+
+---
+
+## 2026-08-02 05:23:46 | source: wayfinder:sdk-browser
+
+Wayfinder work-through with ticket: T7 "sdk-browser and browser-runtime boundary doc" (task). Continue from map.md, resolve next decision ticket.
+
+---

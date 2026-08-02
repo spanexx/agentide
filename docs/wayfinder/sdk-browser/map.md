@@ -2,7 +2,9 @@
 
 > **Map title:** sdk-browser — finding the way to a shipped `@platform/sdk-browser`.
 >
-> **Status:** charting complete (5/7 tickets closed, 2 open). Live tracker: this issue + the 7 child ticket issues.
+> **Status:** charting complete (7/7 tickets closed). **Way is clear** — nothing left to
+> decide before `delivery: feature-pipeline` builds `@platform/sdk-browser`.
+> Live tracker: this issue + the 7 child ticket issues.
 
 ## Destination
 
@@ -44,25 +46,22 @@ once the way is clear. No override — this map does not carry execution.
 
 ## Open Tickets (frontier)
 
-Refer by ticket name; the GitHub issue number rides inside the name.
+**None — map complete (7/7 closed 2026-08-02).** Delivery route:
+`delivery: feature-pipeline` → GRILL for sdk-browser (grill-with-docs /
+domain-modeling), then PRD-TRD → IMPL → sims → drift → ship.
 
 | # | Ticket | Type | Blocks |
 |---|---|---|---|
 | 1 | Capability surface and UI state | `grilling` ✅ closed | (—) |
 | 2 | Manifest and handler transport in browser | `grilling` ✅ closed | T4 |
 | 3 | Browser-aware reconnect and lifecycle | `grilling` ✅ closed | — |
-| 4 | Frontend developer experience | `prototype` | (run) |
+| 4 | Frontend developer experience | `prototype` ✅ closed | (run) |
 | 5 | WebSocket transport details | `grilling` ✅ closed | T3 |
 | 6 | Package shape and dependencies | `grilling` ✅ closed | (run) |
-| 7 | sdk-browser and browser-runtime boundary doc | `task` | — |
+| 7 | sdk-browser and browser-runtime boundary doc | `task` ✅ closed | — |
 
 **Worked sequence** (when no parallel sessions are running):
-~~T1~~ → ~~T2~~ → ~~T5~~ → ~~T3~~ → ~~T6~~ → (T4 prototype) → T7 →
-`delivery: feature-pipeline`.
-
-**Frontier this turn:** T4 (prototype — different shape: artifact-based
-not grilling) and T7 (task). T6 closed 2026-08-01; its Q1 (build output)
-reopens when the T4 prototype picks an install path.
+~~T1~~ → ~~T2~~ → ~~T5~~ → ~~T3~~ → ~~T6~~ → ~~T4~~ → ~~T7~~ → done.
 
 ## Decisions so far
 
@@ -126,14 +125,33 @@ reopens when the T4 prototype picks an install path.
   Decisions Log.
 
 - [**Frontend developer experience**](tickets/frontend-developer-experience.md)
-  (T4, prototype) — **D1 locked 2026-08-01:** canonical v1 install =
+  (T4, closed 2026-08-02) — **D1 locked 2026-08-01:** canonical v1 install =
   Shape A (bundler import, ESM); IIFE/CDN deferred to v1.1 follow-up
   ticket (trigger: real no-bundler consumer). Resolves T6 Q1 → ESM-only,
   no `browser` field in v1. Prototype artifact:
   `prototypes/sdk-browser-dev-experience/` (Playwright-verified 4/4).
   **D2 locked 2026-08-01:** no framework helpers in v1 (punt to v2;
-  trigger = first framework team asks). D3 (connection-state surface)
-  pending.
+  trigger = first framework team asks). **D3 locked 2026-08-02:**
+  connection-state surface = `sdk.onStateChange(cb)` — 4 states
+  (`connecting | connected | reconnecting | disconnected`), callback fires
+  only on real transitions — + `sdk.state().connectionState` sync getter
+  for render-on-load. 8 lifecycle events stay for tooling/logging; callback
+  is the UI-facing surface. v1 API adds one function + one field. Rules
+  out: folding into the 8 events (consumers derive state across events) and
+  an extra `sdk.state` event on the event-bus (internal surface, zero
+  consumers). Delivery tag: `feature-pipeline` after T7 closes.
+
+- [**sdk-browser and browser-runtime boundary doc**](tickets/sdk-browser-and-browser-runtime-boundary.md)
+  (T7, closed 2026-08-02) — docs now draw the line: Frontend SDK registers
+  *application* capabilities from the page (DOM-annotation model, UI-state
+  definition per T1); `browser.*` automation caps belong to `browser-runtime`
+  (#12), not the SDK. `Agentide.md` §6 responsibilities/examples rewritten +
+  "Boundary at a glance" added; §7 Browser Runtime flipped to "not yet built
+  (backlog #12)"; `Runtime_Capabilities.md` Browser namespace flagged
+  "(future — see browser-runtime #12)". Plus §3 "Applications expose"
+  example de-blurred (browser.* removed, pointer added). No drift entry —
+  patch corrects stale text to settled intent. **Last ticket closed; map
+  complete → `delivery: feature-pipeline` for sdk-browser.**
 
 ## Not yet specified
 
