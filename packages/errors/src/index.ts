@@ -18,7 +18,7 @@
 export interface GatewayErrorPayload {
   readonly code: string;
   readonly message: string;
-  readonly details: Readonly<Record<string, unknown>>;
+  readonly details: Readonly<Record<string, GatewayErrorDetailValue>>;
   readonly retryable: boolean;
 }
 
