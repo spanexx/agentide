@@ -42,11 +42,23 @@ capability list, or does the agent discover separately?
   picture in one round trip. Registration stays async internally
   (MutationObserver + initial scan); navigate is where it
   synchronizes.
-- **Settle detection: event-based wait + timeout flag.**
-  browser-runtime waits for sdk-browser's "caps registered" signal
-  (event-bus, per session). On timeout → return what's registered so
-  far with `capsSettled: false`. No fixed-delay guessing, no
-  unbounded block.
+- **Settle detection: DOM-read at navigate + timeout flag (AUDIT F11
+  revision, 2026-08-02).** The original lock said browser-runtime waits
+  for sdk-browser's "caps registered" signal "(event-bus, per
+  session)" — REVERSED by audit: `sdk.capability.registered` fires on
+  the SDK's page-local bus (createEventBus per createSdk), invisible to
+  the gateway process where browser-runtime runs; no per-registration
+  bus event exists gateway-side. Revised: browser-runtime reads the
+  tab's own DOM via Playwright `evaluate` counting `[data-sdk-cap]`
+  elements (the shipped CAP_ATTR from sdk-browser observer.ts), settle
+  = stability re-read (read → short wait → read; stable →
+  `capsSettled: true`, changed → keep waiting to the settle timeout).
+  Zero shipped-package changes; naturally per-tab; immune to the
+  sdk-browser register-frame bug (drift D-40: name-only register frame
+  fails registry validation → register-failed close — caps never reach
+  the gateway; the DOM is the ground truth). On timeout → return what's
+  registered so far with `capsSettled: false`. No fixed-delay guessing,
+  no unbounded block.
 - **Timeout is not an error.** `{ tabId, url, capabilities: [],
   capsSettled: false }` — navigate itself succeeded; plain pages
   without sdk-browser are legitimate (empty caps), not failures. The

@@ -14,7 +14,8 @@ What this feature is about
   screenshot, wait. Engine: Playwright v1 (CDP/Rust rebuild = v2, out of scope).
 - Session-scoped: one Chromium process + one BrowserContext per session;
   explicit `browser.launch`, `browser.tab.*` sub-namespace, session suspend
-  keeps the browser alive, `session.closed` tears it down.
+  keeps the browser alive, `session.destroyed` tears it down (F10: shipped
+  session-manager event name is `session.destroyed`, not `session.closed`).
 - Registers 12 capabilities with the capability-registry as owner `browser`
   (11 from T2 + `browser.query`, added by F8)
   (Runtime Manifest `runtime: { id: browser }`), dispatched in-process by the
@@ -54,7 +55,7 @@ Baseline locked via wayfinder map (T1-T7, binding)
 - T1 Engine research: Playwright v1; mode pool (default headless, lazy headed);
   driver-first rule; binary via @playwright/browser-chromium exact-pin; lifecycle:
   one process + one context per session; browser.on('disconnected') + auto-relaunch
-  on next launch; context.close() on session.closed; zombie exit handler.
+  on next launch; context.close() on session.destroyed; zombie exit handler.
 - T2 Capability contracts: 12 capabilities (browser.query added — instance
   disambiguation, F8); CSS-only selectors; numeric tabId (first tab 0, default
   = most-recently-active); BROWSER_* error codes through GATEWAY_HANDLER_ERROR
@@ -65,7 +66,8 @@ Baseline locked via wayfinder map (T1-T7, binding)
 - T4 sdk-browser coupling: navigate sync point `{ tabId, url, capabilities,
   capsSettled }`; capability.list tabId filter (this pipeline).
 - T5 Suspend/resume: keep context + process alive; one listener, 3 events
-  (suspended/resumed no-op, session.closed = teardown); trust gateway
+  (suspended/resumed no-op, session.destroyed = teardown — shipped event name,
+  F10; resource purge via session.cleanup_resources); trust gateway
   resume-first; ~150-300 MB idle memory accepted; keep-alive knob = v2 candidate.
 - T6 browser.wait semantics: both modes (selector / time); 30s default, 120s cap;
   BROWSER_WAIT_TIMEOUT retryable: true.
@@ -108,6 +110,42 @@ Answer:
 - Why: no agent-loop use case surfaced in any ticket; proxy config adds option
   surface plus credential-handling questions for zero current value.
 - Decision record: CONTEXT.md (browser-runtime network isolation, 2026-08-02).
+
+## Post-lock audit findings (2026-08-02, grill-with-docs: sdk-browser vs shipped code)
+
+Verification of the locked answers against the shipped implementation, per the
+user's skepticism mandate. Full report with file:line evidence:
+`AUDIT-vs-shipped-code.md` in this folder.
+
+F10. Error envelope: the shipped plugin path DROPS the handler error's code and
+  retryable flag (plugin-manager wraps as PLUGIN_HANDLER_ERROR keeping only the
+  message; gateway-core maps to GATEWAY_HANDLER_ERROR retryable:false). The
+  capability-contracts claim "preserves the BROWSER_* code in details; the
+  caller-visible error code is the BROWSER_* one" is NOT supported by shipped
+  code — the source doc (gateway-plugin-dispatch PRD-TRD) only promises the
+  message. Locked resolution: additive envelope extension (plugin-manager +
+  gateway-core preserve originalErrorCode + retryable in details); envelope code
+  stays GATEWAY_HANDLER_ERROR; callers match on details.browserCode. Contract
+  wording corrected in capability-contracts.md. Cross-package (tiny, backward
+  compatible) — flagged for user review.
+
+F11. T4 caps-settled signal: sdk-browser's `sdk.capability.registered` fires on
+  the SDK's PAGE-LOCAL event bus (createEventBus per createSdk) — invisible to
+  the gateway process. "Event-bus, per session" is unimplementable as written.
+  Locked resolution: browser-runtime reads the tab's DOM at navigate (Playwright
+  evaluate counting `[data-sdk-cap]` — the shipped CAP_ATTR), settle via
+  stability re-read. Zero shipped changes; naturally per-tab.
+  ALSO (shipped bug, drift D-40): sdk-browser sends `{ type, name }` only
+  (index.ts:131); registry validateRecord requires version+description →
+  register-failed close → caps never reach the gateway. DOM-read is immune.
+
+F12. Two tabs of the same app: backend-runtime replaces the first connection on
+  duplicate appId (replaces socket, removeByOwner, rejectAllPending) — gateway
+  registration is single-slot per appId. T4's tab distinguishability holds only
+  in browser-runtime's per-tab snapshot (Q5-revision model). v1 non-goal:
+  multi-tab-same-app at the gateway.
+
+## Questions and answers locked so far
 
 4. What error surfaces when the browser process crashes mid-invocation?
 

@@ -128,14 +128,17 @@ is clear. Route: feature-pipeline for the package build.
   resourceId?, bytes }`, audit logs shape only; input extended
   `{ tabId?, fullPage?, format?, quality?, mode? }` (mode default
   auto); forced inline + oversize → `BROWSER_SCREENSHOT_TOO_LARGE`
-  retryable false; resources session-owned, `session.closed`
-  cleanup.
+  retryable false; resources session-owned, `session.cleanup_resources`
+  cleanup (AUDIT F10: shipped event is `session.cleanup_resources`,
+  not `session.closed`).
 
 - [**sdk-browser coupling after navigate**](tickets/sdk-browser-coupling-after-navigate.md)
   (T4, closed 2026-08-02) — navigate is the sync point: output
-  `{ tabId, url, capabilities, capsSettled }`, waits for sdk-browser's
-  "caps registered" signal (event-bus, per session), timeout → empty
-  caps + `capsSettled: false`, never an error (plain pages are
+  `{ tabId, url, capabilities, capsSettled }`; settle detection =
+  DOM-read at navigate (Playwright evaluate counting `[data-sdk-cap]`
+  — shipped CAP_ATTR; stability re-read; AUDIT F11: the SDK's
+  "caps registered" event fires on a page-local bus, invisible to the
+  gateway — "event-bus, per session" reversed), timeout → empty caps + `capsSettled: false`, never an error (plain pages are
   legitimate); tab-scoped caps live in browser-runtime's per-tab snapshot
   (F9 revision: the shipped registry keys by name+version and cannot hold
   per-tab cards — `capability.list({ tabId })` served by the runtime,
@@ -143,14 +146,18 @@ is clear. Route: feature-pipeline for the package build.
   (F7, feature-pipeline): different-url navigate on a caps-bearing tab →
   `BROWSER_NAVIGATION_DESTRUCTIVE` (retryable false) — use `newTab:
   true`; same-url re-navigate stays allowed**; `browser.page.read` ruled
-  out. Agent loop (sdk-browser T1) now has its sync point.
+  out. Known limitation (F12): two tabs of the same app evict each
+  other at the gateway (backend-runtime single-slot per appId) — v1
+  non-goal, invisible to the agent via the per-tab snapshot. Agent loop (sdk-browser T1) now has its sync point.
 
 - [**BrowserContext suspend/resume**](tickets/browsercontext-suspend-resume.md)
   (T5, closed 2026-08-02, resolved autonomously — user delegated
   with review) — suspend keeps context + Chromium process alive
   (session-manager contract already promises resource retention);
   one listener, three events (`session.suspended`/`resumed` = no-ops,
-  `session.closed` = teardown); trust gateway resume-first (Flow 2
+  `session.destroyed` = teardown — AUDIT F10: shipped event name,
+  `session.closed` does not exist; resource purge via
+  `session.cleanup_resources`); trust gateway resume-first (Flow 2
   step 6) — no `BROWSER_SUSPENDED`, mid-call archive → `BROWSER_CLOSED`;
   memory cost accepted (~150–300 MB idle), keep-alive knob is a v2
   candidate; resume transparent to agent (no flag, no new cap).

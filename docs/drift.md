@@ -1,6 +1,41 @@
 # Drift Log
-**Last updated:** 2026-08-02  **Open:** 0  **Resolved:** 27  **Critical/High:** 0
+**Last updated:** 2026-08-02  **Open:** 4  **Resolved:** 27  **Critical/High:** 1
 
+## Open
+
+- **D-40** (High, 2026-08-02, reporter: browser-runtime audit F11-b) — sdk-browser's `sdk.capability.register` wire frame is name-only and fails registry validation, so the SDK's gateway-side registration can never succeed; server closes the connection ("register-failed").
+  - Doc claim: sdk-browser-coupling-after-navigate ticket + sdk-browser T1 loop describe "sdk-browser registers caps with the Gateway via its own WebSocket" (`docs/wayfinder/browser-runtime/tickets/sdk-browser-coupling-after-navigate.md:20-21`)
+  - Code reality: `sendRegister = (name) => client.send({ type: "sdk.capability.register", name })` (`packages/sdk-browser/src/index.ts:131`); record built with `version: msg.version` (undefined) + `description: msg.description` (undefined) (`packages/backend-runtime/src/server.ts:170-186`); validateRecord requires both (`packages/capability-registry/src/validate.ts:34-43`); rejection → `safeClose(socket, 1000, "register-failed")` (`packages/backend-runtime/src/server.ts:190-196`); sdk-node parity frame sends name/description/version/permissions/tier (`packages/sdk-node/src/index.ts:142-150`)
+  - Why matters: any page using sdk-browser today closes its own connection on first register; page caps never reach the registry; reconnect loop; browser-runtime's DOM-read resolution is immune, but the shipped SDK promise ("registers caps with the Gateway") is broken end-to-end
+  - Owner: sdk-browser pack
+  - To fix: sdk-browser sends `version` + `description` + `permissions` in the register frame (parity with sdk-node), or backend-runtime defaults version "1"/description=name. Flagged for user review; NOT fixed in browser-runtime scope.
+  - Related: AUDIT F11-b (browser-runtime); backend-runtime
+
+- **D-41** (High, 2026-08-02, reporter: browser-runtime audit F10) — Handler error code + retryable are dropped by the shipped plugin dispatch path; the capability-contracts claim that BROWSER_* codes ride in the envelope details is unsupported by code.
+  - Doc claim: "preserves the `BROWSER_*` code in the structured details; the caller-visible error code is the `BROWSER_*` one" (`docs/wayfinder/browser-runtime/tickets/capability-contracts.md:63-70` — corrected this session to match the resolution below)
+  - Code reality: handler throw → `PluginManagerError(PLUGIN_HANDLER_ERROR, ..., { pluginId, capabilityName, originalError: e.message })` — code + retryable dropped (`packages/plugin-manager/src/index.ts:218-226`); → `GatewayError(GATEWAY_HANDLER_ERROR, ..., { pluginId, capability, originalError: err.message })` with retryable defaulting false (`packages/gateway-core/src/dispatch.ts:167-170`, `packages/errors/src/index.ts` constructor)
+  - Why matters: the retryable policy for browser-runtime (BROWSER_WAIT_TIMEOUT/BROWSER_SELECTOR_NOT_FOUND/BROWSER_NAVIGATION_TIMEOUT/BROWSER_LAUNCH_FAILED/BROWSER_CRASHED = retryable:true) is unexpressible through the plugin path as shipped — agents would never retry recoverable browser failures
+  - Owner: cross-pack audit (plugin-manager + gateway-core)
+  - To fix: additive envelope extension in browser-runtime PRD-TRD scope — plugin-manager preserves `originalErrorCode` + `retryable` in PLUGIN_HANDLER_ERROR details when the handler throws an Error carrying them; gateway-core passes them into GATEWAY_HANDLER_ERROR details. Backward compatible. Flagged for user review.
+  - Related: D-40; PRD-TRD-gateway-plugin-dispatch.md:48 (only promises message preservation)
+
+- **D-42** (Medium, 2026-08-02, reporter: browser-runtime audit F10) — `session.closed` does not exist; session teardown/resource events are `session.destroyed` / `session.cleanup_resources`.
+  - Doc claim: "`session.closed` tears it down" / "context.close() on session.closed" / "resources session-owned, `session.closed` cleanup" (`docs/features/browser-runtime/GRILL-browser-runtime.txt` T1/T5; `docs/wayfinder/browser-runtime/map.md` T3/T5 bullets; `docs/CONTEXT.md` T3/T4/T5 entries — all corrected this session)
+  - Code reality: event names are `session.created`, `session.suspended`, `session.resumed`, `session.cleanup_resources`, `session.destroyed` (`packages/session-manager/src/events.ts:5-11`, `CID:events-001`)
+  - Why matters: browser-runtime's teardown listener would subscribe to a nonexistent event; suspend/teardown behavior silently broken
+  - Owner: browser-runtime (docs) — resolved this session
+  - To fix: docs corrected (GRILL, map.md, CONTEXT.md); PRD-TRD must use the real event names
+  - Related: none
+
+- **D-43** (Medium, 2026-08-02, reporter: browser-runtime audit F12) — backend-runtime replaces the first connection on duplicate appId: two tabs of the same app evict each other at the gateway.
+  - Doc claim: T4 "two tabs of the same app are distinguishable" (`docs/wayfinder/browser-runtime/map.md` T4 bullet; `docs/CONTEXT.md` T4 entry — corrected this session with the limitation)
+  - Code reality: appId connection registry replace semantics + close → `removeByOwner` + `capsByAppId.delete` + `rejectAllPending` (`packages/backend-runtime/src/server.ts` handleConnection/close handler)
+  - Why matters: multi-tab-same-app is broken at the gateway today; browser-runtime's per-tab snapshot (Q5-revision) makes it invisible to the agent loop, but it must be a documented v1 non-goal rather than a silent surprise
+  - Owner: cross-pack audit; v1 non-goal for browser-runtime; keying by tabId deferred
+  - To fix: document as non-goal (done in GRILL F12/map.md/CONTEXT.md); PRD-TRD non-goals section
+  - Related: Q5-REVISION entry; D-40
+
+---
 
 ## Resolved
 

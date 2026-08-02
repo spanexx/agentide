@@ -61,12 +61,23 @@ as seen by a caller through the Gateway?
   scroll, wait, screenshot, close).
 - **Audit:** inputs not logged (PII stays in the app), outputs are —
   per session model.
-- **Errors: `BROWSER_*` codes pass through from the plugin to the
-  caller.** The gateway wraps handler failures in the
-  `GATEWAY_HANDLER_ERROR` envelope (per gateway-plugin-dispatch) and
-  preserves the `BROWSER_*` code in the structured details; the
-  caller-visible error code is the `BROWSER_*` one. `GATEWAY_*` codes
-  stay for infra failures only.
+- **Errors: envelope code is `GATEWAY_HANDLER_ERROR`; the `BROWSER_*`
+  code + retryable ride in the structured details.**
+  Per gateway-plugin-dispatch, handler failures surface as
+  `GATEWAY_HANDLER_ERROR` (retryable: false at the envelope level, as
+  shipped). AUDIT F10 (grill-with-docs, 2026-08-02): the shipped
+  plugin path drops the handler error's code and retryable (only the
+  message survives) — the original contract text claimed the
+  `BROWSER_*` code is "preserved in the structured details" and is the
+  "caller-visible" code; that is NOT supported by shipped code
+  (plugin-manager wraps as PLUGIN_HANDLER_ERROR, gateway-core maps to
+  GATEWAY_HANDLER_ERROR retryable:false). Locked resolution (PRD-TRD
+  scope): ADDITIVE envelope extension — plugin-manager preserves
+  `originalErrorCode` + `retryable` in PLUGIN_HANDLER_ERROR details
+  when the handler throws an Error carrying them; gateway-core passes
+  them into GATEWAY_HANDLER_ERROR details. Callers match on
+  `details.browserCode` and honor `details.retryable`. `GATEWAY_*`
+  codes stay for infra failures only.
 - **Retryable policy — "timeout/race retryable, misuse not":**
   - `retryable: true`: `BROWSER_WAIT_TIMEOUT` (T6),
     `BROWSER_SELECTOR_NOT_FOUND`, `BROWSER_SELECTOR_TIMEOUT`,
