@@ -3,7 +3,7 @@
 > **Map title:** browser-runtime — finding the way to a shipped
 > `@platform/browser-runtime` Runtime Plugin.
 >
-> **Status:** charting complete (5/7 tickets closed). Live tracker:
+> **Status:** charting complete (6/7 tickets closed). Live tracker:
 > this file + the 7 child ticket files.
 
 ## Destination
@@ -80,11 +80,11 @@ happens via `delivery: feature-pipeline` once the way is clear.
 | 2 | Capability contracts | `grilling` ✅ closed | — |
 | 3 | Screenshot payload | `grilling` ✅ closed | — |
 | 4 | sdk-browser coupling after navigate | `grilling` ✅ closed | — |
-| 5 | BrowserContext suspend/resume | `grilling` | — |
+| 5 | BrowserContext suspend/resume | `grilling` ✅ closed | — |
 | 6 | browser.wait semantics | `grilling` ✅ closed | — |
 | 7 | Human observability in v1 | `prototype` | — |
 
-**Frontier (open + unblocked):** BrowserContext suspend/resume (T5).
+**Frontier (open + unblocked):** Human observability in v1 (T7).
 
 ## Decisions so far
 
@@ -135,6 +135,16 @@ happens via `delivery: feature-pipeline` once the way is clear.
   `tabId` filter (**extends shipped capability-registry contract**);
   re-read via re-navigate or filtered list; `browser.page.read` ruled
   out. Agent loop (sdk-browser T1) now has its sync point.
+
+- [**BrowserContext suspend/resume**](tickets/browsercontext-suspend-resume.md)
+  (T5, closed 2026-08-02, resolved autonomously — user delegated
+  with review) — suspend keeps context + Chromium process alive
+  (session-manager contract already promises resource retention);
+  one listener, three events (`session.suspended`/`resumed` = no-ops,
+  `session.closed` = teardown); trust gateway resume-first (Flow 2
+  step 6) — no `BROWSER_SUSPENDED`, mid-call archive → `BROWSER_CLOSED`;
+  memory cost accepted (~150–300 MB idle), keep-alive knob is a v2
+  candidate; resume transparent to agent (no flag, no new cap).
 
 - [**browser.wait semantics**](tickets/browser-wait-semantics.md)
   (T6, closed 2026-08-02) — waits for a condition AND has a
