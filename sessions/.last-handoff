@@ -1,120 +1,60 @@
-# sdk-browser Wayfinder — T2 closed, frontier = T5
+# sdk-browser: T6 grilling LOCKED + T4 dev-experience prototype SHIPPED (Playwright-verified) — user decisions pending
 
-## Soul
+**Date:** 2026-08-01
+**Branch:** `main` (in `agentide/`)
+**Status:** Wayfinder map 5/7 closed (T1/T2/T3/T5/T6). Frontier: **T4 (prototype done, decisions pending)** + **T7 (boundary doc)** → then `delivery: feature-pipeline` for `@platform/sdk-browser`.
 
-This session worked the **Wayfinder** process for `@platform/sdk-browser` (Phase 4
-Frontend SDK). Map created, **2/7 tickets closed**. T2 (Manifest and handler
-transport in browser) fully resolved with 5 Q's locked. Frontier advances to T5
-(WebSocket transport details). Code unchanged this session — pure planning.
+## What this session did
 
-Next session picks up T5 with `grill-with-docs`. One ticket per session per
-Wayfinder rule.
+1. **T6 (package shape) grilling — LOCKED** (record: `docs/features/sdk-browser/GRILL-sdk-browser.txt` §T6; mirrored to `docs/CONTEXT.md` Decisions Log 2026-08-01 entries):
+   - Q1 **Build output: HELD** — pending T4 outcome; IIFE only if T4 picks `<script>` tag install
+   - Q2 `exports`: `"type": "module"`, `import`-condition only, no `require`; `browser` field rides on Q1
+   - Q3 Deps: ONE runtime dep (`@platform/event-bus` — verified browser-safe: pure TS, only `crypto.randomUUID`/`Date.now`), type-only `backend-runtime` ref for `BackendValue` (same pattern as sdk-node), jsdom dev-dep (first DOM package in monorepo), NO `@types/node`/`@types/ws`; tsconfig needs `"lib": ["ES2022","DOM","DOM.Iterable"]` (base has none)
+   - Q4 Tests: vitest + jsdom via per-file `/** @vitest-environment jsdom */` docblock — zero root config change; WebSocket stubbed via `vi.stubGlobal`
+   - Q5 Size: no hard cap; soft guideline (1 runtime dep, ESM-only)
 
-## What This Session Did
+2. **T4 (frontend DX) prototype — BUILT + VERIFIED** at `agentide/prototypes/sdk-browser-dev-experience/`:
+   - `sdk-core.js` — simulated SDK core (DOM observation, connection-gated dedup registration, fan-out CustomEvent dispatch + `closest()` filter, form-fill fallback, 8 lifecycle events, `onStateChange()` connection badge)
+   - `shape-a.html` (bundler import via import map) + `shape-b.html` (`<script>` tag + `PlatformSdk` global) — identical demo page (`demo-doc.js`) and identical core under both install shapes
+   - `index.html` + `README.md` — comparison + open questions
+   - **Interconnected sim**: `serve.mjs` (static + `/api/state` GET/PUT, serialized atomic writes) + `sim-state.json` (single source of truth) + `verify-state.mjs` CLI
+   - **Playwright CLI suite**: `playwright.config.cjs` + `tests/t4.spec.cjs` — 4/4 PASS (index routes, shape A lifecycle, shape B lifecycle, cross-shape interconnection)
+   - `file://` CORS banner added (module imports blocked on file URLs — must use `node serve.mjs`)
 
-- Created the sdk-browser Wayfinder map on `spanexx/agentide`:
-  - Map issue #8 (label `wayfinder:map`)
-  - 7 child tickets #9–#15 (T1–T7)
-  - 5 wayfinder labels created (`wayfinder:map`, `:grilling`, `:prototype`,
-    `:task`, `:research`)
-- Closed T1 (#15): capability surface = DOM-annotation model (see CONTEXT.md:162)
-- Closed T2 (#9): no manifest, attribute set, observe scope, dedup, dispatch target
-  (5 Q's; full record in GRILL file + CONTEXT.md)
-- Created `agentide/docs/features/sdk-browser/GRILL-sdk-browser.txt`
-- Updated local mirrors: `map.md` + ticket files in
-  `agentide/docs/wayfinder/sdk-browser/`
+## OPEN — user decisions needed (T4 ticket "Resolution must record")
 
-## Current State
+1. **Canonical install path**: Shape A (bundler import — recommended for v1), Shape B, or both? → decides T6 Q1 (HELD)
+2. **Framework helpers** (`useSdk()` React etc.) in v1 or punt to v2? (recommended: punt)
+3. **Connection-state surfacing**: keep the `onStateChange()` badge pattern from the prototype?
 
-- **Map:** issue #8 — `2/7 tickets closed, 5 open`. Local mirror at
-  `agentide/docs/wayfinder/sdk-browser/map.md` kept in sync.
-- **Frontier:** **T5 ([WebSocket transport details](https://github.com/spanexx/agentide/issues/12))** — unblocked, ready to claim.
-- **Also open:** T3 (#10) Browser-aware reconnect, T4 (#11) Frontend DX (prototype),
-  T6 (#13) Package shape, T7 (#14) Boundary doc.
-- **Code:** unchanged. Planning only.
+Once decided: record in `docs/wayfinder/sdk-browser/tickets/frontend-developer-experience.md` + `docs/wayfinder/sdk-browser/map.md`, then T7 (boundary doc, `sdk-browser-and-browser-runtime-boundary.md` ticket), then feature-pipeline.
 
-## Standing Rules Locked This Session
+## Git state
 
-1. **Every Wayfinder grill resolution appends to that project's
-   `docs/CONTEXT.md` Decisions Log** — no exceptions, no re-ask. Per-Q entries
-   (one line per Q), format matches existing entries.
-2. **Every grill answer follows this order:** (a) plain-English analogy →
-   (b) recommendation stated up front → (c) the why + what it rules out →
-   (d) source citations.
-3. **Plain-English analogy for sdk-browser is an e-commerce website** — product
-   cards = caps, "Add to Cart" buttons = annotated elements, cart service =
-   Gateway, customer = SDK caller.
+- HEAD `42dde14` (docs: application-entity grill + wayfinder map + CONTEXT.md ULID entry)
+- **My changes (uncommitted — user's manual-commit preference):**
+  - `M docs/CONTEXT.md` (T6 Decisions Log entries)
+  - `M docs/features/sdk-browser/GRILL-sdk-browser.txt` (T6 section)
+  - `M docs/wayfinder/sdk-browser/map.md` (T6 closed, 5/7, fog note updated)
+  - `?? prototypes/sdk-browser-dev-experience/` (entire prototype, ~12 files)
+- **Pre-existing dirty — DO NOT TOUCH (user rule §-1):** `M pnpm-lock.yaml`, `M tsconfig.json`, `?? packages/adapter-mcp/`, `M sessions/*` (this handoff log)
+- 3 stashes on agentide — do NOT pop without permission
 
-## Next Session: T5 ([WebSocket transport details](https://github.com/spanexx/agentide/issues/12))
+## Other in-flight thread (per previous handoff, Jul 31)
 
-### Workflow
+**T2 application-provisioning** (application-entity pack): plan approved, mode BUILD, Phase 1 not started. Source of truth: `docs/wayfinder/application-entity/tickets/application-provisioning.md` + `GRILL-application-entity.txt`. User may switch back to it at any point.
 
-1. `workdir = /home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide`
-2. Load skills: `wayfinder` (parent) + `grill-with-docs` (T5 is `wayfinder:grilling`)
-3. Claim T5: `gh issue edit 12 --add-assignee spanexx`
-4. Read ticket body + map body for context (`gh issue view 12 --json title,body,state,labels,assignees,comments`)
-5. Grill one Q at a time using the standing format (analogy → recommendation → why → sources)
-6. Per Q locked: append to GRILL file + append to CONTEXT.md + post progress comment on #12
-7. After all Q's locked: post final resolution comment, close #12, update #8, mirror locally
+## Environment notes
 
-### T5 Question Hints (territory to expect, not pre-decided)
+- Playwright: `/tmp/sim-test/node_modules` (playwright + @playwright/test 1.55.1). Browser pinned: `playwright.config.cjs` → chromium-1228 `chrome-linux64/chrome` (runner's default 1193 headless shell NOT installed)
+- Run prototype: `node agentide/prototypes/sdk-browser-dev-experience/serve.mjs` → http://127.0.0.1:7947/
+- Test: `NODE_PATH=/tmp/sim-test/node_modules /tmp/sim-test/node_modules/.bin/playwright test --config=agentide/prototypes/sdk-browser-dev-experience/playwright.config.cjs`
+- `sim-state.json` reset to clean after tests — verify with `node verify-state.mjs`
+- Drift log: 0 open
 
-- Transport: WebSocket vs alternatives (SSE, fetch+POST, long-poll)
-- Subprotocol name (so the WS adapter can route SDK traffic vs other WS clients)
-- Auth handshake shape (reuse sdk-node's HS256 JWT, or browser-specific?)
-- Message framing (JSON over text? binary? msgpack?)
-- Heartbeat / ping interval
-- Reconnect primitive (initial connect + retry) — T3 owns browser-specific lifecycle
-- Error envelope (reuse `sdk.invoke.error` from BI[8b]?)
+## Suggested skills next
 
-### Critical Context to Carry Forward
-
-- **Wire protocol is fixed** by BI[8b]: `sdk.invoke { callId, name, input, sessionId? }` →
-  `sdk.invoke.result { callId, payload }` or `sdk.invoke.error { callId, code, message }`.
-  SDK-browser must reuse this exact shape — no new wire types.
-- **Auth is fixed** by gateway-core (BI[5] Q2): HS256 JWT with `{ tenantId, callerId }` sub.
-  SDK-browser sends the same token format as sdk-node.
-- **No manifest file** (T2 lock): SDK init takes only
-  `{ gateway, appId, token, observeRoot?, defaultTier?, defaultVersion? }` — `gateway`
-  URL is the WebSocket endpoint.
-- **Reconnect strategy split:** T5 locks the transport-layer primitive; T3 locks
-  browser-specific lifecycle (tab unload, intentional close, visibility).
-- **CORS** is the operator's problem once T5 locks the URL shape — see Not-yet-specified
-  section of map #8.
-
-## Files Touched This Session
-
-- `agentide/docs/features/sdk-browser/GRILL-sdk-browser.txt` (new, T1 + T2 Q1–Q5)
-- `agentide/docs/CONTEXT.md` (6 new Decisions Log entries, line 162 onward)
-- `agentide/docs/wayfinder/sdk-browser/map.md` (frontier + decisions-so-far)
-- `agentide/docs/wayfinder/sdk-browser/tickets/manifest-and-handler-transport-in-browser.md`
-  (closed + resolution)
-- GitHub #8 body updated; #9 closed with resolution comment
-
-## Helpful Commands
-
-```bash
-# Set workdir to the agentide repo (the parent cwd is NOT a git repo)
-gh issue list --label wayfinder:grilling --state all
-gh issue view 12 --json title,body,state,labels,assignees,comments
-gh issue edit 12 --add-assignee spanexx
-gh issue comment 12 --body "..."
-gh issue close 12
-gh issue edit 8 --body-file /tmp/opencode/map-body.md
-
-# Append to CONTEXT.md (one line per Q, in the Decisions Log section)
-$EDITOR agentide/docs/CONTEXT.md
-```
-
-## Known Quirks
-
-- `gh issue view <num>` shows a GraphQL "Projects (classic) is being deprecated"
-  warning. Cosmetic; body still renders. Workaround: `--json title,body,...` or
-  `--web`.
-- `gh` must run with `workdir=/home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide`.
-
-## Skills to Load Next Session
-
-- `wayfinder` (parent — already loaded this session)
-- `grill-with-docs` (T5 is grilling)
-- (later, when map closes) `feature-pipeline` for `delivery: feature-pipeline`
+- `feature-pipeline` — after T4 decisions + T7, for the sdk-browser pack build
+- `prototype` — only if user wants to iterate the prototype shape further
+- `git-flow` — when user green-lights commits (docs commit + prototype commit)
+- `situation-awareness` — session start re-orient

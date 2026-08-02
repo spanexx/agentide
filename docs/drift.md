@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-07-30  **Open:** 0  **Resolved:** 21  **Critical/High:** 0
+**Last updated:** 2026-08-01  **Open:** 0  **Resolved:** 24  **Critical/High:** 0
 
 
 ## Resolved
@@ -47,6 +47,21 @@
   - Why matters: divergence is intentional. PRD wording was sharpened but the IMPL is correct in allowing either (both signal "this cap is not callable").
   - Resolution: PRD-TRD Scenario 7 text updated to read "either `GATEWAY_CAPABILITY_NOT_FOUND` (registry lookup first) or `GATEWAY_HANDLER_NOT_FOUND` (handler map lookup first), depending on which path fires first in `handleInvocation`'s resolution sequence".
   - Verified by: drift-bi8a-report.md, `packages/agentide/src/__tests__/gateway-plugin-dispatch.test.ts:318-331`, post-impl sim Scenario 7.
+- **D-34** (Accepted drift, 2026-08-01, mcp-adapter post-impl sim) — Post-impl sim at `packages/agentide/scripts/simulate-mcp-adapter.mjs` is a standalone Node ESM script (not browser HTML like `simulate-pre.html`). Drives real `@platform/agentide` + `@platform/adapter-mcp` + `@platform/gateway-core` against raw `fetch` POSTs to `/mcp`. Mirrors the D-33 pattern from `gateway-plugin-dispatch`.
+  - Doc reality: pre-impl sim is a static HTML page with hardcoded PASS/FAIL markers; post-impl sim is an executable script that verifies behavior against real code.
+  - Why matters: a browser sim can't drive `createPlatform()` (Node `fs/promises`, dynamic `import()`, port-binding) or hit the MCP adapter's `/mcp` endpoint (browser CORS). The post-impl sim has to be a Node script to exercise the real production path.
+  - Resolution: pre-impl sim archived at `docs/features/mcp-adapter/archive/simulate-pre.html`; post-impl sim at `packages/agentide/scripts/simulate-mcp-adapter.mjs`. Sim covers 8 of the 10 PRD scenarios end-to-end (1, 3, 4, 5, 6, 7, 8, 8b); scenarios 2 (business-cap dispatch into a real SDK) and the timeout path are covered exhaustively by `packages/adapter-mcp/src/__tests__/scenarios.test.ts` (39 tests, all passing) because they require a custom `BackendRuntime` that `createPlatform()` does not currently accept.
+  - Verified by: post-impl sim run on 2026-08-01 — 8/8 scenarios PASS.
+- **D-35** (Accepted drift, 2026-08-01, mcp-adapter) — PRD-TRD Scenario 8 says missing bearer returns `-32001 GATEWAY_AUTH_FAILED`. The kernel's actual behavior is `GATEWAY_INVALID_REQUEST` when the token is empty/missing (auth.ts). The adapter maps `INVALID_REQUEST -> -32001` with wire message `"GATEWAY_AUTH_FAILED"`, matching the PRD.
+  - Doc reality: PRD asserts `GATEWAY_AUTH_FAILED`; kernel emits `GATEWAY_INVALID_REQUEST`; adapter translates on the wire. The "real" message lives in the kernel's auth.ts, not the adapter.
+  - Why matters: divergence is intentional. Operators reading PRD Scenario 8 see the wire-facing code+message that the adapter contract is bound to; the kernel's internal code is an implementation detail.
+  - Resolution: Plan §4 Decision 4 documents the mapping (`-32001` for `AUTH_FAILED` and `INVALID_REQUEST` and `TOKEN_INVALID` and `TOKEN_EXPIRED`); scenario 8 + 8b in the post-impl sim and the adapter-mcp scenario test both assert `-32001 / GATEWAY_AUTH_FAILED`. Adapter also throws a custom `WireError` (not `McpError`) to keep the wire message verbatim — the SDK's `McpError` prefixes messages with `"MCP error <code>: "`, which would break the PRD's exact-message assertion.
+  - Verified by: `packages/adapter-mcp/src/__tests__/scenarios.test.ts` scenarios 8 + 8b, post-impl sim Scenarios 8 + 8b.
+- **D-36** (Accepted drift, 2026-08-01, mcp-adapter) — `createPlatform()`'s `runInit` / `runStatus` / `runTenant` / `runToken` / `runCapability` / `runPlugin` all now pass `adapterMcp: false`. The plan's "Decision 7 / Q6 default" is overridden for the CLI: each CLI invocation spins a short-lived platform, so binding 7100 per command would waste a port and risk `EADDRINUSE` races.
+  - Doc reality: GRILL Q6 says the MCP adapter auto-registers "by default"; the CLI explicitly opts out.
+  - Why matters: divergence is intentional. Daemons and boot scripts use the default `true` (so `agentide start` or a custom operator's boot script gets the adapter wired for free); CLI subcommands opt out (they don't need the adapter — they only exit).
+  - Resolution: per-subcommand `adapterMcp: false` opt-out documented at `packages/agentide/src/cli.ts` with an inline comment citing Plan Decision 7. `packages/agentide/src/__tests__/mcp-adapter.test.ts:196-200` covers the opt-out path explicitly.
+  - Verified by: full test suite (536/536 pass), `mcp-adapter.test.ts` Scenario `CID:agentide-mcp-test-004`, `pnpm test` green.
 - **D-33** (Accepted drift, 2026-07-30, gateway-plugin-dispatch sim) — Post-impl sim at `packages/agentide/scripts/simulate-gateway-plugin-dispatch.mjs` is a standalone Node ESM script (not browser HTML like `simulate-pre.html`). Drives real `@platform/agentide` + `@platform/plugin-manager` + `@platform/gateway-core` packages; uses a real `.mjs` handler fixture in `/tmp`.
   - Doc reality: pre-impl sim is a static HTML page with hardcoded PASS/FAIL markers; post-impl sim is an executable script that verifies behavior against real code.
   - Why matters: a browser sim can't drive the agentide factory's `createPlatform()` (Node `fs/promises`, dynamic `import()`, plugin-manager's cleanup-confirm timer). The post-impl sim had to be a Node script to exercise the real production path.

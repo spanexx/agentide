@@ -640,3 +640,98 @@ Tests green (439/439). Build/lint/typecheck/check-banned-types all pass.
 - **D-14–D-27** (permission-tiering: 7 gaps resolved this session per
   `drift.md`; carried forward from BI[7] pack).
 
+## BI[9] mcp-adapter — drift review (2026-08-01)
+
+Logged from the feature-pipeline-review at `.reports/2026-08-01-drift-mcp-adapter.md`
+(verdict: **Minor Drift**). Code contract is fully met — all 8 PRD scenarios + the
+timeout path have verbatim-wire-message assertions in
+`packages/adapter-mcp/src/__tests__/scenarios.test.ts`. Open items are doc-side
+or process-side only.
+
+- **D-28** (doc gap) `IMPL-mcp-adapter.md` referenced by
+  `PRD-TRD-mcp-adapter.md:219` was never written. The execution work happened
+  (Code Maps in `packages/adapter-mcp/src/*.ts` enumerate phases), but a
+  standalone IMPL was not produced. Retro-fit is feasible: assemble from
+  existing CID comments + `packages/agentide/src/factory.ts` Phase 5 wiring
+  (~30 min). **Status: open — should be created before SHIPPED.**
+  **2026-08-01 RESOLVED:** retro-fitted from code CIDs and Code Maps. See
+  `docs/features/mcp-adapter/IMPL-mcp-adapter.md` (7 phases, all gates green).
+- **D-29** (process gap) Post-impl sim lives at
+  `packages/agentide/scripts/simulate-mcp-adapter.mjs` instead of the
+  feature-pipeline-conventional `docs/features/mcp-adapter/simulate.sh`.
+  Justified (parallel-safe, exercises the real meta-package), but breaks the
+  discovery convention. **Status: accepted — log only.**
+- **D-30** (doc accuracy) The sim's self-narration at
+  `simulate-mcp-adapter.mjs:361` says "39 tests, all passing" — actual count
+  across `translate.test.ts` (18) + `server.test.ts` (7) + `scenarios.test.ts`
+  (13) is 38. Off-by-one. **Status: accepted — log only.**
+- **D-31** (process gap) The post-impl sim defers Scenario 2 (business-cap
+  dispatch) and the timeout path to `scenarios.test.ts` because
+  `createPlatform()` does not currently accept an injected `BackendRuntime`.
+  Contract is verified (8/8 scenarios pass via the adapter's scenarios test),
+  but the post-impl sim no longer satisfies the feature-pipeline expectation
+  that the sim cover all PRD scenarios. **Status: accepted — log only.**
+- **D-32** (test-strategy gap, low priority)
+  `packages/agentide/src/__tests__/mcp-adapter.test.ts` covers only BI[9]
+  Phase 5 wiring (auto-register, round-trip, stop, suppression) — none of the
+  8 PRD scenarios. By design (those live in the adapter package), but means
+  a meta-package refactor that breaks a scenario would only be caught by the
+  adapter's scenarios test. **Status: accepted — log only.**
+- **D-33** (process gap) Backlog at
+  `docs/Feature_Backlog.md:44` marked the pack SHIPPED 2026-08-01 with
+  drift items `D-33, D-34, D-35, D-36` cited. Actual drift items from this
+  review are D-28..D-32 (D-28 resolved by IMPL retro-fit). The numbering
+  cited in the backlog does not match the log. The IMPL that the SHIPPED
+  claim implied was present was in fact missing at the time of the backlog
+  update. **2026-08-01 RESOLVED:** backlog row 9 rewritten to reference the
+  drift review at `.reports/2026-08-01-drift-mcp-adapter.md` and the
+  retro-fitted `IMPL-mcp-adapter.md`.
+- **D-34** (doc accuracy) Backlog claims "47 behaviour tests pass across 4
+  vitest files (translate + server + 8 PRD scenarios + 5 agentide
+  integration scenarios)" — actual counts are 18 translate + 7 server + 13
+  scenarios (only 8 of which are PRD scenarios) + 5 agentide integration =
+  43 (or 38 if you count only the 8 PRD scenarios in scenarios.test.ts).
+  Neither sum reaches 47. **2026-08-01 RESOLVED:** backlog row 9 corrected
+  to 43 across 4 vitest files with the per-file breakdown.
+
+## BI[9] mcp-adapter — re-review (2026-08-01)
+
+Second feature-pipeline-review pass (report re-issued at
+`.reports/2026-08-01-drift-mcp-adapter.md`, verdict **Minor Drift**; the
+original report file was lost before this pass). Runtime re-verified: sim 8/8,
+adapter tests 38/38 (18+7+13), agentide wiring 5/5 — total 43. Prior items
+D-28/D-33/D-34 confirmed resolved; D-29..D-32 confirmed still valid (accepted).
+New items from this pass:
+
+- **D-35** (doc accuracy) PRD-TRD error table row `GATEWAY_HANDLER_TIMEOUT → -32007`
+  is dead — timeouts ship as `isError: true` results (translate.ts:208-214;
+  error-map.ts deliberately never maps HANDLER_TIMEOUT). The PRD self-contradicts
+  (line 144 table vs line 151 success-shape note); code correctly follows line 151.
+  **2026-08-01 RESOLVED:** table row annotated as superseded.
+- **D-36** (doc accuracy) PRD Scenario 1 When-clause shows
+  `gateway.handleInvocation({..., input:{}})` but code passes the caller's decoded
+  scope (`translate.ts:143-149`) so the kernel can apply BI[7] tier filtering.
+  **2026-08-01 RESOLVED:** When-clause updated to document the scope input.
+- **D-37** (doc accuracy) PRD Scenario 4 "Given any state" is false for business
+  capabilities — without a session the kernel returns `GATEWAY_SESSION_REQUIRED`
+  before capability resolution, and `error-map.ts`'s default branch maps unmapped
+  kernel codes to `-32006` with a message that leaks the kernel identifier
+  (`"GATEWAY_SESSION_REQUIRED: <msg>"`). `-32006` also collides with the
+  documented `GATEWAY_INTERNAL_ERROR` row. **2026-08-01 RESOLVED:** Scenario 4
+  precondition clarified + error table gained a `GATEWAY_SESSION_REQUIRED` row
+  and a generic unmapped-code fallback row. The `-32006` collision and the
+  kernel-identifier leak remain accepted (defensible kernel behavior, low
+  exposure), noted in the PRD.
+- **D-38** (code comment) `factory.ts` Code Map header ("stop after
+  backendRuntime") and CID block ("Stop in reverse order: backend runtime first,
+  then mcpAdapter") both contradict the actual stop order — `factory.ts:156`
+  stops `mcpAdapter` before `factory.ts:161` stops `backendRuntime` (in-flight
+  JSON-RPC fails fast on closed port). **2026-08-01 RESOLVED:** both comments
+  corrected.
+- **D-39** (packaging) `packages/adapter-mcp/package.json` declared five
+  test-only workspace deps (`backend-runtime`, `capability-registry`,
+  `event-bus`, `plugin-manager`, `session-manager`) as runtime `dependencies` —
+  `src/` imports only `gateway-core` + `errors`. PRD's "one new dependency"
+  claim was misleading. **2026-08-01 RESOLVED:** moved the five to
+  `devDependencies` (lockfile updated via `pnpm install`).
+

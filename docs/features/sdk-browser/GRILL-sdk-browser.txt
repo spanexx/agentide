@@ -197,3 +197,474 @@ model) are all closed by Q1 (no manifest), and the extraction edge cases
 (attribute set, observe scope, dedup, dispatch target) are closed by Q2-Q5.
 Awaiting T3 (lifecycle), T4 (DX prototype), T5 (transport), T6 (package shape),
 and T7 (boundary doc) to complete the map.
+
+---
+
+## T5 — WebSocket transport details (closed 2026-07-30)
+
+Source: Wayfinder map #8 (sdk-browser), ticket #12 (T5).
+
+Reuse from sdk-node (BI[8]) + backend-runtime (BI[8b]):
+- Wire messages locked: `sdk.invoke` / `sdk.invoke.result` / `sdk.invoke.error` (BI[8b]).
+- Server-side `backend-runtime` accepts a first-message `{type:"sdk.auth", token}`
+  body — verified at [server.ts:108-111](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/backend-runtime/src/server.ts#L108-L111) and
+  [server.ts:293-295](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/backend-runtime/src/server.ts#L293-L295) (`isAuthMessage` only).
+- sdk-node's `Authorization: Bearer <token>` header is **silently dropped by the server**.
+
+### T5 / Q1 — Auth transport (locked 2026-07-30)
+Decision: Browser SDK sends `{type: "sdk.auth", token}` as the first message body
+after `onopen`, identical to sdk-node's secondary auth path. No `Authorization`
+header (impossible in WHATWG WebSocket, server ignores it anyway). Zero new
+server code. Rules out: `?token=...` query (logs leak JWTs), `Sec-WebSocket-Protocol`
+(subprotocol is for protocol multiplexing, surfaces in dev tools + proxy traces).
+
+### T5 / Q2 — Origin binding (locked 2026-07-30, PERMANENT — not a v1 patch)
+Decision: every browser SDK token MUST carry a signed
+`expectedOrigins: string | string[]` JWT claim. `backend-runtime` reads the
+claim after `verifyToken` succeeds; if inbound `Origin` doesn't match (with
+`*.subdomain` wildcard support), close the socket with code 1008. Mandatory,
+no opt-out. Dev mode handled by issuing tokens for `http://localhost:port`.
+`auth.token.issue` CLI gains `--kind browser` + `--origin` / `--origins` flags.
+Solves stolen-token-replay-on-rogue-origin (`acme.com`'s token used on `evil.com`).
+
+### T5 / Q3 — JWT forwarding to handlers (locked 2026-07-30)
+Decision: forward caller's JWT **verbatim** via `e.detail.ctx.token`, mirroring
+sdk-node's existing decision. Verified at [invoke.ts:101](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/sdk-node/src/invoke.ts#L101) and
+[invoke.ts:147](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/sdk-node/src/invoke.ts#L147). Rules out: claims-only
+forwarding (breaks handler-side validation; future token-rotation depends on
+raw tokens); both claims + raw token (duplicate surface).
+
+### T5 / Q4 — Browser-native WebSocket only (locked 2026-07-30)
+Decision: `globalThis.WebSocket` only. No polyfill, no fallback. SDK throws on
+construction if missing. `ws` Node library is not bundled (Node-only deps).
+Server-side `WebSocketLike` at [types.ts:89-92](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/backend-runtime/src/types.ts#L89-L92) is just
+`send`/`close`, both of which native browser `WebSocket` already has. Drift
+D-13 (`ws-shim.cjs`) is sim-only.
+
+T5 closed. T3 unblocked.
+
+---
+
+## T3 — Browser-aware reconnect and lifecycle (started 2026-07-30)
+
+Source: Wayfinder map #8 (sdk-browser), ticket #10 (T3). Status: grilling in progress.
+
+### T3 / Q1 — Visibility (locked 2026-07-30)
+
+Question: when the tab goes hidden (background tab throttling), what does the
+SDK do about reconnect attempts?
+
+Answer:
+- **Pause reconnect while hidden; resume immediately on `visibilitychange` to
+  "visible"**.
+- Subscribe to `document.addEventListener('visibilitychange', ...)`.
+- On `'hidden'`: clear any pending reconnect timer, mark state as "waiting for visible".
+- On `'visible'`: if state was "waiting for visible" AND we want to be connected,
+  fire the reconnect immediately.
+- The reconnect schedule (1s, 2s, 4s, 8s, 16s, 30s cap, ±20% jitter) is unchanged
+  from sdk-node's pattern; visibility gates *when* it fires, not the curve.
+
+Why:
+- The user can't see what's happening while the tab is hidden. Reconnect
+  attempts are wasted work.
+- Throttled timers in backgrounded tabs can stack up and all fire on
+  visible-transition — a small thundering herd.
+- Closing the socket on hide is too aggressive: every tab switch drops the
+  connection, every switch reopens it. The cap set flickers on every switch.
+  Multi-tab same-origin pages would lose caps when one is hidden.
+
+Rules out:
+- (B) always-reconnect, ignore visibility.
+- (C) close-on-hide, reopen on visible.
+- A "smart" mode that uses a different backoff curve when hidden.
+
+Source:
+- WHATWG Page Visibility API (`document.visibilityState`, `visibilitychange` event).
+- WHATWG HTML Living Standard background-tab throttling rules.
+- sdk-node backoff schedule (BI[8]).
+- T3 ticket sub-Q 1.
+- Mirror in `agentide/docs/CONTEXT.md` Decisions Log: 2026-07-30 sdk-browser T3 Q1.
+
+### T3 / Q2 — Online/Offline (locked 2026-07-30)
+
+Question: what does the SDK do when the browser fires `online` or `offline`?
+
+Answer:
+- `window.addEventListener('online', ...)` and `window.addEventListener('offline', ...)`.
+- On `offline`:
+  - Mark state as `'offline'`.
+  - Clear any pending reconnect timer (saves a wasted attempt).
+- On `online`:
+  - Clear the `'offline'` state.
+  - **Reset the backoff** — next reconnect uses the initial delay, not the
+    next-in-curve delay. The previous backoff is stale; the failure was "old."
+  - If we want to be connected AND not currently connected, fire the reconnect
+    immediately.
+
+Why:
+- The user came back online. The previous backoff schedule is stale (it's a
+  countdown from when the socket died, not from "now"). 30s of staring at a tab
+  after a tunnel transit is bad UX.
+- `offline` is preemptive — the socket is going to fail anyway; marking it dead
+  prevents wasted reconnect attempts that land during the offline window.
+- The `online` event tells us "you should retry now." We retry now.
+- Resetting backoff is the key new behavior — it's what makes "coming back
+  online" feel responsive.
+
+Rules out:
+- (B) ignoring the events — let natural close + backoff handle it. Up to 30s
+  of dead air after coming back online.
+- (C) using events as hints without skipping backoff — backoff's purpose is to
+  avoid hammering a failing server; on `online` the server isn't failing, the
+  path was lost.
+- Polling `navigator.onLine` — events already cover it; polling is wasteful.
+
+Source:
+- WHATWG HTML Living Standard — `window.online` / `window.offline` events,
+  `navigator.onLine` getter.
+- T3 ticket sub-Q 2 (stated default matches).
+- Interacts cleanly with T3 Q1: if hidden AND offline, no fire; if visible AND
+  online, fire immediately.
+- Mirror in `agentide/docs/CONTEXT.md` Decisions Log: 2026-07-30 sdk-browser T3 Q2.
+
+### T3 / Q3 — Page unload (locked 2026-07-30)
+
+Question: when the LLM agent's browser session moves on or ends (`pagehide`
+fires on the web owner's page), what does the SDK do?
+
+Context reminder: the SDK runs in the web owner's page; the LLM agent drives
+the browser session. "User" = the LLM agent's browser session, not a human.
+
+Answer:
+- Listen for `pagehide`.
+- If `event.persisted === true` (page is going into bfcache — LLM agent's
+  "back" button or browser restoring a frozen page): do nothing. The
+  WebSocket stays alive for fast restore.
+- Else (real unload, LLM agent truly leaves or session ends):
+  - Try to send `{ type: "sdk.disconnect", reason: "pagehide" }` via
+    `WebSocket.send(...)`.
+  - Call `WebSocket.close(1000, "pagehide")` (1000 = normal closure).
+  - Don't await. The browser may close the socket before the message is
+    flushed. Best-effort.
+
+Why:
+- The gateway benefits from `sdk.disconnect`: it can unregister the cap
+  immediately instead of waiting for TCP timeout (which can be minutes).
+  During the timeout window, agents calling the cap get `HANDLER_TIMEOUT`.
+- Bfcache awareness is critical. LLM agents navigate "back" and "forward"
+  frequently; if we close on every pagehide, the connection dies on every
+  back-nav and has to reconnect.
+- We don't await the send because the browser won't wait. Best-effort is
+  the only honest framing.
+
+Rules out:
+- (B) close-without-message — gateway has to wait for TCP timeout.
+- (C) `navigator.sendBeacon` — HTTP POST, wrong transport.
+- Using `unload` instead of `pagehide` — deprecated, bfcache-unfriendly.
+- Awaiting the send before closing — browser won't wait, don't pretend.
+- Service Worker to persist connection across navigations — out of scope for v1.
+
+Source:
+- WHATWG HTML Living Standard — `pagehide` event, `PageTransitionEvent.persisted`
+  for bfcache.
+- WHATWG WebSocket — `close(code, reason)`, code 1000 normal closure.
+- T3 ticket sub-Q 3 (stated default matches).
+- Mirror in `agentide/docs/CONTEXT.md` Decisions Log: 2026-07-30 sdk-browser T3 Q3.
+
+### T3 / Q4 — Heartbeat (locked 2026-07-30)
+
+Question: which side initiates the liveness check?
+
+Answer:
+- **Server-initiated ping only; browser SDK unchanged.**
+- `backend-runtime` sends a protocol-level ping every 30s per socket.
+- Browser auto-pongs at the protocol layer (the browser's `WebSocket` API
+  handles ping/pong transparently — page JS never sees them).
+- If `backend-runtime` doesn't see a pong within 10s, it closes the socket
+  with code 1011 ("heartbeat timeout").
+- The browser fires a `close` event; the SDK's existing close handler
+  triggers the reconnect.
+- **Zero browser SDK code change.** Same mechanism works for sdk-node
+  (Node `ws` library also handles ping/pong transparently).
+
+Why:
+- The browser-side `WebSocket` API is special: it cannot observe ping/pong
+  at the JS layer, so "client-initiated" for the browser would have to mean
+  app-level wire messages.
+- `setTimeout`-based heartbeats in backgrounded tabs are exactly the kind of
+  thing that gets throttled, making them unreliable. The protocol-level ping
+  is the right tool.
+- One implementation in `backend-runtime`, two clients (sdk-node + sdk-browser)
+  benefit.
+
+Rules out:
+- (B) client-initiated app-level heartbeat — duplicates what the protocol
+  already does, more wire messages, less reliable in backgrounded tabs.
+- (C) both — over-engineering.
+- "No heartbeat" — silent dead-but-TCP-up connections are a real failure
+  mode; the gateway would never know.
+
+Source:
+- WHATWG WebSocket / RFC 6455 — protocol-level ping/pong, browser auto-pong.
+- Node `ws` library — `socket.ping()` server-side, transparent pong.
+- T3 ticket sub-Q 4.
+- Mirror in `agentide/docs/CONTEXT.md` Decisions Log: 2026-07-30 sdk-browser T3 Q4.
+
+---
+
+## T3 — Resolution summary (2026-07-30)
+
+All four sub-questions of T3 are locked. The lifecycle shape is:
+
+1. **Visibility (Q1):** Pause reconnect while tab is hidden; resume on
+   `visibilitychange` to "visible". Reconnect schedule (sdk-node's) gated
+   on visibility.
+2. **Online/Offline (Q2):** Treat socket as dead on `offline`; reset
+   backoff + fire reconnect immediately on `online`.
+3. **Page unload (Q3):** Best-effort `sdk.disconnect` on `pagehide`, then
+   `WebSocket.close(1000, "pagehide")`. Bfcache-aware: skip on
+   `event.persisted`.
+4. **Heartbeat (Q4):** Server-initiated protocol-level ping every 30s
+   from `backend-runtime`. Browser auto-pongs. 10s pong timeout → close
+   with code 1011. Zero browser SDK code change.
+
+T3 ticket is closable. Next: T4 (Frontend developer experience — prototype
+ticket, works differently from grilling).
+
+---
+
+## T6 — Package shape and dependencies (started 2026-08-01)
+
+Source: Wayfinder map #8 (sdk-browser), ticket T6 (package-shape-and-dependencies).
+
+### T6 / Q1 — Build output (HELD 2026-08-01 — not locked, pending T4)
+
+Question: should @platform/sdk-browser ship ESM-only, or ESM plus an IIFE
+bundle?
+
+Answer:
+- **HOLD — defer until T4 (Frontend developer experience prototype) runs.**
+  User chose option (B): hold this question until the T4 prototype runs.
+- T4 decides the install path (bundler `import` vs `<script>` tag). If T4
+  picks the `<script>` tag path, an IIFE bundle becomes a real follow-up
+  ticket; if bundler-only, ESM-only stands (mirroring sdk-node).
+
+Why:
+- Wayfinder map fog note: "Bundle vs ESM-only build — depends on T4 outcome;
+  if a `<script>` tag install path ships, a pre-bundled UMD/IIFE build
+  becomes a real ticket."
+- Locking ESM-only now would pre-empt T4's prototype or force a reopen;
+  shipping both from day one is speculative weight (extra build tooling,
+  dual entry points) for an install path that may not exist.
+- Rules out for now: (A) lock ESM-only immediately; (C) ship ESM + IIFE
+  from day one.
+
+Source: T6 ticket sub-Q 1; wayfinder map.md "Not yet specified" (Bundle vs
+ESM-only); sibling pack sdk-node `package.json` (`"type": "module"`,
+`exports` with `import` only). Reopens when T4 prototype completes; T6 Q2's
+`browser` field rides on this outcome.
+
+### T6 / Q2 — package.json exports (locked 2026-08-01)
+
+Question: what does the package.json `exports` field look like?
+
+Answer:
+- Lock the minimal config now, mirroring sdk-node:
+  - `"type": "module"`
+  - `"main": "dist/index.js"`, `"types": "dist/index.d.ts"`
+  - `"exports": { ".": { "types": "./dist/index.d.ts",
+    "import": "./dist/index.js" } }` — no `require` condition.
+- The `browser` field (re-pointing to a UMD/IIFE bundle) stays deferred
+  with Q1 — it only becomes real if T4 picks the `<script>` tag install
+  path, and it is a one-line addition, no rework of the ESM path.
+
+Why:
+- Browsers never `require()` — a `require` condition would invite CJS
+  interop bugs for zero users.
+- Minimal config now; one-line `browser` field later if T4 demands it.
+- Mirrors sibling pack sdk-node (`packages/sdk-node/package.json:6-14`).
+
+Source: T6 ticket sub-Q 2; sibling pack sdk-node `package.json:6-14`;
+T4 outcome (pending) drives the `browser` field.
+
+### T6 / Q3 — Dependencies (locked 2026-08-01)
+
+Question: which dependencies does the package carry?
+
+Answer:
+- Runtime dependencies: `@platform/event-bus` (`workspace:*`) only.
+- Type-only dependency: `@platform/backend-runtime` via tsconfig
+  `references` (for `BackendValue`) — same pattern as sdk-node, which
+  has no runtime dependency on backend-runtime either.
+- Dropped: `ws` (T5 Q4 lock — native WebSocket), `yaml` (T2 Q1 lock —
+  no manifest file, nothing to parse).
+- devDependencies: typescript, vitest, eslint, @typescript-eslint/parser,
+  @typescript-eslint/eslint-plugin (mirror sdk-node), plus **jsdom**
+  (first DOM-touching package in the monorepo).
+- No `@types/node`, no `@types/ws` — zero Node APIs in a browser package.
+- Supporting note: tsconfig must add `"lib": ["ES2022", "DOM",
+  "DOM.Iterable"]` — `tsconfig.base.json` has no `lib` (Node-only
+  packages don't need DOM types). `check-banned-types.sh` applies
+  unchanged (no `any`/`unknown` in non-test source).
+
+Why:
+- event-bus verified browser-safe: pure TS, zero external imports, uses
+  only `crypto.randomUUID()` and `Date.now()` — both browser-native
+  (event-bus `src/index.ts:113-114`, `:138-139`).
+- The 8-event surface parity with sdk-node (`sdk.connected`,
+  `sdk.disconnected`, `sdk.capability.{registered,unregistered,rejected}`,
+  `sdk.invoke.{started,completed,failed}`) rides on event-bus — dropping
+  it would force a new observability surface.
+- `ws` would drag Node-only `net`/`tls`/`buffer` modules into browser
+  bundles; `yaml` has nothing to read (the DOM is the manifest).
+- `BackendValue` type-only import mirrors sdk-node
+  (`packages/sdk-node/package.json` deps omit backend-runtime; its
+  tsconfig `references` it).
+- Verified: no jsdom/happy-dom config exists anywhere in the monorepo
+  today — sdk-browser is the first.
+- Rules out: (B) dropping event-bus for bare DOM CustomEvents — loses
+  lifecycle-event observability parity with sdk-node.
+
+Source: T6 ticket sub-Q 3; in-repo verification — event-bus src imports,
+`packages/event-bus/src/index.ts` (randomUUID/Date.now), `packages/backend-
+runtime/src/types.ts` (BackendValue), `packages/sdk-node/package.json`
+(deps), `tsconfig.base.json` (no `lib`), `scripts/check-banned-types.sh`;
+T5 Q4 + T2 Q1 locks.
+
+### T6 / Q4 — Test runner (locked 2026-08-01)
+
+Question: how do the DOM-touching tests run?
+
+Answer:
+- vitest + **jsdom**, activated per test file via the
+  `/** @vitest-environment jsdom */` docblock. Zero root config change.
+- Transport tests stub `WebSocket` via `vi.stubGlobal(...)` — jsdom has
+  no WebSocket implementation, and the SDK's transport is the one place
+  the real browser API matters.
+- Root `vitest.config.ts` stays untouched (single config, node
+  environment, `include: packages/*/src/**/*.test.ts` — verified).
+
+Why:
+- The root config is one file with no environment set; a per-package
+  config would force converting it to vitest `projects`, touching the
+  test setup of all existing packages.
+- jsdom covers every DOM API the SDK uses: `MutationObserver`,
+  `CustomEvent`, `closest()`, `visibilitychange`/`pagehide` event
+  plumbing.
+- `@vitest/browser` would need a real browser binary in CI — slower,
+  flakier, and overkill for v1.
+- The WebSocket stub is a ~30-line fake; it is a test fixture, not a
+  polyfill (T5 Q4 lock stands: no production fallback).
+- Rules out: (B) per-package config + `projects` conversion; (C)
+  `@vitest/browser` for v1.
+
+Source: T6 ticket sub-Q 4; `agentide/vitest.config.ts` (root, no
+environment); jsdom lacks WebSocket (documented limitation); T5 Q4 lock
+(no polyfill).
+
+### T6 / Q5 — Bundle size budget (locked 2026-08-01)
+
+Question: do we set a hard bundle size cap?
+
+Answer:
+- **No hard cap for v1.** Record a soft guideline instead: exactly one
+  runtime dependency (`@platform/event-bus`, ~440 lines of pure TS) and
+  ESM-only output, so consumers' bundlers tree-shake unused code.
+- If size ever becomes a problem, the check is easy to add later —
+  bundler + CI size check — but that is new tooling for a package that
+  does not have a size problem yet.
+
+Why:
+- The repo ships plain `tsc` dist today; a hard cap would force adding a
+  bundler (esbuild) + a CI gate — new tooling, new maintenance.
+- The discipline that matters is dependency count, already locked at one
+  runtime dep by Q3.
+- Rules out: (B) hard cap with CI enforcement now; (C) manual soft-budget
+  tracking (the README/ship-time note adds process without a number to
+  enforce).
+
+Source: T6 ticket sub-Q 5; Q3 lock (single runtime dep); sdk-node ships
+plain `tsc` dist (no bundler in the monorepo).
+
+### T6 — Resolution summary (2026-08-01)
+
+T6 (package shape and dependencies) is resolved:
+
+1. **Build output (Q1): HELD** — pending T4 prototype outcome. If T4
+   picks `<script>` tag install, an IIFE bundle becomes a follow-up
+   ticket; otherwise ESM-only stands.
+2. **exports (Q2):** `"type": "module"`, `main`/`types`/`exports` with
+   `import` condition only, no `require`. `browser` field rides on Q1.
+3. **Dependencies (Q3):** one runtime dep (`@platform/event-bus`), one
+   type-only dep (`backend-runtime` via tsconfig reference, `BackendValue`),
+   jsdom as dev-dep, no `@types/node`/`@types/ws`. tsconfig adds DOM lib.
+4. **Test runner (Q4):** vitest + jsdom via per-file
+   `/** @vitest-environment jsdom */` docblock; WebSocket stubbed in
+   transport tests via `vi.stubGlobal`; root config untouched.
+5. **Size budget (Q5):** no hard cap; soft guideline (one runtime dep,
+   ESM-only, tree-shaking).
+
+T6 ticket is closable (Q1 reopens when T4 prototype completes). Next per
+map sequence: T4 prototype + T7 boundary doc, then `delivery:
+feature-pipeline`.
+
+---
+
+## T4 — Frontend developer experience (decisions 2026-08-01)
+
+Source: Wayfinder map #8 (sdk-browser), ticket T4
+(frontend-developer-experience, prototype type). Artifact:
+`prototypes/sdk-browser-dev-experience/` (Playwright-verified, 4/4).
+
+### T4 / D1 — Canonical install path (locked 2026-08-01)
+
+Question: which shape becomes the canonical v1 install — Shape A (bundler
+import), Shape B (`<script>` tag), or both?
+
+Answer:
+- **Shape A only for v1** — `npm install @platform/sdk-browser` +
+  `import { createSdk } from '@platform/sdk-browser'`. Bundler
+  (Vite/webpack/Rollup) resolves the bare specifier.
+- The `<script>` tag / IIFE path is deferred to a v1.1 follow-up ticket
+  with a named trigger: a real no-bundler consumer shows up.
+- **This resolves T6 Q1 (was HELD):** build output = ESM-only. No IIFE
+  build, no `browser` field in v1.
+
+Why:
+- The prototype proved both shapes run identical dev code
+  (`demo-doc.js` + `sdk-core.js` shared) — the decision is install-only,
+  and A matches the modern default, mirrors sdk-node's install model,
+  and needs exactly one build (T6 Q2 already locked ESM-only).
+- B would add a second build + CDN hosting + a global namespace
+  (`PlatformSdk`) for an unproven path; C doubles packaging from day one.
+- Evolution model: v1 covers the 95% case; each deferred surface has a
+  named trigger (see GRILL T4 D1 discussion — v2 items table).
+- Rules out: (B) script-tag canonical; (C) both from day one.
+
+Source: T4 ticket sub-questions; prototype README comparison
+(`prototypes/sdk-browser-dev-experience/README.md`); T6 Q1 HELD entry
+(above); sdk-node install model (npm + config + connect).
+
+### T4 / D2 — Framework helpers (locked 2026-08-01)
+
+Question: do framework-native helpers (`useSdk()` for React, composable
+for Vue, store for Svelte) ship in v1?
+
+Answer:
+- **No. Punt all framework helpers to v2.** v1 is framework-agnostic:
+  `createSdk()` + the 8 lifecycle events + `onStateChange()`.
+- Trigger to revisit: the first framework team that adopts sdk-browser
+  and asks for the shortcut — then add that one framework's helper.
+
+Why:
+- The plain `createSdk()` setup is ~15 lines and works in any framework;
+  helpers are thin wrappers saving ~10 lines.
+- Each helper is a new maintained surface with framework-specific traps
+  (hooks lifecycle, SSR, stale state) — three implementations, three
+  test matrices, zero named customers.
+- Same deferral pattern as every other v2 item: add when someone needs
+  it, not before.
+- Rules out: (B) React-only `useSdk()` in v1; (C) all three in v1.
+
+Source: T4 ticket "What I don't know" (framework helpers); v2-deferral
+pattern across T1/T2/T3 grills.

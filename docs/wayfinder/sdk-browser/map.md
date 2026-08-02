@@ -2,7 +2,7 @@
 
 > **Map title:** sdk-browser — finding the way to a shipped `@platform/sdk-browser`.
 >
-> **Status:** charting complete (2/7 tickets closed, 5 open). Live tracker: this issue + the 7 child ticket issues.
+> **Status:** charting complete (5/7 tickets closed, 2 open). Live tracker: this issue + the 7 child ticket issues.
 
 ## Destination
 
@@ -50,17 +50,19 @@ Refer by ticket name; the GitHub issue number rides inside the name.
 |---|---|---|---|
 | 1 | Capability surface and UI state | `grilling` ✅ closed | (—) |
 | 2 | Manifest and handler transport in browser | `grilling` ✅ closed | T4 |
-| 3 | Browser-aware reconnect and lifecycle | `grilling` | (run) |
-| 4 | Frontend developer experience | `prototype` | — |
-| 5 | WebSocket transport details | `grilling` | T3 |
-| 6 | Package shape and dependencies | `grilling` | (run) |
+| 3 | Browser-aware reconnect and lifecycle | `grilling` ✅ closed | — |
+| 4 | Frontend developer experience | `prototype` | (run) |
+| 5 | WebSocket transport details | `grilling` ✅ closed | T3 |
+| 6 | Package shape and dependencies | `grilling` ✅ closed | (run) |
 | 7 | sdk-browser and browser-runtime boundary doc | `task` | — |
 
 **Worked sequence** (when no parallel sessions are running):
-~~T1~~ → ~~T2~~ → (T5) → (T4, T3 in parallel) → T6 → T7 →
+~~T1~~ → ~~T2~~ → ~~T5~~ → ~~T3~~ → ~~T6~~ → (T4 prototype) → T7 →
 `delivery: feature-pipeline`.
 
-**Frontier this turn:** T5 only (T1 and T2 closed; T5 unblocked and ready to claim).
+**Frontier this turn:** T4 (prototype — different shape: artifact-based
+not grilling) and T7 (task). T6 closed 2026-08-01; its Q1 (build output)
+reopens when the T4 prototype picks an install path.
 
 ## Decisions so far
 
@@ -83,15 +85,63 @@ Refer by ticket name; the GitHub issue number rides inside the name.
   fan-out CustomEvent on every annotated element; dev's listener filters by
   input match (delegated listener on `document` with `e.target.closest()`).
 
+- [**WebSocket transport details**](tickets/websocket-transport-details.md)
+  (T5, closed 2026-07-30) — auth transport = first-message body
+  `{ type: "sdk.auth", token }` after `onopen`, identical to sdk-node (the
+  server's `isAuthMessage` only inspects the body anyway — sdk-node's
+  `Authorization` header is silently dropped). **Permanent origin binding:**
+  every browser SDK token MUST carry a signed `expectedOrigins: string | string[]`
+  JWT claim; `backend-runtime` reads the claim after `verifyToken` succeeds and
+  closes with code 1008 on mismatch (with `*.subdomain` wildcard support);
+  mandatory, no opt-out. JWT forwarding to handlers = verbatim via
+  `e.detail.ctx.token`, mirroring sdk-node. Transport = `globalThis.WebSocket`
+  only, no polyfill, no fallback (every browser since 2011 has it; `ws` is
+  Node-only and would not work in browsers).
+
+- [**Browser-aware reconnect and lifecycle**](tickets/browser-aware-reconnect-and-lifecycle.md)
+  (T3, closed 2026-07-30) — **Visibility:** pause reconnect while tab is
+  hidden; resume immediately on `visibilitychange` to "visible". Same
+  backoff curve as sdk-node, gated on visibility. **Online/Offline:** mark
+  socket dead on `offline` (clear pending reconnect timer); on `online` reset
+  backoff and fire reconnect immediately (skip the stale backoff schedule).
+  **Page unload:** best-effort `sdk.disconnect` on `pagehide` then
+  `WebSocket.close(1000, "pagehide")`; bfcache-aware — skip on
+  `event.persisted`. **Heartbeat:** server-initiated protocol-level ping
+  every 30s from `backend-runtime`; browser auto-pongs; 10s pong timeout →
+  close with code 1011. **Zero browser SDK code change for heartbeat** —
+  the protocol layer handles it; the SDK's existing close handler triggers
+  the existing reconnect.
+
+- [**Package shape and dependencies**](tickets/package-shape-and-dependencies.md)
+  (T6, closed 2026-08-01) — **Build output (Q1): HELD** pending T4
+  prototype; IIFE becomes a follow-up ticket only if T4 picks `<script>`
+  tag install, otherwise ESM-only stands. **exports (Q2):** `"type":
+  "module"`, `import` condition only, no `require`; `browser` field rides
+  on Q1. **Dependencies (Q3):** one runtime dep (`@platform/event-bus`),
+  type-only `backend-runtime` ref for `BackendValue`, jsdom dev-dep, no
+  `@types/node`/`@types/ws`; tsconfig adds DOM lib. **Test runner (Q4):**
+  vitest + jsdom per-file docblock, WebSocket stubbed in transport tests,
+  root config untouched. **Size budget (Q5):** no hard cap; soft guideline
+  (one runtime dep, ESM-only). Full record in the GRILL + CONTEXT.md
+  Decisions Log.
+
+- [**Frontend developer experience**](tickets/frontend-developer-experience.md)
+  (T4, prototype) — **D1 locked 2026-08-01:** canonical v1 install =
+  Shape A (bundler import, ESM); IIFE/CDN deferred to v1.1 follow-up
+  ticket (trigger: real no-bundler consumer). Resolves T6 Q1 → ESM-only,
+  no `browser` field in v1. Prototype artifact:
+  `prototypes/sdk-browser-dev-experience/` (Playwright-verified 4/4).
+  **D2 locked 2026-08-01:** no framework helpers in v1 (punt to v2;
+  trigger = first framework team asks). D3 (connection-state surface)
+  pending.
+
 ## Not yet specified
 
 Fog I can tell is coming but can't ticket yet:
 
-- **Failure modes on tab unload** — same HANDLER_TIMEOUT / SDK_UNREACHABLE mapping
-  as sdk-node, but tab-unload-specific edge cases (cancel all pending?
-  suppress reconnect on intentional close?) graduate once T3 closes.
-- **Bundle vs ESM-only build** — depends on T4 outcome; if a `<script>` tag install
-  path ships, a pre-bundled UMD/IIFE build becomes a real ticket.
+- **Bundle vs ESM-only build** — RESOLVED 2026-08-01 (T4 D1): ESM-only
+  for v1 (Shape A canonical install). IIFE/CDN path is a v1.1 follow-up
+  ticket, trigger = a real no-bundler consumer.
 - **Service Worker considerations** — persistent WebSocket across navigations and
   push-style capability calls. Out of scope for v1 likely, but worth re-flagging
   if either T1 or T4 expands.
@@ -100,10 +150,9 @@ Fog I can tell is coming but can't ticket yet:
 - **Window/tab boundedness** — one SDK instance per tab? per session within a tab?
   What if multiple tabs register from the same app? Per-tab tokens vs shared.
   Specifiable, but I want T1 first to see if "UI state" / multi-tab are separate
-  concerns or one.
-- **CORS config templates** — once T5 locks transport, infra has to play along.
-  Self-hosted operators configure the WebSocket adapter to allow cross-origin.
-  Cross-ticket with future WebSocket-adapter pack; not a blocker for v1.
+  concerns or one. *(T5 Q2 closed the cross-origin replay concern via token-bound
+  `expectedOrigins`. This is a different concern — about tab-boundedness, not
+  origin-boundedness. Still open.)*
 
 ## Out of scope
 

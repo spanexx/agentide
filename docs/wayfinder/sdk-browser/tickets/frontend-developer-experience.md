@@ -1,7 +1,7 @@
 # Frontend developer experience
 
 **Type:** `wayfinder:prototype` (HITL)
-**Status:** open
+**Status:** open (D1 locked; D2 + D3 pending)
 **Blocks:** — (the prototype, once approved, becomes part of the IMPL phases
 not a successor ticket).
 
@@ -50,3 +50,20 @@ dev-experience shape. Build a rough prototype, link it as an asset, iterate.
 - the chosen install path (or both);
 - whether framework-native helpers ship in v1 or punt;
 - a verification note pointing to the chosen shape's implementation file.
+
+## Locked so far
+
+- **D1 (2026-08-01):** canonical v1 install = **Shape A (bundler import,
+  ESM)** — `npm install @platform/sdk-browser` + `import { createSdk }
+  from '@platform/sdk-browser'`. `<script>` tag / IIFE deferred to a v1.1
+  follow-up ticket (trigger: real no-bundler consumer). Resolves T6 Q1 →
+  ESM-only, no `browser` field in v1.
+  - Artifact: `prototypes/sdk-browser-dev-experience/` (index.html,
+    shape-a.html, shape-b.html, README.md). Verification:
+    `tests/t4.spec.cjs` — shape-a lifecycle test passes (Playwright CLI,
+    4/4). Chosen shape's implementation file: `shape-a.html` (import map
+    resolves `@platform/sdk-browser` → `sdk-browser.esm.js` → shared
+    `sdk-core.js`).
+- **D2 (framework helpers):** locked 2026-08-01 — none in v1; punt to
+  v2 (trigger: first framework team asks).
+- **D3 (connection-state surface):** pending.
