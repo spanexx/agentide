@@ -349,6 +349,15 @@ Answer:
   - Don't await. The browser may close the socket before the message is
     flushed. Best-effort.
 
+AMENDED 2026-08-02 (reconcile, see drift.md D-37): the implementation
+(`packages/sdk-browser/src/lifecycle.ts:38-44`) sends the close frame only
+(`close(1000, "pagehide")` via `client.disconnect("pagehide")`) and does NOT
+try-send the `{ type: "sdk.disconnect", reason: "pagehide" }` wire message.
+Rationale: nothing server-side consumes `sdk.disconnect` (backend-runtime has
+no handler; sdk-node sends none), PRD-TRD Scenario 9 wording matches the code,
+and the close frame is the effective signal. The verbatim answer above stands
+as the original decision; the drift log records the divergence.
+
 Why:
 - The gateway benefits from `sdk.disconnect`: it can unregister the cap
   immediately instead of waiting for TCP timeout (which can be minutes).

@@ -21,7 +21,9 @@ export interface SdkConnectedPayload {
 }
 
 // CID:events-002 - SdkDisconnectedPayload
-// reason: "deliberate" | "pagehide" | "offline" | "origin-mismatch" | "drop"
+// reason: "deliberate" | "pagehide" | "offline" | "origin-mismatch"
+// (a network drop never surfaces here — the socket goes to "reconnecting"
+// and onDisconnected is not called until the close is terminal).
 export interface SdkDisconnectedPayload {
   readonly appId: string;
   readonly reason: string;

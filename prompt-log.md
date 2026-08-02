@@ -88,3 +88,9 @@ Wayfinder work-through: sdk-browser map (frontier T4 prototype / T7 task). Conti
 Wayfinder work-through with ticket: T7 "sdk-browser and browser-runtime boundary doc" (task). Continue from map.md, resolve next decision ticket.
 
 ---
+
+## 2026-08-02 06:56:16 | source: feature-pipeline:sdk-browser (review)
+
+Fresh-eyes drift review of sdk-browser pack: compare PRD-TRD + IMPL docs vs code + post-impl sim; verify the 1→0 unregister fix (CapRegistry.isRegistered + syncRegistration view); run tests (61) and sim (10/10); check GRILL T1-T7, bus events, file sizes; write gap report to .reports/.
+
+---

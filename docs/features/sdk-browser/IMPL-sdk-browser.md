@@ -111,3 +111,11 @@ New package, additive — no migration. Wire into `pnpm-workspace.yaml` if not a
 - jsdom lacks `navigator.onLine` mutation — offline/online tests dispatch synthetic `offline`/`online` events and mock the flag.
 - `pagehide` doesn't exist in jsdom — fire synthetic `PageTransitionEvent`-ish `pagehide` on `window`.
 - Origin mismatch (1008) arrives as `close` with code — must clear reconnect timer (zombie-reconnect bug class found in pre-impl sim; see `simulate-pre.html`).
+
+## Open Drift Items (carried forward)
+
+From the [drift review](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/.reports/20260802-0659-drift-sdk-browser.md) — all resolved at reconcile 2026-08-02, none open:
+
+- **D-37** — GRILL T3 Q3 wire-message `sdk.disconnect` vs close-only code; GRILL amended, accepted (drift.md).
+- **D-38** — post-impl sim placement `packages/agentide/scripts/simulate-sdk-browser.mjs` (Node ESM, D-33/D-34 precedent); accepted (drift.md).
+- **D-39** — two naming nits (test name at `index.test.ts:297`, `events.ts:24` comment listing a non-emitted "drop" reason); fixed during reconcile.

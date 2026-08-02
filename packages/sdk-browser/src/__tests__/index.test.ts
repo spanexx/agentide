@@ -294,7 +294,7 @@ describe("wire invoke → fan-out → reply (T2 Q5)", () => {
 });
 
 describe("register.error routing", () => {
-  it("does not crash and leaves the capability unregistered in state", () => {
+  it("does not crash and leaves the capability registered in state", () => {
     annotate(`<button data-sdk-cap="shop.cart.add">A</button>`);
     sdk = createSdk({ gateway: GATEWAY, appId: "app-1", token: TOKEN });
     sdk.connect();
