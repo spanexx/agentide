@@ -3,8 +3,9 @@
 > **Map title:** browser-runtime — finding the way to a shipped
 > `@platform/browser-runtime` Runtime Plugin.
 >
-> **Status:** charting complete (6/7 tickets closed). Live tracker:
-> this file + the 7 child ticket files.
+> **Status:** charting complete (7/7 tickets closed). Way is clear
+> → next: `delivery: feature-pipeline` for the package build.
+> Live tracker: this file + the 7 child ticket files.
 
 ## Destination
 
@@ -82,9 +83,10 @@ happens via `delivery: feature-pipeline` once the way is clear.
 | 4 | sdk-browser coupling after navigate | `grilling` ✅ closed | — |
 | 5 | BrowserContext suspend/resume | `grilling` ✅ closed | — |
 | 6 | browser.wait semantics | `grilling` ✅ closed | — |
-| 7 | Human observability in v1 | `prototype` | — |
+| 7 | Human observability in v1 | `prototype` ✅ closed | — |
 
-**Frontier (open + unblocked):** Human observability in v1 (T7).
+**Frontier (open + unblocked):** none — all tickets closed; the way
+is clear. Route: feature-pipeline for the package build.
 
 ## Decisions so far
 
@@ -155,6 +157,21 @@ happens via `delivery: feature-pipeline` once the way is clear.
   timeout interplay. Timeout → error `BROWSER_WAIT_TIMEOUT`,
   `retryable: true`; final error codes named in Capability contracts
   (T2).
+
+- [**Human observability in v1**](tickets/human-observability-in-v1.md)
+  (T7, closed 2026-08-02, resolved autonomously — user delegated
+  with review; prototype built at
+  `prototypes/browser-runtime-human-observability/`, 3 shapes) —
+  v1 ships **shape A: The window** — human observability = headed
+  mode (T1 mode pool) + screenshot-on-demand (T3 cap); zero new
+  surface. No snapshot console (dashboard sentence → BI[13]), no
+  event surface (console/nav/pageerror feed = BI[13]'s logs). Both
+  human and agent use the same `browser.*` caps; the human path adds
+  a headed window. Streaming/recording/remote-viewing/event
+  persistence/cross-session views → dashboard-core (BI[13]); Chrome
+  DevTools (#14) stays out. Remaining fog (binary management,
+  concurrency, crash recovery, proxy) rides into the feature-pipeline
+  GRILL.
 
 ## Not yet specified
 
