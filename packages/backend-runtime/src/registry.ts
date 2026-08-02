@@ -1,8 +1,12 @@
 /*
- * Code Map: ConnectionRegistry — appId-keyed map of connected SDKs
- * - accept: register a new connection; replace prior connection for the same appId
+ * Code Map: ConnectionRegistry — connection-keyed map of connected SDKs
+ * - accept: register a new connection; replace prior connection for the same key
  *   (closes the prior socket; emits nothing — the caller decides what to publish)
  * - get / remove / count / entries / clear: lookup primitives
+ *
+ * The connection key is `appId` for SDKs without a tabId (sdk-node) and
+ * `appId:tabId` for browser SDKs (drift D-43) — two tabs of the same app
+ * are distinct connections instead of evicting each other.
  *
  * Pure in-memory store. No timers, no events. Server.ts composes this with
  * ws.Server + event publishing.
@@ -23,17 +27,21 @@ export class ConnectionRegistry {
 
   /**
    * CID:registry-001 - accept
-   * Register a new connection for `appId`. If a connection is already registered
-   * for the same `appId`, the prior connection's socket is closed and the prior
-   * BackendConnection is returned (so the caller can decide whether to publish a
-   * `closed` event). If no prior connection existed, returns null.
+   * Register a new connection for `appId` (optionally scoped by `tabId` —
+   * drift D-43: the connection key is `appId` when tabId is null, otherwise
+   * `appId:tabId`, so two tabs of the same app are distinct connections).
+   * If a connection is already registered for the same key, the prior
+   * connection's socket is closed and the prior BackendConnection is returned
+   * (so the caller can decide whether to publish a `closed` event). If no
+   * prior connection existed, returns null.
    * The new connection becomes the active one.
    * Defensive: a close() throw does not propagate — the registry stays consistent.
    *
    * `connectedAt` is set to `clock.now()` at accept time.
    */
-  accept(appId: string, socket: WebSocketLike, clock: Clock): BackendConnection | null {
-    const previous = this.map.get(appId) ?? null;
+  accept(appId: string, tabId: string | null, socket: WebSocketLike, clock: Clock): BackendConnection | null {
+    const key = tabId === null ? appId : `${appId}:${tabId}`;
+    const previous = this.map.get(key) ?? null;
     if (previous) {
       try {
         previous.socket.close();
@@ -43,11 +51,12 @@ export class ConnectionRegistry {
     }
     const conn: BackendConnection = {
       appId,
+      tabId,
       connectedAt: clock.now(),
       capabilities: [],
       socket,
     };
-    this.map.set(appId, conn);
+    this.map.set(key, conn);
     return previous;
   }
 

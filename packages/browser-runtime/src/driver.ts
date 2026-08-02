@@ -6,33 +6,30 @@
  * (driver-first rule, T1): handlers and session only ever see plain
  * JSON shapes and numeric tab ids.
  *
- * Key patterns (opensrc-verified against playwright-core@1.62.1 types
- * + coreBundle): chromium.launch (headless default true),
- * browser.on('disconnected') (the Q4 crash signal), browser.newContext
- * (one context per session, T1), page.evaluate (DOM-read settle F11),
- * page.locator(sel).nth(i) for instance addressing (F8).
+ * Cross-module helpers (split out per drift DR-BR-11, 350-line rule):
+ *   - address.ts — F8 `resolveLocator` + in-page `computeAddressesForSelector`
+ *   - tier.ts    — `tierFromName` for the DOM-read caps inference
+ *   - cdp.ts     — `cdpKillBrowser` for the Q4 crash-simulation seam
  *
- * CID Index:
- * CID:driver-001 -> createDriver
- * CID:driver-002 -> ensureAlive
- * CID:driver-003 -> resolveLocator
+ * Key patterns (opensrc-verified against playwright-core@1.62.1):
+ * chromium.launch (headless default true), browser.on('disconnected')
+ * (Q4 crash signal), browser.newContext (one context per session, T1),
+ * page.evaluate (DOM-read settle F11), page.locator(sel).nth(i) (F8).
  *
+ * CID Index: CID:driver-001 -> createDriver; CID:driver-002 -> ensureAlive
  * Quick lookup: rg -n "CID:driver-" packages/browser-runtime/src/driver.ts
  */
 
 import { chromium } from "playwright-core";
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import { writeFile } from "node:fs/promises";
-import type {
-  BrowserDriver,
-  CapabilitySnapshot,
-  SessionState,
-  TabState,
-} from "./types.js";
+import type { BrowserDriver, CapabilitySnapshot, SessionState, TabState } from "./types.js";
 import { BROWSER_ERROR_CODES, BrowserError } from "./types.js";
+import { computeAddressesForSelector, resolveLocator } from "./address.js";
+import { cdpKillBrowser } from "./cdp.js";
+import { tierFromName } from "./tier.js";
 
-/** Non-serializable refs the driver owns privately (kept OUT of
- * SessionState so that stays plain data, driver-first). */
+/** Non-serializable refs the driver owns privately (kept OUT of SessionState so that stays plain data, driver-first). */
 interface DriverRefs {
   browser: Browser;
   context: BrowserContext;
@@ -261,44 +258,7 @@ export function createDriver(
       const page = tabPage(tabId);
       const matches = await page.locator(selector).count();
       if (matches === 0) return { matches: 0, addresses: [] };
-      const addresses = await page.evaluate(
-        ([sel]) => {
-          const els = document.querySelectorAll(sel);
-          const out: string[] = [];
-          for (const el of els) {
-            // F8: address is reusable verbatim as a selector. If the
-            // element itself carries a data-* attr -> `tag[attr]`;
-            // otherwise climb to the first data-* ancestor and emit
-            // `ancestorTag[attr] ${sel}`.
-            let anchor: Element | null = el;
-            let attr: string | null = null;
-            while (anchor !== null && anchor !== document.body.parentElement) {
-              for (const a of anchor.attributes) {
-                if (a.name.startsWith("data-")) {
-                  attr = `${a.name}="${a.value}"`;
-                  break;
-                }
-              }
-              if (attr !== null) break;
-              anchor = anchor.parentElement;
-            }
-            if (attr !== null && anchor !== null && anchor === el) {
-              out.push(`${anchor.tagName.toLowerCase()}[${attr}]`);
-            } else if (attr !== null && anchor !== null) {
-              out.push(`${anchor.tagName.toLowerCase()}[${attr}] ${sel}`);
-            } else {
-              // data-less element: nth-of-type within its parent so the
-              // address stays reusable (capability-contracts F8)
-              const tag = el.tagName.toLowerCase();
-              const siblings = Array.from(el.parentElement?.children ?? []);
-              const nth = siblings.filter((s) => s.tagName.toLowerCase() === tag).indexOf(el) + 1;
-              out.push(`${tag}:nth-of-type(${nth})`);
-            }
-          }
-          return out;
-        },
-        [selector] as const,
-      );
+      const addresses = await page.evaluate(computeAddressesForSelector, selector);
       return { matches, addresses };
     },
 
@@ -373,92 +333,10 @@ export function createDriver(
     },
 
     // ----------------------------------------------------------------- kill
-    // Q4 test/ops seam: force-kill the browser process (crash
-    // simulation). SIGKILL via CDP SystemInfo.getProcessInfo ->
-    // 'disconnected' fires -> state.dead, onDead. playwright-core 1.62
-    // dropped Browser.process(), so the pid comes from CDP.
+    // Q4 test/ops seam: CDP-driven SIGKILL (cdp.ts). The resulting
+    // `disconnected` event marks the session dead.
     async kill() {
-      if (refs === null) return;
-      try {
-        const session = await refs.browser.newBrowserCDPSession();
-        const info = (await session.send("SystemInfo.getProcessInfo")) as {
-          processInfo: Array<{ type: string; id: number }>;
-        };
-        await session.detach().catch(() => {});
-        const browserProc = info.processInfo.find((p) => p.type === "browser");
-        if (browserProc !== undefined) {
-          process.kill(browserProc.id, "SIGKILL");
-        }
-      } catch {
-        // already dead — nothing to kill
-      }
+      await cdpKillBrowser(refs?.browser ?? null);
     },
   };
-}
-
-// CID:driver-003 - resolveLocator
-// Purpose: 1-based instance addressing (F8). >1 match without instance
-//   -> AMBIGUOUS; 0 matches -> NOT_FOUND (retryable). Waits briefly for
-//   the selector to appear (SELECTOR_TIMEOUT on cap).
-// Uses: playwright Page.locator (async — count() is a Promise)
-// Used by: click/type/scroll
-async function resolveLocator(
-  page: Page,
-  selector: string,
-  instance: number | undefined,
-): Promise<ReturnType<Page["locator"]>> {
-  const count = await page.locator(selector).count();
-  if (count === 0) {
-    throw new BrowserError(
-      BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND,
-      `selector "${selector}" not found`,
-      { selector },
-      true,
-    );
-  }
-  if (count > 1 && instance === undefined) {
-    throw new BrowserError(
-      BROWSER_ERROR_CODES.SELECTOR_AMBIGUOUS,
-      `selector "${selector}" matches ${count} elements; pass instance (1-based)`,
-      { selector, matches: count },
-    );
-  }
-  const idx = instance === undefined ? 0 : instance - 1;
-  if (idx >= count) {
-    throw new BrowserError(
-      BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND,
-      `selector "${selector}" has no instance ${instance}`,
-      { selector, matches: count, instance: instance ?? null },
-      true,
-    );
-  }
-  return page.locator(selector).nth(idx);
-}
-
-// CID:driver-004 - tierFromName
-// Purpose: DOM read only sees cap names; tier inferred via the shipped
-//   verb tables (same semantics as plugin-manager tier-convention).
-// Uses: verb sets (mirror of tier-convention.ts)
-// Used by: readCaps; exported for manifest tests (browser-runtime stays
-//   independent of plugin-manager).
-const READ_VERBS = new Set(["read", "list", "get", "view", "show", "describe", "fetch", "query", "count", "is", "has"]);
-const ACT_VERBS = new Set([
-  "write", "set", "put", "create", "update", "edit", "patch", "append", "push",
-  "post", "send", "open", "close", "start", "stop", "restart", "pause", "resume",
-  "navigate", "goto", "click", "doubleclick", "hover", "type", "press", "select",
-  "scroll", "wait", "upload", "download", "run", "exec", "execute", "install",
-  "enable", "disable", "reload", "touch", "move", "copy", "rename",
-]);
-const DESTRUCTIVE_VERBS = new Set([
-  "delete", "remove", "drop", "destroy", "purge", "wipe", "reset", "clear",
-  "truncate", "commit", "merge", "rebase", "push", "checkout",
-]);
-
-export function tierFromName(name: string): "read" | "act" | "destructive" {
-  const parts = name.split(".");
-  const verb = (parts[parts.length - 1] ?? "").toLowerCase();
-  if (READ_VERBS.has(verb)) return "read";
-  if (ACT_VERBS.has(verb)) return "act";
-  if (DESTRUCTIVE_VERBS.has(verb)) return "destructive";
-  return "act"; // sdk-browser defaultTier
 }

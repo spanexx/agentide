@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import { tierFromName } from "../driver.js";
+import { tierFromName } from "../tier.js";
 
 const manifestPath = fileURLToPath(new URL("../../manifest.yaml", import.meta.url));
 

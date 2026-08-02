@@ -17,6 +17,12 @@ export interface SdkOptions {
   appId: string;
   /** JWT whose signed claims include `expectedOrigins` (origin binding, GRILL T5 Q2). */
   token: string;
+  /**
+   * Per-page-instance identifier (drift D-43). When omitted, a unique id is
+   * auto-generated so two tabs of the same app stay distinguishable at the
+   * Gateway instead of evicting each other.
+   */
+  tabId?: string;
   /** Root element to observe; defaults to `document.body`. */
   observeRoot?: Element;
   /** Default permission tier for discovered capabilities; defaults to `"act"`. */

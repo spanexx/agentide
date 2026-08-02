@@ -82,7 +82,7 @@ describe("InvocationDispatcher", () => {
   it("success: SDK echoes sdk.invoke.result, payload is returned", async () => {
     const { clock, registry, dispatcher } = setup();
     const sock = fakeSocket();
-    registry.accept("app", sock as never, clock);
+    registry.accept("app", null, sock as never, clock);
 
     const promise = dispatcher.dispatchInvocation(
       "backend-sdk-app",
@@ -112,7 +112,7 @@ describe("InvocationDispatcher", () => {
   it("HANDLER_ERROR maps to GATEWAY_INTERNAL_ERROR", async () => {
     const { clock, registry, dispatcher } = setup();
     const sock = fakeSocket();
-    registry.accept("app", sock as never, clock);
+    registry.accept("app", null, sock as never, clock);
 
     const promise = dispatcher.dispatchInvocation(
       "backend-sdk-app",
@@ -134,7 +134,7 @@ describe("InvocationDispatcher", () => {
   it("HANDLER_NOT_FOUND maps to GATEWAY_CAPABILITY_NOT_FOUND", async () => {
     const { clock, registry, dispatcher } = setup();
     const sock = fakeSocket();
-    registry.accept("app", sock as never, clock);
+    registry.accept("app", null, sock as never, clock);
 
     const promise = dispatcher.dispatchInvocation(
       "backend-sdk-app",
@@ -155,7 +155,7 @@ describe("InvocationDispatcher", () => {
   it("unknown SDK error code maps to GATEWAY_INTERNAL_ERROR", async () => {
     const { clock, registry, dispatcher } = setup();
     const sock = fakeSocket();
-    registry.accept("app", sock as never, clock);
+    registry.accept("app", null, sock as never, clock);
 
     const promise = dispatcher.dispatchInvocation(
       "backend-sdk-app",
@@ -176,7 +176,7 @@ describe("InvocationDispatcher", () => {
   it("handler times out -> GATEWAY_HANDLER_TIMEOUT", async () => {
     const { clock, registry, dispatcher } = setup(5_000);
     const sock = fakeSocket();
-    registry.accept("app", sock as never, clock);
+    registry.accept("app", null, sock as never, clock);
 
     const promise = dispatcher.dispatchInvocation(
       "backend-sdk-app",
@@ -199,7 +199,7 @@ describe("InvocationDispatcher", () => {
     const { clock, registry, dispatcher } = setup();
     const sock = fakeSocket();
     sock.throwOnNextSend = new Error("socket died");
-    registry.accept("app", sock as never, clock);
+    registry.accept("app", null, sock as never, clock);
 
     const promise = dispatcher.dispatchInvocation(
       "backend-sdk-app",
@@ -245,7 +245,7 @@ describe("InvocationDispatcher", () => {
   it("rejectAllPending rejects every pending callId for the appId with SDK_UNREACHABLE", async () => {
     const { clock, registry, dispatcher } = setup();
     const sock = fakeSocket();
-    registry.accept("app", sock as never, clock);
+    registry.accept("app", null, sock as never, clock);
 
     const p1 = dispatcher.dispatchInvocation("backend-sdk-app", "a", {}, undefined);
     const p2 = dispatcher.dispatchInvocation("backend-sdk-app", "b", {}, undefined);
@@ -262,8 +262,8 @@ describe("InvocationDispatcher", () => {
     const { clock, registry, dispatcher } = setup();
     const sockA = fakeSocket();
     const sockB = fakeSocket();
-    registry.accept("appA", sockA as never, clock);
-    registry.accept("appB", sockB as never, clock);
+    registry.accept("appA", null, sockA as never, clock);
+    registry.accept("appB", null, sockB as never, clock);
 
     const pA = dispatcher.dispatchInvocation("backend-sdk-appA", "x", {}, undefined);
     const pB = dispatcher.dispatchInvocation("backend-sdk-appB", "y", {}, undefined);

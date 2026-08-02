@@ -1,7 +1,11 @@
 # IMPL: Browser Runtime
 
 **Slug:** browser-runtime
-**Status:** Draft
+**Status:** Shipped 2026-08-02
+**Drift report:** .reports/20260802-155253-drift-browser-runtime.md
+**Tests:** 31/31 pass (`npx vitest run packages/browser-runtime`)
+**Post-impl sim:** docs/features/browser-runtime/simulate.html (9 scenarios + demo mode)
+**Source layout:** driver.ts (345) + address.ts (111) + cdp.ts (45) + tier.ts (46) + session.ts/snapshot.ts/handlers.ts/errors.ts/lifecycle.ts/index.ts/types.ts
 **Date:** 2026-08-02
 
 ## Phase Plan
@@ -303,7 +307,9 @@ is authoritative.
 - Phase 4 settle timing: stability re-read must use short bounded waits
   to keep navigate latency sane (target <2s on typical pages).
 - D-40 (sdk-browser register bug) is OUT of scope — DOM-read settle is
-  immune by design; do NOT fix sdk-browser in this pack.
+  immune by design; do NOT fix sdk-browser in this pack. (Resolved later
+  same day as a follow-up fix: sdk-browser sendRegister full frame; see
+  docs/drift.md D-40.)
 - `<350 lines/file` rule: split driver/session/handlers/snapshot/
   lifecycle/errors; handlers.ts may need splitting by phase if it
   grows (interactions vs navigation).

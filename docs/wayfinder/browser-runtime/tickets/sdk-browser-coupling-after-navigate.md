@@ -56,7 +56,8 @@ capability list, or does the agent discover separately?
   Zero shipped-package changes; naturally per-tab; immune to the
   sdk-browser register-frame bug (drift D-40: name-only register frame
   fails registry validation → register-failed close — caps never reach
-  the gateway; the DOM is the ground truth). On timeout → return what's
+  the gateway; the DOM is the ground truth; D-40 FIXED 2026-08-02 as a
+  follow-up (sdk-browser full register frame, docs/drift.md)). On timeout → return what's
   registered so far with `capsSettled: false`. No fixed-delay guessing,
   no unbounded block.
 - **Timeout is not an error.** `{ tabId, url, capabilities: [],

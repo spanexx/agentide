@@ -1,12 +1,13 @@
 /*
  * Code Map: InvocationDispatcher (Phase 4)
  * - dispatchInvocation: public entry point — find the connected SDK for
- *   `backend-sdk-<appId>`, send `sdk.invoke` over the WebSocket, await
+ *   `backend-sdk-<connKey>` (connKey = appId, or appId:tabId for browser
+ *   SDKs — drift D-43), send `sdk.invoke` over the WebSocket, await
  *   `sdk.invoke.result` / `sdk.invoke.error` with a configurable timeout.
  * - handleResult / handleError: called by server.ts when the SDK responds;
  *   resolve the pending invocation.
- * - rejectAllPending(appId, reason): called by server.ts when the socket
- *   closes mid-invoke; reject every pending callId owned by that appId.
+ * - rejectAllPending(connKey, reason): called by server.ts when the socket
+ *   closes mid-invoke; reject every pending callId owned by that connection.
  *
  * Wire-format error mapping:
  *   SDK `HANDLER_NOT_FOUND` -> GATEWAY_CAPABILITY_NOT_FOUND (retryable: false)
@@ -29,7 +30,7 @@ import type { ConnectionRegistry } from "./registry.js";
 import type { BackendValue, Clock } from "./types.js";
 
 interface PendingInvocation {
-  readonly appId: string;
+  readonly connKey: string;
   readonly resolve: (payload: BackendValue) => void;
   readonly reject: (err: Error) => void;
   readonly timeoutHandle: number;
@@ -64,7 +65,7 @@ export class InvocationDispatcher {
 
   /**
    * CID:dispatch-001 - dispatchInvocation
-   * Send an invocation to the SDK connected for `owner = backend-sdk-<appId>`
+   * Send an invocation to the SDK connected for `owner = backend-sdk-<connKey>`
    * and await its reply. Throws GatewayError on every documented failure mode
    * (no connection, owner prefix wrong, socket send throws, handler timeout,
    * socket closed mid-invoke, SDK-reported handler error).
@@ -83,13 +84,13 @@ export class InvocationDispatcher {
         false,
       );
     }
-    const appId = owner.slice("backend-sdk-".length);
-    const conn = this.registry.get(appId);
+    const connKey = owner.slice("backend-sdk-".length);
+    const conn = this.registry.get(connKey);
     if (!conn) {
       throw new GatewayError(
         this.errorMapping.sdkUnreachableCode,
         `no SDK connection for owner "${owner}"`,
-        { owner, appId },
+        { owner, connKey },
         true,
       );
     }
@@ -113,7 +114,7 @@ export class InvocationDispatcher {
       };
 
       const pending: PendingInvocation = {
-        appId,
+        connKey,
         timeoutHandle,
         resolve: (payload) => {
           cleanup();
@@ -144,7 +145,7 @@ export class InvocationDispatcher {
         reject(new GatewayError(
           this.errorMapping.sdkUnreachableCode,
           `WebSocket send failed: ${message}`,
-          { owner, capability: capabilityName, appId },
+          { owner, capability: capabilityName, connKey },
           true,
         ));
       }
@@ -207,17 +208,18 @@ export class InvocationDispatcher {
   /**
    * CID:dispatch-004 - rejectAllPending
    * Called by server.ts when an SDK's socket closes mid-flight. Reject every
-   * pending invocation owned by `appId` with SDK_UNREACHABLE (retryable).
+   * pending invocation owned by `connKey` (appId, or appId:tabId per D-43)
+   * with SDK_UNREACHABLE (retryable).
    */
-  rejectAllPending(appId: string, reason: string): void {
+  rejectAllPending(connKey: string, reason: string): void {
     for (const [callId, inv] of this.pending) {
-      if (inv.appId !== appId) continue;
+      if (inv.connKey !== connKey) continue;
       this.pending.delete(callId);
       this.clock.clearTimeout(inv.timeoutHandle);
       inv.reject(new GatewayError(
         this.errorMapping.sdkUnreachableCode,
         `SDK connection closed mid-invoke: ${reason}`,
-        { appId, callId, reason },
+        { connKey, callId, reason },
         true,
       ));
     }

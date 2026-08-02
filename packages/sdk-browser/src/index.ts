@@ -26,6 +26,10 @@ import { CapRegistry, scanRoot, watchCaps } from "./observer.js";
 import type { CapabilityView, Sdk, SdkOptions } from "./types.js";
 import { StateStore } from "./state.js";
 
+// Module-level counter for auto-generated tab ids (drift D-43). Each JS
+// context (page/tab) gets a unique id even when the developer omits tabId.
+let autoTabSeq = 0;
+
 // CID:index-001 - createSdk
 // Purpose: factory — validates options, verifies the WebSocket transport,
 //   wires the engine modules together, and returns the public Sdk surface.
@@ -54,6 +58,10 @@ export function createSdk(options: SdkOptions): Sdk {
   const registry = new CapRegistry(options.defaultTier, options.defaultVersion);
   const publisher = new SdkEventPublisher(eventBus, options.appId);
   const stateStore = new StateStore(registry);
+  // Drift D-43: per-page-instance tab id. Explicit option wins; otherwise a
+  // unique id per JS context so two tabs of the same app don't evict each
+  // other at the Gateway (which keys connections by tabId).
+  const tabId = options.tabId ?? `tab-${Date.now().toString(36)}-${(autoTabSeq += 1).toString(36)}`;
 
   let connectCount = 0;
   let connected = false;
@@ -127,8 +135,23 @@ export function createSdk(options: SdkOptions): Sdk {
     onInvoke: (message: InvokeMessage) => handleInvoke(message.callId, message.name, message.input),
     onRegisterError: (message: RegisterErrorMessage) =>
       publisher.capabilityRejected(message.name, message.reason),
-  });
-  sendRegister = (name) => client.send({ type: "sdk.capability.register", name });
+  }, tabId);
+  // Drift D-40: the wire frame mirrors sdk-node — name + description +
+  // version + permissions + tier — so gateway validation accepts it
+  // (validateRecord requires version + description). The DOM has no
+  // description or permission model; name stands in for description and
+  // permissions stay empty (server splits "" -> []).
+  sendRegister = (name) => {
+    const view = registry.get(name);
+    client.send({
+      type: "sdk.capability.register",
+      name,
+      description: view?.name ?? name,
+      version: view?.version ?? "1.0.0",
+      permissions: "",
+      tier: view?.tier ?? "",
+    });
+  };
 
   // CID:index-002 - attachRoot
   // Purpose: initial scan (GRILL T2) + MutationObserver on one root.

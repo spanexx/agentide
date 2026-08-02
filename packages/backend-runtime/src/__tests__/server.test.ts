@@ -2,9 +2,10 @@
  * Code Map: Phase 2 server integration tests
  * - bad token: socket closed without accepted event
  * - valid token: accepted event with correct appId (from JWT sub.callerId)
- * - replace: second SDK with same appId closes first socket, emits closed/explicit
+ * - replace: same connection key (appId, or appId:tabId) closes the prior
+ *   socket; DIFFERENT tabIds of the same app coexist (drift D-43)
  * - peer drop: SDK-side close without server init -> closed reason 'dropped'
- * - stop(): all sockets closed, closed reason 'explicit' emitted per appId
+ * - stop(): all sockets closed, closed reason 'explicit' emitted per connection
  * - latencyMs: clock advance between connection open and sdk.auth = latency
  * - address(): returns bound address after start, null after stop
  * - buffered non-auth messages: ignored (sdk.auth must come first)
@@ -33,6 +34,7 @@ interface ConnectionAcceptedPayload {
 }
 interface ConnectionClosedPayload {
   appId: string;
+  tabId: string | null;
   reason: "explicit" | "dropped";
 }
 
@@ -141,7 +143,51 @@ describe("Phase 2: server lifecycle", () => {
     sock.close();
   });
 
-  it("replaces an existing connection when a second SDK connects with the same appId", async () => {
+  it("keeps two tabs of the same app alive when they send different tabIds (D-43)", async () => {
+    const events = collectEvents(bus);
+    // First tab
+    const sock1 = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock1.once("open", () => resolve()));
+    sock1.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken({ tenantId: "acme", callerId: "customer-app" }, secret, clock),
+      tabId: "tab-1",
+    }));
+    await waitFor(() => events.accepted.length === 1, 1000);
+    expect(events.accepted[0]).toMatchObject({ appId: "customer-app", tabId: "tab-1" });
+
+    // Second tab, same appId, DIFFERENT tabId → both stay connected
+    const sock2 = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock2.once("open", () => resolve()));
+    sock2.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken({ tenantId: "acme", callerId: "customer-app" }, secret, clock),
+      tabId: "tab-2",
+    }));
+    await waitFor(() => events.accepted.length === 2, 1000);
+
+    expect(runtime.connectionCount()).toBe(2);
+    expect(sock1.readyState).toBe(WebSocket.OPEN); // NOT replaced
+
+    // Third connection with the SAME key as tab-1 → replaces it
+    const sock3 = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock3.once("open", () => resolve()));
+    sock3.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken({ tenantId: "acme", callerId: "customer-app" }, secret, clock),
+      tabId: "tab-1",
+    }));
+    await waitFor(() => events.accepted.length === 3, 1000);
+    await waitFor(() => sock1.readyState === WebSocket.CLOSED, 1000);
+    expect(runtime.connectionCount()).toBe(2);
+    // Server-initiated replacement → no 'dropped' event for the replaced socket
+    expect(events.closed.filter((c) => c.reason === "dropped")).toHaveLength(0);
+
+    sock2.close();
+    sock3.close();
+  });
+
+  it("replaces an existing connection when a second SDK connects with the same appId (no tabId)", async () => {
     const events = collectEvents(bus);
     // First SDK
     const sock1 = new WebSocket(wsUrl());
@@ -149,7 +195,7 @@ describe("Phase 2: server lifecycle", () => {
     sock1.send(JSON.stringify({ type: "sdk.auth", token: mintToken({ tenantId: "acme", callerId: "customer-app" }, secret, clock) }));
     await waitFor(() => events.accepted.length === 1, 1000);
 
-    // Second SDK with same appId
+    // Second SDK with same appId (no tabId → same connection key)
     const sock2 = new WebSocket(wsUrl());
     await new Promise<void>((resolve) => sock2.once("open", () => resolve()));
     sock2.send(JSON.stringify({ type: "sdk.auth", token: mintToken({ tenantId: "acme", callerId: "customer-app" }, secret, clock) }));
@@ -174,7 +220,7 @@ describe("Phase 2: server lifecycle", () => {
     // SDK initiates close
     sock.close();
     await waitFor(() => events.closed.length === 1, 1000);
-    expect(events.closed[0]).toEqual({ appId: "ephemeral-app", reason: "dropped" });
+    expect(events.closed[0]).toEqual({ appId: "ephemeral-app", tabId: null, reason: "dropped" });
     expect(runtime.connectionCount()).toBe(0);
   });
 
@@ -193,8 +239,8 @@ describe("Phase 2: server lifecycle", () => {
     await runtime.stop();
     await waitFor(() => events.closed.length === 2, 1000);
     expect(events.closed.sort((a, b) => a.appId.localeCompare(b.appId))).toEqual([
-      { appId: "app-1", reason: "explicit" },
-      { appId: "app-2", reason: "explicit" },
+      { appId: "app-1", tabId: null, reason: "explicit" },
+      { appId: "app-2", tabId: null, reason: "explicit" },
     ]);
   });
 
