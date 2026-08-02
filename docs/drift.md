@@ -1,8 +1,24 @@
 # Drift Log
-**Last updated:** 2026-08-01  **Open:** 0  **Resolved:** 24  **Critical/High:** 0
+**Last updated:** 2026-08-02  **Open:** 0  **Resolved:** 27  **Critical/High:** 0
 
 
 ## Resolved
+
+- **D-37** (Accepted drift, 2026-08-02, sdk-browser drift review) — GRILL T3 Q3 locks a best-effort wire send `{ type: "sdk.disconnect", reason: "pagehide" }` BEFORE `close(1000, "pagehide")`. The implementation sends the close frame only; no wire message.
+  - Doc claim: "Try to send `{ type: "sdk.disconnect", reason: "pagehide" }` via `WebSocket.send(...)`" (`docs/features/sdk-browser/GRILL-sdk-browser.txt:344-346`)
+  - Code reality: `onPageHide` → `client.disconnect("pagehide")` → `ws.close(1000, reason)` only (`packages/sdk-browser/src/lifecycle.ts:38-44`, `client.ts:113-121`)
+  - Why matters: without a wire message the gateway can't unregister the cap until TCP timeout; but nothing server-side consumes `sdk.disconnect` (backend-runtime has no handler; sdk-node sends none), and PRD-TRD Scenario 9 wording matches the code — the close frame is the effective signal.
+  - Resolution: GRILL T3 Q3 amended 2026-08-02 with an additive note (verbatim answer preserved) citing this drift ID.
+  - Verified by: drift review sub-agent (`.reports/20260802-0659-drift-sdk-browser.md`), re-read of `lifecycle.ts:38-44`, post-impl sim scenario 7 (pagehide persisted) + test suite 61/61.
+- **D-38** (Accepted drift, 2026-08-02, sdk-browser drift review) — Post-impl sim at `packages/agentide/scripts/simulate-sdk-browser.mjs` is a standalone Node ESM script driving real `@platform/sdk-browser` dist (not browser HTML like the pre-impl `simulate-pre.html`).
+  - Doc reality: IMPL Phase 6 anticipated "sibling precedent D-33/D-34 = Node `.mjs` script in `agentide/scripts/`"; pre-impl sim is a static HTML page.
+  - Why matters: a browser HTML sim can't import the built package and drive a real WebSocket gateway in Node; the Node script exercises the real production path (JSDOM + ws). Mirrors D-33/D-34 exactly.
+  - Resolution: post-impl sim at `packages/agentide/scripts/simulate-sdk-browser.mjs`; pre-impl sim archived to `docs/features/sdk-browser/archive/simulate-pre.html`.
+  - Verified by: post-impl sim 10/10 scenarios PASS (4 consecutive runs), IMPL Phase 6 note.
+- **D-39** (Accepted drift, 2026-08-02, sdk-browser drift review) — two naming nits, both fixed opportunistically during reconcile:
+  - (a) test name "leaves the capability unregistered in state" asserted `registered: true` — renamed to "leaves the capability registered in state" (`packages/sdk-browser/src/__tests__/index.test.ts:297`).
+  - (b) `events.ts` comment listed `"drop"` as a possible disconnected reason; no code path emits it (network drops go through `scheduleReconnect` without `onDisconnected`) — comment corrected to the four real reasons (`packages/sdk-browser/src/events.ts:24`).
+  - Verified by: test suite 61/61 pass after both edits.
 
 - **D-2 → D-6** (Resolved 2026-07-29 by drift-sdk-node audit) — PRD-TRD events table now lists 8 events including `sdk.capability.rejected` with payload `{ appId, capability, reason }` and the asynchronous "When" clause. `events.ts` code map header updated to say "8 documented events" and CIDs list the rejected payload. Verified by re-reading `PRD-TRD-sdk-node.md:182` and `events.ts:6, 16`.
 - **D-3 → D-7** (Resolved 2026-07-29 by drift-sdk-node audit) — PRD-TRD §API Contracts `register()` rewritten: synchronous throws limited to local validation (manifest missing/invalid, handler mismatch); Gateway-level rejection (collision, unauthorized) explicitly routed through the `sdk.capability.rejected` event with file:line citations to `events.ts:177-187` and `invoke.ts:106-117`. Verified by re-reading `PRD-TRD-sdk-node.md:157-162`.

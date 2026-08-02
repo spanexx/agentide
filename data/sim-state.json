@@ -2611,6 +2611,1054 @@
       "status": "ok",
       "detail": "27 tools visible; read.inputSchema verified",
       "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.465Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "failed",
+      "detail": "scenario 1: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.472Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "failed",
+      "detail": "scenario 2: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.475Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "failed",
+      "detail": "scenario 3: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.478Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "failed",
+      "detail": "scenario 4: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.480Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "failed",
+      "detail": "scenario 5: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.484Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "failed",
+      "detail": "scenario 6: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.487Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "failed",
+      "detail": "scenario 7: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.491Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "failed",
+      "detail": "scenario 8: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.493Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "failed",
+      "detail": "scenario 9: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:45:26.496Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "failed",
+      "detail": "scenario 10: Cannot read properties of null (reading 'port')",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:46:58.875Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:46:58.932Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:46:58.980Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:46:59.007Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "failed",
+      "detail": "scenario 4: First argument must be a valid error code number",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:46:59.032Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "failed",
+      "detail": "scenario 5: First argument must be a valid error code number",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:47:00.690Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:47:01.218Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:47:01.357Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:47:04.887Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:47:08.915Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "failed",
+      "detail": "scenario 10: no close(1000) frame seen",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:47:51.732Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:47:51.789Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:11.748Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:11.807Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:11.857Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:13.085Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "failed",
+      "detail": "scenario 4: auth-first not re-sent on reconnect",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:15.759Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:17.414Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:17.944Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:18.080Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:21.610Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:23.660Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:54.423Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:54.487Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:54.539Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:50:57.618Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "failed",
+      "detail": "scenario 4: auth-first not re-sent on reconnect",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:00.291Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:01.945Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:02.475Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:02.612Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:06.145Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:08.195Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:29.332Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:31.424Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "failed",
+      "detail": "scenario 2: expected 1 result, got 0",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:31.474Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:32.394Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "passed",
+      "detail": "scenario 4: reconnecting → auto-reconnect (backoff) → connected; auth-first + 2 re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:35.067Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:36.723Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:37.253Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:37.387Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:40.919Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:42.968Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:52.458Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:52.522Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:52.575Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:53.782Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "passed",
+      "detail": "scenario 4: reconnecting → auto-reconnect (backoff) → connected; auth-first + 2 re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:56.454Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:58.111Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:58.640Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:51:58.772Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:02.304Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:11.303Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:11.361Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:11.410Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:12.312Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "passed",
+      "detail": "scenario 4: reconnecting → auto-reconnect (backoff) → connected; auth-first + 2 re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:14.983Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:16.636Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:17.165Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:17.306Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:20.836Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:22.886Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:35.136Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:35.194Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:35.244Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:36.203Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "passed",
+      "detail": "scenario 4: reconnecting → auto-reconnect (backoff) → connected; auth-first + 2 re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:38.876Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:40.534Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:41.066Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:41.243Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:44.777Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:46.829Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:59.172Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:59.232Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:52:59.281Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:00.324Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "passed",
+      "detail": "scenario 4: reconnecting → auto-reconnect (backoff) → connected; auth-first + 2 re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:02.997Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:04.653Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:05.184Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:05.320Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:08.847Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:10.900Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:13.028Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:13.090Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:13.140Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:14.203Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "passed",
+      "detail": "scenario 4: reconnecting → auto-reconnect (backoff) → connected; auth-first + 2 re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:16.875Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:18.536Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:19.070Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:19.205Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:22.735Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:24.784Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:38.678Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:38.739Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:38.790Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:39.754Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "passed",
+      "detail": "scenario 4: reconnecting → auto-reconnect (backoff) → connected; auth-first + 2 re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:42.428Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:44.086Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:44.614Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:44.749Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:48.278Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:53:50.329Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:13.035Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:13.094Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:13.144Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:14.171Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "passed",
+      "detail": "scenario 4: reconnecting → auto-reconnect (backoff) → connected; auth-first + 2 re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:16.842Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:18.499Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:19.031Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:19.166Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:22.697Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T04:58:24.747Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:44.565Z",
+      "caller": "sdk-browser-sim",
+      "capability": "connect",
+      "status": "passed",
+      "detail": "scenario 1: auth-first ✓, 2 registers ✓, state=connected (connecting→connected)",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:44.623Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 2: 3/3 elements fired; pid=202 filter matched (cart 0→1); sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:44.672Z",
+      "caller": "sdk-browser-sim",
+      "capability": "invoke",
+      "status": "passed",
+      "detail": "scenario 3: form-fill wrote \"hi\" into #note; sdk.invoke.result ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:45.596Z",
+      "caller": "sdk-browser-sim",
+      "capability": "drop",
+      "status": "passed",
+      "detail": "scenario 4: reconnecting → auto-reconnect (backoff) → connected; auth-first + 2 re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:48.270Z",
+      "caller": "sdk-browser-sim",
+      "capability": "hide-tab",
+      "status": "passed",
+      "detail": "scenario 5: paused while hidden (0 reconnects in 2.6s) → immediate reconnect on visible ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:49.941Z",
+      "caller": "sdk-browser-sim",
+      "capability": "offline",
+      "status": "passed",
+      "detail": "scenario 6: offline → dead socket + disconnected; online → immediate reconnect ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:50.468Z",
+      "caller": "sdk-browser-sim",
+      "capability": "pagehide",
+      "status": "passed",
+      "detail": "scenario 7: bfcache pagehide skipped — socket + state untouched ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:50.607Z",
+      "caller": "sdk-browser-sim",
+      "capability": "remove-cap",
+      "status": "passed",
+      "detail": "scenario 8: count 3→2→1→0; cap leaves state on last removal; re-add re-registers ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:54.136Z",
+      "caller": "sdk-browser-sim",
+      "capability": "token-origin",
+      "status": "passed",
+      "detail": "scenario 9: evil origin → gateway 1008 → disconnected; 0 reconnects in 3.5s (no zombie) ✓",
+      "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-02T05:06:56.185Z",
+      "caller": "sdk-browser-sim",
+      "capability": "disconnect",
+      "status": "passed",
+      "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
+      "channel": "sdk-browser"
     }
   ]
 }

@@ -37,12 +37,15 @@
     "@platform/session-manager": "workspace:*"
   },
   "devDependencies": {
+    "@platform/sdk-browser": "workspace:*",
     "@types/node": "^22.10.0",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@typescript-eslint/parser": "^8.65.0",
     "eslint": "^10.8.0",
+    "jsdom": "^30.0.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "ws": "^8.21.1"
   }
 }
