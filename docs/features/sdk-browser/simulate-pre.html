@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sdk-browser — pre-impl simulation (design-time)</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --bg-elevated: #1a1f2e;
+    --card: #232938;
+    --border: #2d3344;
+    --fg: #e6e6e6;
+    --muted: #8b95a7;
+    --accent: #6ee7b7;
+    --accent-dim: #34d399;
+    --warn: #fbbf24;
+    --error: #f87171;
+    --info: #60a5fa;
+    --term-bg: #000;
+    --term-fg: #e6e6e6;
+    --term-prompt: #6ee7b7;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; }
+  header {
+    padding: 10px 16px; background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+  header .badge {
+    background: var(--card); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 4px; color: var(--muted); font-size: 10px;
+  }
+  header .sub { color: var(--muted); font-size: 11px; width: 100%; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .panel {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px; display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel h2 {
+    margin: 0 0 8px 0; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .log-head {
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; user-select: none;
+  }
+  .log-head .tw { font-size: 10px; color: var(--muted); }
+  .log-head:hover .tw { color: var(--accent); }
+  .log.collapsed { display: none; }
+  .section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+
+  /* Connection state badge */
+  #conn-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 4px; padding: 6px 10px; font-family: ui-monospace, monospace;
+    font-size: 11px; font-weight: 600;
+  }
+  #conn-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  #conn-badge.cs-connecting #conn-dot { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+  #conn-badge.cs-connected #conn-dot { background: var(--accent); }
+  #conn-badge.cs-reconnecting #conn-dot { background: var(--warn); animation: pulse 0.6s ease-in-out infinite; }
+  #conn-badge.cs-disconnected #conn-dot { background: var(--error); }
+  #conn-badge.cs-offline #conn-dot { background: var(--muted); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* Lifecycle dots (8 events, sdk-node parity) */
+  .lc { display: flex; align-items: center; gap: 2px; padding: 4px 2px; flex-wrap: wrap; }
+  .lc-step { display: flex; flex-direction: column; align-items: center; gap: 3px; margin-right: 2px; }
+  .lc-dot {
+    width: 12px; height: 12px; border-radius: 50%; background: var(--card);
+    border: 2px solid var(--border);
+  }
+  .lc-dot.d { background: var(--accent-dim); border-color: var(--accent-dim); }
+  .lc-label { font-size: 8px; color: var(--muted); text-transform: uppercase; white-space: nowrap; }
+  .lc-step.d .lc-label { color: var(--accent-dim); }
+
+  /* Cap grid */
+  #cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }
+  .cap-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-left: 3px solid var(--muted); border-radius: 3px;
+    padding: 7px; opacity: 0; transform: translateY(6px);
+    transition: opacity 0.3s, transform 0.3s, border-color 0.3s;
+  }
+  .cap-card.shown { opacity: 1; transform: translateY(0); }
+  .cap-card.r { border-left-color: var(--accent); }
+  .cap-card.u { border-left-color: var(--error); }
+  .cap-name { font-family: ui-monospace, monospace; font-weight: 600; color: var(--accent); font-size: 12px; }
+  .cap-meta { color: var(--muted); font-size: 9px; margin: 3px 0; }
+  .cap-count { color: var(--info); font-size: 10px; font-family: ui-monospace, monospace; }
+  .empty { color: var(--muted); font-style: italic; padding: 6px; font-size: 11px; }
+
+  /* Page DOM (the shop) */
+  #page-box {
+    flex: 1; min-height: 120px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+  }
+  .pcard {
+    background: var(--card); border: 1px solid var(--border); border-radius: 3px;
+    padding: 6px 8px; display: flex; align-items: center; gap: 8px; font-size: 11px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .pcard.flash { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .pcard .pid { color: var(--muted); font-family: ui-monospace, monospace; font-size: 9px; }
+  .pcard .cap { color: var(--accent); font-family: ui-monospace, monospace; font-size: 9px; margin-left: auto; }
+  .pcard .cart-count { color: var(--warn); font-size: 10px; }
+  .pform { border: 1px dashed var(--border); border-radius: 3px; padding: 6px 8px; display: flex; gap: 6px; align-items: center; font-size: 11px; }
+  .pform.flash { border-color: var(--info); box-shadow: 0 0 0 1px var(--info); }
+  .pform input { background: var(--bg); border: 1px solid var(--border); color: var(--fg); border-radius: 2px; padding: 3px 6px; font-size: 10px; flex: 1; }
+  .pform .cap { color: var(--accent); font-family: ui-monospace, monospace; font-size: 9px; }
+  .pform .filled { color: var(--info); font-size: 9px; font-family: ui-monospace, monospace; }
+
+  /* Wire log (Gateway view) + events log */
+  .log {
+    flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 6px; font-family: ui-monospace, monospace; font-size: 10px;
+    min-height: 0; max-height: 130px;
+  }
+  .log div { padding: 1px 2px; border-left: 2px solid transparent; }
+  .log .in  { border-left-color: var(--info); }
+  .log .out { border-left-color: var(--accent); }
+  .log .evt { border-left-color: var(--accent-dim); }
+  .log .warn { border-left-color: var(--warn); color: var(--warn); }
+  .log .err { border-left-color: var(--error); color: var(--error); }
+  .log .muted { color: var(--muted); }
+  .log .tok { color: var(--warn); }
+
+  /* Terminal */
+  #term-box {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--term-bg); border-radius: 3px; margin-top: 8px;
+    padding: 8px; min-height: 0; overflow: hidden;
+  }
+  #term-log {
+    flex: 1; overflow-y: auto; color: var(--term-fg);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;
+  }
+  #term-log .ok { color: var(--accent); }
+  #term-log .warn { color: var(--warn); }
+  #term-log .err { color: var(--error); }
+  #term-log .info { color: #60a5fa; }
+  #term-log .muted { color: var(--muted); }
+  #term-input-row {
+    display: flex; align-items: center; padding-top: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  }
+  #term-prompt { color: var(--term-prompt); margin-right: 4px; }
+  #term-input {
+    flex: 1; background: transparent; border: none; color: var(--term-fg);
+    font-family: inherit; font-size: inherit; outline: none;
+    caret-color: var(--accent);
+  }
+
+  .help { padding: 6px 12px; background: var(--bg-elevated); border-top: 1px solid var(--border); display: flex; gap: 6px; font-size: 10px; color: var(--muted); align-items: center; flex-wrap: wrap; }
+  .help .hint { font-size: 10px; color: var(--muted); margin-right: 4px; }
+  .help .chip {
+    background: var(--card); border: 1px solid var(--border); color: var(--accent);
+    padding: 3px 9px; border-radius: 3px; cursor: pointer;
+    font-family: ui-monospace, monospace; font-size: 10px;
+  }
+  .help .chip:hover { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+  .help #demo-btn { margin-left: auto; padding: 5px 12px; background: var(--accent); color: var(--bg); border: none; border-radius: 3px; font-weight: 600; cursor: pointer; font-size: 10px; }
+  .help #demo-btn:hover { opacity: 0.85; }
+  .help #demo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #term-hint { color: var(--muted); font-size: 9px; padding: 2px 2px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>sdk-browser</h1>
+  <span class="badge">PRE-IMPL (design-time, no code exists)</span>
+  <span class="badge" id="conn-badge"><span id="conn-dot"></span><span id="conn-label">disconnected</span></span>
+  <div class="sub">Design rehearsal of the locked GRILL decisions: DOM-annotation caps (T1/T2), fan-out dispatch (T2 Q5), auth-first-message + origin binding (T5), visibility/online/pagehide lifecycle (T3), onStateChange 4-state surface (T4 D3). Everything here is stubbed — the post-impl sim will drive the real package.</div>
+</header>
+
+<main>
+  <div class="panel">
+    <div class="section">
+      <h2>Lifecycle events (8, sdk-node parity)</h2>
+      <div class="lc" id="lc">
+        <div class="lc-step" data-step="connected"><div class="lc-dot"></div><div class="lc-label">connected</div></div>
+        <div class="lc-step" data-step="disconnected"><div class="lc-dot"></div><div class="lc-label">disconnected</div></div>
+        <div class="lc-step" data-step="reg"><div class="lc-dot"></div><div class="lc-label">cap.registered</div></div>
+        <div class="lc-step" data-step="unreg"><div class="lc-dot"></div><div class="lc-label">cap.unregistered</div></div>
+        <div class="lc-step" data-step="rej"><div class="lc-dot"></div><div class="lc-label">cap.rejected</div></div>
+        <div class="lc-step" data-step="inv-s"><div class="lc-dot"></div><div class="lc-label">inv.started</div></div>
+        <div class="lc-step" data-step="inv-c"><div class="lc-dot"></div><div class="lc-label">inv.completed</div></div>
+        <div class="lc-step" data-step="inv-f"><div class="lc-dot"></div><div class="lc-label">inv.failed</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Capabilities (from DOM observation, dedup)</h2>
+      <div id="cap-grid"><div class="empty">No caps yet. Run <code>connect</code> or <code>add-cap</code>.</div></div>
+    </div>
+
+    <div class="section" style="flex:1; min-height:0;">
+      <h2>Page DOM (the dev's page — annotation is the manifest)</h2>
+      <div id="page-box">
+        <div class="pcard" data-sdk-cap="shop.cart.add" data-product-id="101">
+          <span>🖱 Wireless Mouse</span><span class="pid">pid=101</span>
+          <span class="cap">data-sdk-cap="shop.cart.add"</span><span class="cart-count"></span>
+        </div>
+        <div class="pcard" data-sdk-cap="shop.cart.add" data-product-id="202">
+          <span>⌨ Mechanical Keyboard</span><span class="pid">pid=202</span>
+          <span class="cap">data-sdk-cap="shop.cart.add"</span><span class="cart-count"></span>
+        </div>
+        <div class="pcard" data-sdk-cap="shop.cart.add" data-product-id="303">
+          <span>🖥 4K Monitor</span><span class="pid">pid=303</span>
+          <span class="cap">data-sdk-cap="shop.cart.add"</span><span class="cart-count"></span>
+        </div>
+        <div class="pcard" data-sdk-cap="shop.cart.view">
+          <span>🛒 View cart</span><span class="pid">(no pid — view)</span>
+          <span class="cap">data-sdk-cap="shop.cart.view"</span>
+        </div>
+        <div class="pform" data-sdk-cap="profile.note">
+          <span>📝 Note:</span>
+          <input type="text" placeholder="type a note…">
+          <span class="cap">data-sdk-cap="profile.note" (form-fill fallback)</span><span class="filled"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section">
+      <h2 class="log-head" data-log="wire-log">Wire (what the SDK sends ⇄ the Gateway sends) <span class="tw">▾</span></h2>
+      <div class="log" id="wire-log"></div>
+    </div>
+    <div class="section">
+      <h2 class="log-head" data-log="evt-log">Event log (bus + CustomEvent dispatch) <span class="tw">▾</span></h2>
+      <div class="log" id="evt-log"></div>
+    </div>
+    <div class="section" style="flex:1; min-height:0; padding:0;">
+      <h2 style="padding:0;">Terminal</h2>
+      <div id="term-box">
+        <div id="term-log"></div>
+        <div id="term-input-row">
+          <span id="term-prompt">sdk@browser ~ $&nbsp;</span>
+          <input id="term-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        </div>
+        <div id="term-hint">click here and type — or just click a command button below ⬇</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="help">
+  <span class="hint">click a command ⬇</span>
+  <button class="chip" data-cmd="connect">connect</button>
+  <button class="chip" data-cmd="invoke shop.cart.add {&quot;productId&quot;:202,&quot;qty&quot;:2}">invoke shop.cart.add</button>
+  <button class="chip" data-cmd="drop">drop</button>
+  <button class="chip" data-cmd="hide-tab">hide-tab</button>
+  <button class="chip" data-cmd="show-tab">show-tab</button>
+  <button class="chip" data-cmd="offline">offline</button>
+  <button class="chip" data-cmd="online">online</button>
+  <button class="chip" data-cmd="pagehide persisted">pagehide</button>
+  <button class="chip" data-cmd="token-origin https://evil.com">token-origin evil</button>
+  <button class="chip" data-cmd="reset">reset</button>
+  <button class="chip" data-cmd="clear">clear</button>
+  <button id="demo-btn">▶ Run full demo</button>
+</div>
+
+<script>
+'use strict';
+
+// ─── DOM refs ────────────────────────────────────────────────────────
+const lcEl = document.getElementById('lc');
+const capGrid = document.getElementById('cap-grid');
+const wireLog = document.getElementById('wire-log');
+const evtLog = document.getElementById('evt-log');
+const demoBtn = document.getElementById('demo-btn');
+const termLog = document.getElementById('term-log');
+const termInput = document.getElementById('term-input');
+const connBadge = document.getElementById('conn-badge');
+const connLabel = document.getElementById('conn-label');
+const pageBox = document.getElementById('page-box');
+
+// ─── Design constants (from GRILL) ──────────────────────────────────
+const EXPECTED_ORIGINS = ['https://shop.acme.com', 'https://*.acme.com'];
+const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.signed-claims.expectedOrigins=["https://shop.acme.com","https://*.acme.com"]';
+const BACKOFF = [1000, 2000, 4000]; // design: 1s,2s,4s,8s,16s,30s±20% jitter — sim truncates for speed
+
+// ─── Engine state (stubbed design, no real SDK) ─────────────────────
+const engine = {
+  connState: 'disconnected',   // connecting | connected | reconnecting | disconnected (+ internal offline flag)
+  wantConnected: false,
+  hidden: false,               // T3 Q1: tab visibility
+  offlineFlag: false,          // T3 Q2: navigator online/offline
+  caps: {},                    // name → { count, tier, version, registered }
+  backoffIdx: 0,
+  reconnectTimer: null,
+  pageCount: 0,
+  lastEvent: null,
+  lastWire: null,
+};
+
+// ─── Stub SDK behaviors (mirror the design) ─────────────────────────
+function emitWire(dir, text) {
+  const line = document.createElement('div');
+  line.className = dir;
+  line.textContent = text;
+  wireLog.prepend(line);
+  engine.lastWire = text;
+  while (wireLog.children.length > 60) wireLog.removeChild(wireLog.lastChild);
+}
+function emitEvt(kind, text) {
+  const line = document.createElement('div');
+  line.className = kind;
+  line.textContent = text;
+  evtLog.prepend(line);
+  engine.lastEvent = text;
+  while (evtLog.children.length > 60) evtLog.removeChild(evtLog.lastChild);
+}
+function dot(name, on) {
+  const step = lcEl.querySelector(`[data-step="${name}"]`);
+  if (step) step.classList.toggle('d', on);
+}
+function setConn(next, note) {
+  engine.connState = next;
+  connBadge.className = 'badge cs-' + next;
+  connLabel.textContent = next + (note ? ' — ' + note : '');
+  if (next === 'connected') dot('connected', true);
+  if (next === 'disconnected') dot('disconnected', true);
+}
+function renderCaps() {
+  capGrid.innerHTML = '';
+  const names = Object.keys(engine.caps);
+  if (!names.length) {
+    capGrid.innerHTML = '<div class="empty">No caps yet. Run <code>connect</code> or <code>add-cap</code>.</div>';
+    return;
+  }
+  for (const name of names) {
+    const c = engine.caps[name];
+    const card = document.createElement('div');
+    card.className = 'cap-card shown ' + (c.registered ? 'r' : 'u');
+    card.dataset.cap = name;
+    card.innerHTML = `<div class="cap-name">${name}</div>
+      <div class="cap-meta">tier=${c.tier} v${c.version} · ${c.registered ? 'REGISTERED' : 'not registered'}</div>
+      <div class="cap-count">${c.count} element(s) in DOM</div>`;
+    capGrid.appendChild(card);
+  }
+}
+function addPageCard(name) {
+  const el = document.createElement('div');
+  el.className = 'pcard';
+  el.dataset.sdkCap = name;
+  el.dataset.productId = String(100 + (++engine.pageCount));
+  el.innerHTML = `<span>🛍 item ${engine.pageCount} (${name})</span><span class="pid">pid=${el.dataset.productId}</span>
+    <span class="cap">data-sdk-cap="${name}"</span><span class="cart-count"></span>`;
+  pageBox.appendChild(el);
+  return el;
+}
+function addPageForm(name) {
+  const el = document.createElement('div');
+  el.className = 'pform';
+  el.dataset.sdkCap = name;
+  el.innerHTML = `<span>📝 ${name}:</span><input type="text" placeholder="…">
+    <span class="cap">data-sdk-cap="${name}" (form-fill fallback)</span><span class="filled"></span>`;
+  pageBox.appendChild(el);
+  return el;
+}
+
+// Stub MutationObserver behavior: on element add/remove, adjust count;
+// register on 0→1, unregister on 1→0 (T2 Q4). Only data-sdk-cap read (T2 Q2).
+function observeCap(name, delta) {
+  const c = engine.caps[name] || { count: 0, tier: 'act', version: '1.0.0', registered: false };
+  c.count += delta;
+  if (c.count <= 0) {
+    delete engine.caps[name];
+    if (c.registered) {
+      c.registered = false;
+      emitWire('out', `→ sdk: unregister capability "${name}" (count 1→0, last element removed)`);
+      emitEvt('evt', `sdk.capability.unregistered { appId, capability: "${name}" }`);
+      dot('unreg', true);
+    }
+    renderCaps();
+    return;
+  }
+  engine.caps[name] = c;
+  if (!c.registered && engine.connState === 'connected') {
+    c.registered = true;
+    emitWire('out', `→ sdk: register capability "${name}" (count 0→1, first element)`);
+    emitEvt('evt', `sdk.capability.registered { appId, capability: "${name}", tier: "act", version: "1.0.0" }`);
+    dot('reg', true);
+  }
+  renderCaps();
+}
+
+// Reconnect machinery (T3): backoff gated on visibility (Q1), reset on online (Q2)
+function scheduleReconnect() {
+  if (engine.reconnectTimer) { clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null; }
+  if (!engine.wantConnected) return;
+  if (engine.hidden) {
+    setConn('reconnecting', 'tab hidden — reconnect paused (waiting for visible)');
+    emitEvt('warn', 'visibilitychange → hidden: reconnect paused');
+    return;
+  }
+  const delay = BACKOFF[Math.min(engine.backoffIdx, BACKOFF.length - 1)];
+  setConn('reconnecting', `backoff ${delay}ms`);
+  emitWire('out', `→ sdk: reconnect attempt in ${delay}ms (design: 1s,2s,4s,8s,16s,30s cap ±20% jitter)`);
+  engine.reconnectTimer = setTimeout(() => {
+    engine.reconnectTimer = null;
+    if (engine.offlineFlag) { emitEvt('warn', 'offline — reconnect attempt skipped'); return; }
+    if (engine.hidden) { scheduleReconnect(); return; }
+    engine.backoffIdx += 1; // attempt made — next failure walks the curve (T3 Q1)
+    doConnect(false);
+  }, delay);
+}
+
+// ─── Commands ────────────────────────────────────────────────────────
+const CMD = {
+  help: () => ({
+    text: [
+      'Commands (each mirrors a locked GRILL decision):',
+      '  connect              — open socket: first message {type:"sdk.auth", token} (T5 Q1); initial DOM scan registers caps (T2 Q3)',
+      '  add-cap <name>       — add an annotated element → observer registers cap on 0→1 (T2 Q4)',
+      '  add-cap2 <name>      — add 2nd element, same cap → still ONE registration (dedup)',
+      '  remove-cap <name>    — remove last element → unregister on 1→0',
+      '  invoke <name> <json> — Gateway sends sdk.invoke; SDK fans out CustomEvent on every annotated element (T2 Q5)',
+      '  drop                 — unexpected close → reconnecting with backoff (T3)',
+      '  hide-tab / show-tab  — visibility gates reconnect (T3 Q1)',
+      '  offline / online     — online resets backoff + fires reconnect immediately (T3 Q2)',
+      '  pagehide [persisted] — best-effort sdk.disconnect + close(1000); persisted → bfcache skip (T3 Q3)',
+      '  token-origin <url>   — origin binding vs expectedOrigins claim; mismatch → close 1008 (T5 Q2)',
+      '  disconnect           — deliberate teardown, no reconnect',
+      '  state                — dump engine state',
+      '  reset                — wipe everything',
+      '  clear                — clear the terminal output',
+    ].join('\n'), color: '36' }),
+
+  state: () => ({
+    text: [
+      `connectionState: ${engine.connState} (wantConnected=${engine.wantConnected})`,
+      `hidden=${engine.hidden} offline=${engine.offlineFlag} backoffIdx=${engine.backoffIdx}`,
+      `caps: ${Object.keys(engine.caps).map(n => `${n}×${engine.caps[n].count}${engine.caps[n].registered ? '·reg' : ''}`).join(', ') || '(none)'}`,
+      `expectedOrigins (token claim): ${EXPECTED_ORIGINS.join(', ')}`,
+    ].join('\n'), color: '36' }),
+
+  connect: () => {
+    if (engine.wantConnected) return { text: 'already connecting/connected.', color: '33' };
+    engine.wantConnected = true;
+    engine.backoffIdx = 0;
+    doConnect(true);
+    return { text: 'connecting… (socket open, auth first message sent)', color: '32' };
+  },
+
+  'add-cap': (args) => {
+    const name = args[0] || 'shop.cart.add';
+    const el = addPageCard(name);
+    emitEvt('evt', `MutationObserver: node added (subtree+childList+attributes, filter=[data-sdk-cap])`);
+    observeCap(name, +1);
+    return { text: `added annotated element → ${name}`, color: '32' };
+  },
+
+  'add-cap2': (args) => {
+    const name = args[0] || 'shop.cart.add';
+    addPageCard(name);
+    observeCap(name, +1);
+    return { text: `added 2nd element for "${name}" → count now ${engine.caps[name].count}, still 1 registration (dedup)`, color: '32' };
+  },
+
+  'remove-cap': (args) => {
+    const name = args[0];
+    if (!name || !engine.caps[name]) return { text: `no cap "${name}" tracked.`, color: '31' };
+    const els = [...pageBox.querySelectorAll(`[data-sdk-cap="${name}"]`)];
+    if (els.length) { els[els.length - 1].remove(); emitEvt('evt', 'MutationObserver: node removed'); }
+    observeCap(name, -1);
+    return { text: `removed element → ${name}`, color: '32' };
+  },
+
+  invoke: (args) => {
+    if (engine.connState !== 'connected') return { text: `not connected (state=${engine.connState}). run \`connect\` first.`, color: '31' };
+    const name = args[0];
+    let input = {};
+    try { input = args[1] ? JSON.parse(args[1]) : {}; } catch { return { text: 'invalid JSON input.', color: '31' }; }
+    const els = [...pageBox.querySelectorAll(`[data-sdk-cap="${name}"]`)];
+    if (!engine.caps[name]) return { text: `cap "${name}" is not registered (no annotated elements).`, color: '31' };
+    emitWire('in', `← gw: sdk.invoke { capability: "${name}", input: ${JSON.stringify(input)} }`);
+    emitEvt('evt', `sdk.invoke.started { capability: "${name}" }`);
+    dot('inv-s', true);
+    for (const el of els) {
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 700);
+      emitEvt('evt', `CustomEvent "sdk:cap:${name}" dispatched on ${el.tagName.toLowerCase()}; detail: { input, ctx: { token: "<jwt verbatim>" } }`);
+      // T2 Q5 fan-out: each listener gets same detail, decides itself.
+      if (name === 'shop.cart.add' && el.dataset.productId && Number(el.dataset.productId) === input.productId) {
+        const cc = el.querySelector('.cart-count');
+        cc.textContent = `🛒 +${input.qty ?? 1} (dev listener matched pid)`;
+        emitEvt('evt', `  dev listener: closest('[data-sdk-cap]') matched pid=${el.dataset.productId} → acted`);
+      } else if (name === 'profile.note') {
+        // T1 form-fill fallback: SDK fills the form input unless dev calls preventDefault
+        const inp = el.querySelector('input');
+        inp.value = input.text ?? '';
+        const filled = el.querySelector('.filled');
+        filled.textContent = '← filled by SDK (no preventDefault)';
+        emitEvt('evt', '  form-fill fallback: SDK set <input> value');
+      } else {
+        emitEvt('muted', `  listener filter: no match → no-op (signal dispatched, dev decides)`);
+      }
+    }
+    emitWire('out', `→ sdk: invoke complete`);
+    emitEvt('evt', `sdk.invoke.completed { capability: "${name}", result: { ok: true } }`);
+    dot('inv-c', true);
+    return { text: `dispatched sdk:cap:${name} on ${els.length} element(s).`, color: '32' };
+  },
+
+  drop: () => {
+    if (!engine.wantConnected) return { text: 'not connected.', color: '33' };
+    if (engine.reconnectTimer) { clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null; }
+    emitWire('err', '← gw: socket close (1006, unexpected)');
+    emitEvt('evt', 'sdk.disconnected { reason: "unexpected-close" }');
+    dot('disconnected', true);
+    scheduleReconnect();
+    return { text: 'connection dropped → reconnecting with backoff…', color: '32' };
+  },
+
+  'hide-tab': () => {
+    engine.hidden = true;
+    if (engine.connState === 'reconnecting' && engine.reconnectTimer) {
+      clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null;
+      emitEvt('warn', 'visibilitychange → hidden: reconnect paused (timer cleared)');
+    }
+    setConn('reconnecting', 'hidden — reconnect paused (waiting for visible)');
+    return { text: 'tab hidden. reconnect pauses if reconnecting (T3 Q1).', color: '32' };
+  },
+
+  'show-tab': () => {
+    const wasHidden = engine.hidden;
+    engine.hidden = false;
+    if (wasHidden && engine.wantConnected && engine.connState !== 'connected') {
+      // T3 Q1: "On visible: if waiting for visible AND we want to be connected, fire the reconnect immediately"
+      if (engine.reconnectTimer) { clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null; }
+      emitEvt('evt', 'visibilitychange → visible: reconnect fired immediately (no backoff wait)');
+      doConnect(false);
+    }
+    return { text: 'tab visible. reconnect fired immediately if it was paused (T3 Q1).', color: '32' };
+  },
+
+  offline: () => {
+    engine.offlineFlag = true;
+    if (engine.reconnectTimer) { clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null; }
+    emitEvt('warn', 'window offline: socket marked dead, pending reconnect timer cleared');
+    setConn('disconnected', 'offline');
+    return { text: 'offline — socket treated as dead, no wasted attempts (T3 Q2).', color: '32' };
+  },
+
+  online: () => {
+    const was = engine.offlineFlag;
+    engine.offlineFlag = false;
+    engine.backoffIdx = 0;
+    if (was && engine.wantConnected && engine.connState !== 'connected') {
+      // T3 Q2: online → reset backoff + fire reconnect immediately (skip stale schedule)
+      if (engine.reconnectTimer) { clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null; }
+      emitEvt('evt', 'window online: backoff reset → reconnect fired immediately');
+      doConnect(false);
+    }
+    return { text: 'online — backoff reset, immediate reconnect if wanted (T3 Q2).', color: '32' };
+  },
+
+  pagehide: (args) => {
+    if (args[0] === 'persisted') {
+      emitEvt('evt', 'pagehide { persisted: true } → bfcache: nothing sent, socket stays alive (T3 Q3)');
+      return { text: 'pagehide persisted → bfcache skip. socket alive for fast restore.', color: '32' };
+    }
+    if (engine.reconnectTimer) { clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null; }
+    emitWire('out', `→ sdk: sdk.disconnect { reason: "pagehide" } (best-effort, not awaited)`);
+    emitEvt('evt', 'pagehide { persisted: false } → sdk.disconnect sent, close(1000, "pagehide")');
+    setConn('disconnected', 'pagehide');
+    engine.wantConnected = false;
+    return { text: 'pagehide → best-effort sdk.disconnect + close(1000). gateway can unregister caps immediately.', color: '32' };
+  },
+
+  'token-origin': (args) => {
+    const origin = args[0];
+    if (!origin) return { text: 'usage: token-origin <origin>', color: '31' };
+    emitWire('out', `→ sdk: opened socket, first message { type: "sdk.auth", token: "<jwt with expectedOrigins claim>" }`);
+    const ok = EXPECTED_ORIGINS.some(o => o === origin || (o.startsWith('https://*.') && origin.startsWith(o.replace('*.', ''))));
+    if (ok) {
+      emitWire('in', `← gw: origin "${origin}" matches expectedOrigins → connection accepted`);
+      setConn('connected', `origin OK (${origin})`);
+      registerAllCaps();
+      return { text: `origin ${origin} matches token claim → connected.`, color: '32' };
+    }
+    emitWire('err', `← gw: origin "${origin}" NOT in expectedOrigins → close(1008, origin-mismatch)`);
+    emitEvt('evt', 'sdk.disconnected { reason: "origin-mismatch" }');
+    if (engine.reconnectTimer) { clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null; }
+    setConn('disconnected', 'origin mismatch (1008)');
+    engine.wantConnected = false;
+    return { text: `origin ${origin} mismatches token claim → socket closed 1008. stolen-token replay blocked.`, color: '31' };
+  },
+
+  disconnect: () => {
+    if (engine.reconnectTimer) { clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null; }
+    engine.wantConnected = false;
+    emitWire('out', '→ sdk: sdk.disconnect (deliberate)');
+    emitEvt('evt', 'sdk.disconnected { reason: "user-initiated" }');
+    setConn('disconnected', 'deliberate');
+    return { text: 'disconnected (deliberate — no reconnect).', color: '32' };
+  },
+
+  reset: () => {
+    if (engine.reconnectTimer) { clearTimeout(engine.reconnectTimer); engine.reconnectTimer = null; }
+    engine.wantConnected = false; engine.hidden = false; engine.offlineFlag = false;
+    engine.caps = {}; engine.backoffIdx = 0;
+    wireLog.innerHTML = ''; evtLog.innerHTML = '';
+    pageBox.querySelectorAll('.pcard, .pform').forEach(el => el.remove());
+    setConn('disconnected', 'reset');
+    renderCaps();
+    return { text: 'state reset.', color: '36' };
+  },
+
+  clear: () => {
+    termLog.innerHTML = '';
+    return { text: '— terminal cleared —', color: '36' };
+  },
+};
+
+// ─── Shared helpers ──────────────────────────────────────────────────
+function doConnect(initial) {
+  emitWire('out', '→ sdk: socket open — first message:');
+  emitWire('out', `    { type: "sdk.auth", token: "${TOKEN}" }  (T5 Q1: body auth, no header)`);
+  setConn('connecting');
+  setTimeout(() => {
+    if (engine.offlineFlag) { emitEvt('warn', 'offline — open skipped'); return; }
+    emitWire('in', '← gw: origin "https://shop.acme.com" matches expectedOrigins claim → accepted');
+    setConn('connected', 'origin OK');
+    emitEvt('evt', 'sdk.connected {}');
+    registerAllCaps();
+  }, 400);
+}
+function registerAllCaps() {
+  for (const name of Object.keys(engine.caps)) {
+    if (!engine.caps[name].registered) {
+      engine.caps[name].registered = true;
+      emitWire('out', `→ sdk: register capability "${name}" (tier=act v1.0.0)`);
+      emitEvt('evt', `sdk.capability.registered { appId, capability: "${name}" }`);
+      dot('reg', true);
+    }
+  }
+  renderCaps();
+}
+
+// ─── Demo script ─────────────────────────────────────────────────────
+async function runDemo() {
+  demoBtn.disabled = true;
+  const lines = [
+    'connect',
+    'invoke shop.cart.add {"productId":202,"qty":2}',
+    'add-cap shop.checkout',
+    'add-cap2 shop.checkout',
+    'invoke profile.note {"text":"demo note"}',
+    'drop',
+    'hide-tab',
+    'show-tab',
+    'offline',
+    'online',
+    'pagehide persisted',
+    'token-origin https://evil.com',
+  ];
+  for (const line of lines) {
+    await runCommand(line);
+    await new Promise(r => setTimeout(r, 500));
+  }
+  demoBtn.disabled = false;
+}
+
+// ─── Command dispatch ────────────────────────────────────────────────
+async function runCommand(line) {
+  const parts = line.trim().split(/\s+/);
+  const cmd = parts[0];
+  const args = parts.slice(1);
+  const t = document.createElement('div');
+  t.textContent = `$ ${line}`;
+  termLog.appendChild(t);
+  const handler = CMD[cmd];
+  if (!handler) {
+    const t2 = document.createElement('div');
+    t2.className = 'err';
+    t2.textContent = `unknown command: ${cmd}. type "help".`;
+    termLog.appendChild(t2);
+    return;
+  }
+  const res = handler(args);
+  if (res && res.text) {
+    const t2 = document.createElement('div');
+    t2.className = res.color === '31' ? 'err' : res.color === '33' ? 'warn' : res.color === '36' ? 'info' : 'ok';
+    t2.textContent = res.text;
+    termLog.appendChild(t2);
+  }
+  termLog.scrollTop = termLog.scrollHeight;
+}
+
+termInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const line = termInput.value;
+    termInput.value = '';
+    runCommand(line);
+  }
+});
+// Clickable command chips — no typing needed
+document.querySelectorAll('.chip').forEach(btn => {
+  btn.addEventListener('click', () => runCommand(btn.dataset.cmd));
+});
+// Collapsible wire/event logs — click header to hide, frees room for the terminal
+document.querySelectorAll('.log-head').forEach(h => {
+  h.addEventListener('click', () => {
+    const log = document.getElementById(h.dataset.log);
+    const collapsed = log.classList.toggle('collapsed');
+    h.querySelector('.tw').textContent = collapsed ? '▸' : '▾';
+  });
+});
+demoBtn.addEventListener('click', runDemo);
+// Focus terminal so the user can type right away
+termInput.focus();
+
+// Expose for Playwright
+window.engine = {
+  runCommand,
+  getState: () => ({
+    connState: engine.connState,
+    wantConnected: engine.wantConnected,
+    hidden: engine.hidden,
+    offlineFlag: engine.offlineFlag,
+    caps: Object.fromEntries(Object.entries(engine.caps).map(([k, v]) => [k, { ...v }])),
+    wire: wireLog.innerText,
+    events: evtLog.innerText,
+  }),
+};
+
+// Initial: initial DOM scan on createSdk() — pick up annotated elements already in the page (T2 Q3)
+emitEvt('muted', 'createSdk({ gateway, appId, token, observeRoot: document.body, defaultTier: "act", defaultVersion: "1.0.0" })');
+emitEvt('evt', 'initial scan of observeRoot: found shop.cart.add ×3, shop.cart.view ×1, profile.note ×1');
+for (const name of ['shop.cart.add', 'shop.cart.view', 'profile.note']) observeCap(name, name === 'shop.cart.add' ? 3 : 1);
+emitEvt('muted', 'caps tracked but not registered yet — registration fires on connect (0→1 only when connected). Try `connect`.');
+</script>
+</body>
+</html>

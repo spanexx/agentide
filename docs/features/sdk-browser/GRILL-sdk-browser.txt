@@ -1,6 +1,8 @@
 @platform/sdk-browser - Grill Notes
 
-Status: Phase 0 grilling in progress
+Status: LOCKED (2026-08-02) — all wayfinder tickets T1–T7 resolved, no open
+questions. GRILL gate passed; pipeline entered Phase 0.5 (pre-impl simulation
+at `simulate-pre.html`, design-time).
 Date: 2026-07-30
 Source: Wayfinder map #8 (sdk-browser), ticket #9 (T2 Manifest and handler transport)
 
