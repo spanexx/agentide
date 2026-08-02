@@ -37,8 +37,9 @@ Scope clarifications
 - Extends the SHIPPED capability-registry contract: `capability.list` gains an
   optional `tabId` filter (T4). This pipeline modifies `packages/capability-registry`
   in the same PR scope.
-- Extends the T2 error-code table with one new code: BROWSER_CRASHED
-  (retryable: true) — see Q4.
+- Extends the T2 error-code table with two new codes: BROWSER_CRASHED
+  (retryable: true) — see Q4 — and BROWSER_NAVIGATION_DESTRUCTIVE
+  (retryable: false) — see Phase 0.5 findings F7.
 - Binary strategy: depends on `@playwright/browser-chromium` (exact-pin) — the
   browser binary lands with the package install, no extra ops step (Q1).
 - Driver-first rule stands: plain-data `BrowserDriver` interface, zero Playwright
@@ -185,6 +186,17 @@ implementation MUST honor them:
 - F6 explicit `resume` before a post-suspend cap call is REDUNDANT (T5
   confirmed): gateway resume-first auto-resumes; the demo now shows
   suspend → type (auto-resume) with no explicit resume.
+- F7 destructive-navigation guard (user review of the sim): a plain
+  `navigate <url> <tabId>` on a tab whose page hosts registered
+  capabilities silently destroys in-flight agent work (pagehide → caps
+  unregister). New error `BROWSER_NAVIGATION_DESTRUCTIVE`
+  (retryable: false — misuse, agent should have used `newTab`), thrown
+  when the target tab has caps AND the url differs. Same-url re-navigate
+  stays allowed (T4's sanctioned re-read), `newTab: true` always allowed
+  (fresh tab), plain tabs (no caps) navigate freely. The runtime knows
+  its own cap state and protects it. Extends the T2 error table (see
+  Scope clarifications). Demo shows the guard: navigate www.google.com
+  while tab 0 holds shop caps → error, demo continues.
 
 Next: PRD-TRD — one doc (Why / What / Simulation contract / Technical design /
 Non-goals), citing these findings where they constrain the implementation.

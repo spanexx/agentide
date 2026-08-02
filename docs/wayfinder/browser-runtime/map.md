@@ -135,7 +135,10 @@ is clear. Route: feature-pipeline for the package build.
   legitimate); tab-scoped registrations — sdk-browser registers with
   session+tabId owner metadata, `capability.list` gains optional
   `tabId` filter (**extends shipped capability-registry contract**);
-  re-read via re-navigate or filtered list; `browser.page.read` ruled
+  re-read via re-navigate or filtered list; **destructive-navigate guard
+  (F7, feature-pipeline): different-url navigate on a caps-bearing tab →
+  `BROWSER_NAVIGATION_DESTRUCTIVE` (retryable false) — use `newTab:
+  true`; same-url re-navigate stays allowed**; `browser.page.read` ruled
   out. Agent loop (sdk-browser T1) now has its sync point.
 
 - [**BrowserContext suspend/resume**](tickets/browsercontext-suspend-resume.md)

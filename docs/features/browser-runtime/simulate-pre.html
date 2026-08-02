@@ -498,9 +498,10 @@ const CMD = {
       '  tab.switch <id>      — activate + bring to front → { tabId }',
       '  tab.close <id>       — close tab → { closed: true } (never kills process)',
       '  navigate <url> [id] [new] — T4 sync point → { tabId, url, capabilities, capsSettled }',
-      '                         default: navigate existing tab (id occupied → page replaced, T2);',
-      '                         "new" → fresh tab; shop.acme.com → tab-scoped caps;',
-      '                         plain → empty, settled; slow:* → capsSettled:false (never an error)',
+      '                         default: navigate existing tab; F7 guard: tab with registered',
+      '                         caps + different url → BROWSER_NAVIGATION_DESTRUCTIVE (retryable:false),',
+      '                         use "new" for a fresh tab; same-url = re-read (T4); shop.acme.com →',
+      '                         tab-scoped caps; plain → empty, settled; slow:* → capsSettled:false',
       '  click <sel> [id]     — CSS-only selector; missing → BROWSER_SELECTOR_NOT_FOUND (retryable)',
       '  type <sel> <text> [id] — fill semantics',
       '  scroll <down|up> [px] [id] — default one viewport',
@@ -633,6 +634,18 @@ const CMD = {
       requireTab(tabId);
     }
     const t = requireTab(tabId);
+    // F7 guard (user review of the sim): navigating an EXISTING tab to a DIFFERENT url
+    // while its page hosts registered capabilities destroys in-flight agent work
+    // (pagehide → caps unregister). The runtime knows its own cap state — protect it.
+    // Allowed: same-url re-navigate (T4 re-read sync point), "new" flag (fresh tab),
+    // tabs without caps (nothing to destroy).
+    if (!wantsNew && t.url !== url && t.caps.length > 0) {
+      throw browserError(
+        'BROWSER_NAVIGATION_DESTRUCTIVE',
+        `tab ${tabId} hosts ${t.caps.length} registered capability(ies) — navigating to a different url replaces the page and destroys in-flight work; use "new" for a fresh tab (or re-navigate the same url to re-read caps, T4)`,
+        false
+      );
+    }
     t.url = url;
     t.title = url;
     engine.activeTabId = tabId;
@@ -898,6 +911,7 @@ async function runDemo() {
     'screenshot',
     'navigate https://plain.example.org new',
     'tab.switch 0',
+    'navigate https://www.google.com',
     'screenshot 0 big',
     'screenshot 0 big inline',
     'suspend',
