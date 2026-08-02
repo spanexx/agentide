@@ -186,6 +186,42 @@ describe("register-on-connect (T2)", () => {
 
     expect(lastSent(ws).some((m) => m.name === "quick.reply")).toBe(true);
   });
+
+  it("1→0 removal unregisters; re-adding the last element re-registers (0→1)", async () => {
+    annotate(`
+      <button data-sdk-cap="shop.cart.add" id="c1">A</button>
+      <button data-sdk-cap="shop.cart.add" id="c2">B</button>
+    `);
+    sdk = createSdk({ gateway: GATEWAY, appId: "app-1", token: TOKEN });
+    sdk.connect();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    const registerCount = () =>
+      lastSent(ws).filter((m) => m.type === "sdk.capability.register" && m.name === "shop.cart.add").length;
+    expect(registerCount()).toBe(1); // 0→1 on connect
+
+    // Remove one of two: count 2→1, still registered, no new register frame.
+    document.getElementById("c1")!.remove();
+    await flush();
+    expect(registerCount()).toBe(1);
+    const view1 = sdk.state().capabilities.find((c) => c.name === "shop.cart.add");
+    expect(view1?.count).toBe(1);
+    expect(view1?.registered).toBe(true);
+
+    // Remove the last: 1→0 unregisters (capability leaves state, flag clears).
+    document.getElementById("c2")!.remove();
+    await flush();
+    expect(sdk.state().capabilities.find((c) => c.name === "shop.cart.add")).toBeUndefined();
+
+    // Re-add one: 0→1 must re-register (the 1→0 unregister cleared the flag —
+    // without it, the stale `registered` flag would swallow this register).
+    const el = document.createElement("button");
+    el.setAttribute("data-sdk-cap", "shop.cart.add");
+    document.body.appendChild(el);
+    await flush();
+    expect(registerCount()).toBe(2);
+    expect(sdk.state().capabilities.find((c) => c.name === "shop.cart.add")?.registered).toBe(true);
+  });
 });
 
 describe("wire invoke → fan-out → reply (T2 Q5)", () => {

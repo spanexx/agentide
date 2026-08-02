@@ -94,6 +94,9 @@ importers:
         specifier: workspace:*
         version: link:../session-manager
     devDependencies:
+      '@platform/sdk-browser':
+        specifier: workspace:*
+        version: link:../sdk-browser
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.1
@@ -109,12 +112,18 @@ importers:
       eslint:
         specifier: ^10.8.0
         version: 10.8.0
+      jsdom:
+        specifier: ^30.0.1
+        version: 30.0.1
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.1.5(@types/node@22.20.1)(yaml@2.9.0))
+      ws:
+        specifier: ^8.21.1
+        version: 8.21.1
 
   packages/application:
     dependencies:

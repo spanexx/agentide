@@ -23,8 +23,8 @@ import { dispatchInvoke } from "./dispatch.js";
 import { SdkEventPublisher } from "./events.js";
 import { attachLifecycle } from "./lifecycle.js";
 import { CapRegistry, scanRoot, watchCaps } from "./observer.js";
+import type { CapabilityView, Sdk, SdkOptions } from "./types.js";
 import { StateStore } from "./state.js";
-import type { Sdk, SdkOptions } from "./types.js";
 
 // CID:index-001 - createSdk
 // Purpose: factory — validates options, verifies the WebSocket transport,
@@ -67,17 +67,19 @@ export function createSdk(options: SdkOptions): Sdk {
   //   register wire message is sent to the Gateway and the bus event is
   //   published; unregister only emits the bus event (the Gateway learns
   //   via the socket closing or the count reaching zero).
-  const syncRegistration = (name: string) => {
-    const view = registry.get(name);
-    if (view === undefined) return;
-    if (connected && view.count > 0) {
-      if (!view.registered) {
+  //   `view` is passed by the observer on removals, where the registry entry
+  //   is already deleted (count 0) — without it, 1→0 would silently vanish.
+  const syncRegistration = (name: string, view?: CapabilityView) => {
+    const current = view ?? registry.get(name);
+    if (current === undefined) return;
+    if (connected && current.count > 0) {
+      if (!current.registered) {
         registry.setRegistered(name, true);
         sendRegister(name);
         // reconnected=true only after the initial connection (sdk-node parity).
         publisher.capabilityRegistered(name, connectCount > 1);
       }
-    } else if (view.registered) {
+    } else if (current.registered) {
       registry.setRegistered(name, false);
       publisher.capabilityUnregistered(name);
     }
@@ -134,7 +136,10 @@ export function createSdk(options: SdkOptions): Sdk {
     for (const cap of scanRoot(root)) {
       if (registry.add(cap.el)) syncRegistration(cap.name);
     }
-    watchCaps(root, registry, (name) => syncRegistration(name));
+    // Pass the observer's view through: on 1→0 removals the registry entry is
+    // already gone, and the synthetic count:0 view carries the real
+    // `registered` flag so the unregister event still fires.
+    watchCaps(root, registry, (name, view) => syncRegistration(name, view));
   };
 
   attachRoot(options.observeRoot ?? document.body);

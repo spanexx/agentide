@@ -100,6 +100,15 @@ export class CapRegistry {
     if (registered) this.registered.add(name);
     else this.registered.delete(name);
   }
+
+  /**
+   * Whether a capability is currently registered with the Gateway. Survives
+   * entry deletion (count reached 0), so 1→0 unregister / 0→1 re-register
+   * wiring can see the real flag even when `get()` returns undefined.
+   */
+  isRegistered(name: string): boolean {
+    return this.registered.has(name);
+  }
 }
 
 /** Scan a root for annotated elements (initial scan on `createSdk`). */
@@ -132,7 +141,9 @@ export function watchCaps(
       tier: registry["defaultTier"],
       version: registry["defaultVersion"],
       count: 0,
-      registered: false,
+      // The real flag, not a hardcoded false: a 1→0 removal must surface
+      // "was registered, now unregistered" so index.ts can fire the event.
+      registered: registry.isRegistered(name),
     });
   };
 
