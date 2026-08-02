@@ -113,7 +113,6 @@ Trigger: Architectural needs beyond what v1-v3 cover.
 
 These aren't planned at any version. If they come up, they get their own pack.
 
-- **Frontend SDK** — separate pack, separate repo path, separate GRILL (`@platform/sdk-browser`, #11).
 - **Auth identity model** — who is the developer? SaaS portal? Customer? Org? — that GRILL belongs to a "gateway-saas" pack, not sdk-node.
 - **Capability runtime execution** — sdk-node invokes handlers in-process. Where the code runs (Lambda, edge, k8s) is the deployer's choice, not the SDK's. The runtime adapters (v3.x) handle distribution.
 - **Billing / metering** — Gateway counts invocations, billing is a separate concern. Logged separately.
