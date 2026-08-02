@@ -103,8 +103,9 @@ Each runtime owns its own namespace.
 
 ## Browser Runtime
 
-*(future — see `browser-runtime`, backlog #12: no implementation ships in v1; this
-namespace is the specified, canonical example only.)*
+*(being built — see `browser-runtime`, backlog #12, feature-pipeline; this
+namespace is the specified, canonical example. 12 caps in v1: T2's 11 +
+`browser.query` for instance disambiguation.)*
 
 ```
 browser.navigate
@@ -118,6 +119,8 @@ browser.scroll
 browser.wait
 
 browser.screenshot
+
+browser.query
 
 browser.close
 ```

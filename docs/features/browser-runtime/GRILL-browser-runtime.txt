@@ -15,7 +15,8 @@ What this feature is about
 - Session-scoped: one Chromium process + one BrowserContext per session;
   explicit `browser.launch`, `browser.tab.*` sub-namespace, session suspend
   keeps the browser alive, `session.closed` tears it down.
-- Registers ~11 capabilities with the capability-registry as owner `browser`
+- Registers 12 capabilities with the capability-registry as owner `browser`
+  (11 from T2 + `browser.query`, added by F8)
   (Runtime Manifest `runtime: { id: browser }`), dispatched in-process by the
   Gateway through `plugin:browser` owner.
 - Delivers human observability in v1 as shape A "The window": headed mode +
@@ -34,12 +35,14 @@ What this feature does NOT do
 
 Scope clarifications
 
-- Extends the SHIPPED capability-registry contract: `capability.list` gains an
-  optional `tabId` filter (T4). This pipeline modifies `packages/capability-registry`
-  in the same PR scope.
-- Extends the T2 error-code table with two new codes: BROWSER_CRASHED
-  (retryable: true) — see Q4 — and BROWSER_NAVIGATION_DESTRUCTIVE
-  (retryable: false) — see Phase 0.5 findings F7.
+- `capability.list` tabId filter is served by browser-runtime from its per-tab
+  cap snapshot — the SHIPPED capability-registry is NOT modified (F9 revision
+  of the original Q5 answer, audit vs shipped code). Backward compatible
+  exactly as Q5 promised: no-arg list unchanged, filter additive.
+- Extends the T2 error-code table with three new codes: BROWSER_CRASHED
+  (retryable: true) — see Q4 — BROWSER_NAVIGATION_DESTRUCTIVE
+  (retryable: false) — see Phase 0.5 findings F7 — and BROWSER_SELECTOR_AMBIGUOUS
+  (retryable: false) — see Phase 0.5 findings F8.
 - Binary strategy: depends on `@playwright/browser-chromium` (exact-pin) — the
   browser binary lands with the package install, no extra ops step (Q1).
 - Driver-first rule stands: plain-data `BrowserDriver` interface, zero Playwright
@@ -52,9 +55,10 @@ Baseline locked via wayfinder map (T1-T7, binding)
   driver-first rule; binary via @playwright/browser-chromium exact-pin; lifecycle:
   one process + one context per session; browser.on('disconnected') + auto-relaunch
   on next launch; context.close() on session.closed; zombie exit handler.
-- T2 Capability contracts: 11 capabilities; CSS-only selectors; numeric tabId
-  (first tab 0, default = most-recently-active); BROWSER_* error codes through
-  GATEWAY_HANDLER_ERROR envelope; retryable = timeout/race only.
+- T2 Capability contracts: 12 capabilities (browser.query added — instance
+  disambiguation, F8); CSS-only selectors; numeric tabId (first tab 0, default
+  = most-recently-active); BROWSER_* error codes through GATEWAY_HANDLER_ERROR
+  envelope; retryable = timeout/race only.
 - T3 Screenshot payload: inline base64 first, 256 KiB cap, session Resource over
   cap, BROWSER_SCREENSHOT_TOO_LARGE; payload `{ format, mode: 'inline'|'resource',
   data?, resourceId?, bytes }`.
@@ -127,15 +131,23 @@ Answer:
 5. T4 locked `capability.list` tabId filter — extend shipped capability-registry
    now, or defer?
 
-Answer:
-- Extend now, in this pipeline, same PR scope. `list()` gains an optional
-  `tabId` filter; capability-registry remains backward compatible (no-arg list
-  unchanged).
-- Why: T4's navigate output carries capabilities and the agent loop re-reads a
-  tab's caps by tabId; shipping browser-runtime without the filter ships a
-  half-contract and forces a follow-up cross-pack change. The registry change is
-  small and additive.
-- Decision record: CONTEXT.md (capability.list tabId filter, 2026-08-02).
+Answer (REVISED 2026-08-02, audit vs shipped code — see F9):
+- The filter ships IN THIS PIPELINE, but it is served by browser-runtime from
+  its own per-tab cap snapshot (captured at navigate, T4), NOT by modifying the
+  shipped capability-registry. No-arg list passes through to the registry
+  unchanged; `list({ tabId })` is answered by the runtime plugin.
+- Why: the shipped registry keys records by name+version per owner
+  (store.ts makeKey) and cards carry no owner/tabId (types.ts CapabilityCard) —
+  it physically cannot distinguish tab 0's caps from tab 1's, and shipped
+  sdk-browser has no tab awareness to pass as owner metadata. "Extend the
+  registry" as originally locked would require a key-dimension change
+  (name+version+tabId) + card schema change + sdk-browser tab awareness — a
+  breaking change to a SHIPPED package for a need T4 already serves (navigate
+  output carries per-tab caps; F7 same-url re-navigate = sanctioned re-read).
+- Original answer recorded for traceability: "Extend now, same PR scope;
+  registry change small and additive" — REVERSED by the grill-with-docs audit.
+  Flagged for user review (delegated decision).
+- Decision record: CONTEXT.md (capability.list tabId filter revision, 2026-08-02).
 
 6. Pre-impl and post-impl simulation surface: HTML or CLI?
 
@@ -197,6 +209,40 @@ implementation MUST honor them:
   its own cap state and protects it. Extends the T2 error table (see
   Scope clarifications). Demo shows the guard: navigate www.google.com
   while tab 0 holds shop caps → error, demo continues.
+- F8 instance disambiguation (user decision, product-list review): three
+  `add.cart` buttons in one page = one registered capability type, but the
+  agent must target a specific product. v1 adds THREE pieces (Option 3 of
+  the user-review options):
+  1. New read cap `browser.query { selector, tabId? }` → `{ matches,
+     addresses }` — the runtime counts DOM matches and returns concrete
+     CSS addresses (pid-anchored `[data-pid="202"] .add-cart`, else
+     nth-of-type) the agent can reuse verbatim. 0 matches is a RESULT
+     (`matches: 0`), never an error — query exists to teach the agent.
+  2. `instance` param on click/type (`{ selector, instance?: number, ... }`,
+     1-based) — resolves the nth match internally; no selector gymnastics.
+  3. `BROWSER_SELECTOR_AMBIGUOUS` (retryable: false, misuse) — click/type on
+     a selector with >1 matches and no instance refuses instead of clicking
+     the first element blindly (same F7 philosophy: runtime refuses silent
+     wrong actions; the error carries the matches count).
+  Id-based selectors work on arbitrary pages (`[data-pid]`-style attributes
+  sites already emit); query is what makes the agent KNOW the ids exist —
+  the portable equivalent of sdk-browser's `data-product-id` handshake
+  (GRILL-sdk-browser) without needing a cooperative page. Extends the T2
+  error table (see Scope clarifications). Sim: product list on shop page
+  + query/instance/guard demo + tests.
+- F9 capability.list tabId filter — served by browser-runtime, registry
+  UNTOUCHED (revision of Q5, grill-with-docs audit vs shipped code): the
+  shipped capability-registry keys records by name+version per owner
+  (store.ts makeKey), CapabilityCard has no owner/tabId (types.ts), and
+  register() replaces the owner's map (index.ts) — it cannot hold per-tab
+  cards; shipped sdk-browser has no tab awareness to pass as owner metadata.
+  Per the user's mandate ("criticize answers against docs and
+  implementation"), Q5's "extend the shipped registry" answer was reversed:
+  browser-runtime keeps a per-tab cap snapshot (captured at navigate, T4)
+  and serves `capability.list({ tabId })` from it; no-arg list passes
+  through unchanged — backward compatible exactly as Q5 promised, without
+  cross-package surgery. Re-read path stays: navigate output + F7 same-url
+  re-navigate. Flagged for user review (delegated decision).
 
 Next: PRD-TRD — one doc (Why / What / Simulation contract / Technical design /
 Non-goals), citing these findings where they constrain the implementation.

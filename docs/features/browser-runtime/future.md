@@ -16,18 +16,24 @@ brief sketch of the API change.
 These are how v1 works BY DESIGN. Agents must already handle them; the v2/v3
 items below are the runtime-side assists that would make them automatic.
 
-- **No text reading.** The 11 caps have no read-the-page capability. The
+- **No text reading.** The 12 caps have no read-the-page capability. The
   agent's only eye is `browser.screenshot` (viewport, on demand, 256KiB cap,
   inline-first per T3). To "see" a product list the agent runs the **scan
   pattern**: `screenshot → scroll → screenshot → …`. Nothing auto-syncs after
   a scroll — a scroll silently invalidates the agent's last image, and
   re-capture is the agent's job.
-- **Capability awareness is page-wide, instance-blind.** Capabilities are
+- **Capability awareness is page-wide, instance-aware.** Capabilities are
   tab-scoped (T4): the agent always knows "this tab has `add.cart`" no matter
-  where it scrolled. But the registry stores capability types, not instances —
-  three products with the same button means the agent must **disambiguate
-  selectors itself** (`#product-2 .add-cart`, `:nth-of-type(2)`). Clicking
-  works off-screen (Playwright auto-scrolls); scroll is for observation.
+  where it scrolled. The registry stores capability types, not instances —
+  three products with the same button means the agent must disambiguate.
+  **v1 gives it two tools (F8):** `browser.query` returns `{ matches,
+  addresses }` (concrete CSS addresses, pid-anchored when the page has
+  stable attributes), and `instance: i` (1-based) on click/type targets the
+  nth match directly. A click/type with >1 matches and no `instance` →
+  `BROWSER_SELECTOR_AMBIGUOUS` (misuse, not retryable). Hand-composing
+  `:nth-of-type(2)` remains the fallback when the page has no stable
+  structure at all. Clicking works off-screen (Playwright auto-scrolls);
+  scroll is for observation.
 
 ---
 
@@ -58,19 +64,10 @@ content (product lists, prices, table rows). Agents want text, not pixels.
   matching elements.
 - Returns plain text only (no layout/DOM tree — see v5); structure stays the
   agent's job via CSS.
-- Pairs with v2.3 so "read the product grid" doesn't need exact selectors.
+- Pairs with v1's `browser.query` (F8) so "read the product grid" doesn't
+  need exact selectors.
 
-### v2.3 — Instance addressing (`browser.query`)
-**Why:** "Three add.cart buttons, which one?" — the v1 answer is agent-side
-selector disambiguation, which breaks when the page has no stable structure.
-
-**Sketch:**
-- `browser.query { selector, tabId? }` → `{ matches: N, addresses: [sel, …] }`
-  listing concrete addresses (e.g. `:nth-of-type(i)` chains) for each match.
-- `browser.click` / `browser.type` gain optional `instance: i` (1-based) to
-  target one match without the agent composing the selector by hand.
-
-### v2.4 — Full-page screenshots
+### v2.3 — Full-page screenshots
 **Why:** Long product lists make the viewport-slice scan tedious and
 token-hungry (N screenshots per page).
 
@@ -149,7 +146,7 @@ These aren't planned at any version. If they come up, they get their own pack.
 
 - **Accessibility-tree / DOM APIs** — exposing the a11y tree or raw DOM
   inspection is a different product than CSS-driven automation. Agents that
-  need layout intelligence use v2.2/v2.3, not a DOM pipe.
+  need layout intelligence use v2.2 / v1 `browser.query`, not a DOM pipe.
 - **Headless Chrome DevTools surface** — `chrome://inspect`-style deep tooling
   belongs to a devtools pack (prototype #14), not browser-runtime.
 - **Anti-bot / stealth engineering** — defeating bot detection is out of
@@ -164,8 +161,7 @@ These aren't planned at any version. If they come up, they get their own pack.
 
 - v2.1: Do richer selectors weaken the CSS-only security story? — open
 - v2.2: Return shape — page text, per-element text, or both? — open
-- v2.3: `instance:` syntax vs pure query-then-click choreography? — open
-- v2.4: fullPage default on or off? (token cost vs surprise) — open
+- v2.3 (renumbered): fullPage default on or off? (token cost vs surprise) — open
 - v3.1: inline response vs `page.updated` bus event? — depends on BI[13]
 - v3.3: Cookie/localStorage persistence is a security review item — open
 

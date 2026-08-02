@@ -104,17 +104,21 @@ is clear. Route: feature-pipeline for the package build.
   handler.
 
 - [**Capability contracts**](tickets/capability-contracts.md)
-  (T2, closed 2026-08-02) — all 11 caps' contracts locked, plain
-  data only: CSS-only selectors; numeric `tabId` (first tab 0,
-  optional everywhere, default most-recently-active); per-cap
-  input/output shapes (see ticket table); `BROWSER_*` error codes
+  (T2, closed 2026-08-02) — 12 caps' contracts locked (11 from T2 +
+  `browser.query`, F8), plain data only: CSS-only selectors; numeric
+  `tabId` (first tab 0, optional everywhere, default
+  most-recently-active); per-cap input/output shapes (see ticket
+  table); instance disambiguation in v1 (F8: `browser.query` counts +
+  addresses matches, `instance` param on click/type, ambiguous
+  click/type → `BROWSER_SELECTOR_AMBIGUOUS`); `BROWSER_*` error codes
   pass through the `GATEWAY_HANDLER_ERROR` envelope; retryable
   policy = timeout/race retryable (`BROWSER_WAIT_TIMEOUT`,
   `BROWSER_SELECTOR_NOT_FOUND/TIMEOUT`, `BROWSER_NAVIGATION_TIMEOUT`,
   `BROWSER_LAUNCH_FAILED`), misuse not (`BROWSER_NO_CONTEXT`,
   `BROWSER_ALREADY_LAUNCHED`, `BROWSER_TAB_NOT_FOUND`,
-  `BROWSER_CLOSED`, `BROWSER_NAVIGATION_FAILED`); screenshot input
-  locked, output deferred to T3.
+  `BROWSER_CLOSED`, `BROWSER_NAVIGATION_FAILED`,
+  `BROWSER_SELECTOR_AMBIGUOUS`); screenshot input locked, output
+  deferred to T3.
 
 - [**Screenshot payload**](tickets/screenshot-payload.md)
   (T3, closed 2026-08-02) — inline base64 first, session Resource
@@ -132,10 +136,10 @@ is clear. Route: feature-pipeline for the package build.
   `{ tabId, url, capabilities, capsSettled }`, waits for sdk-browser's
   "caps registered" signal (event-bus, per session), timeout → empty
   caps + `capsSettled: false`, never an error (plain pages are
-  legitimate); tab-scoped registrations — sdk-browser registers with
-  session+tabId owner metadata, `capability.list` gains optional
-  `tabId` filter (**extends shipped capability-registry contract**);
-  re-read via re-navigate or filtered list; **destructive-navigate guard
+  legitimate); tab-scoped caps live in browser-runtime's per-tab snapshot
+  (F9 revision: the shipped registry keys by name+version and cannot hold
+  per-tab cards — `capability.list({ tabId })` served by the runtime,
+  registry untouched); re-read via re-navigate or filtered list; **destructive-navigate guard
   (F7, feature-pipeline): different-url navigate on a caps-bearing tab →
   `BROWSER_NAVIGATION_DESTRUCTIVE` (retryable false) — use `newTab:
   true`; same-url re-navigate stays allowed**; `browser.page.read` ruled

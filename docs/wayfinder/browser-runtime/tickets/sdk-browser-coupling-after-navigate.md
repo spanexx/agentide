@@ -51,14 +51,17 @@ capability list, or does the agent discover separately?
   capsSettled: false }` — navigate itself succeeded; plain pages
   without sdk-browser are legitimate (empty caps), not failures. The
   agent can re-query `capability.list` later if it wants fresh caps.
-- **Tab-scoped registrations.** sdk-browser registrations carry
-  page/tab context — session + tabId as owner metadata.
-  `capability.list` gains an optional `tabId` filter. Navigate's caps
-  are scoped to that tabId; two tabs of the same app are
-  distinguishable. **Implication: this extends the shipped
-  capability-registry contract** — registry.register owner metadata
-  + capability.list filter. Noted for the feature-pipeline build;
-  browser-runtime v1 depends on it.
+- **Tab-scoped registrations (F9 revision, feature-pipeline audit).**
+  Navigate's caps are scoped to that tabId; two tabs of the same app are
+  distinguishable — but NOT via registry owner metadata. The shipped
+  capability-registry keys by name+version (store.ts) and cards carry no
+  owner/tabId (types.ts); sdk-browser (shipped) has no tab awareness to
+  pass. Revised: browser-runtime holds a per-tab cap snapshot (captured at
+  navigate) and serves `capability.list({ tabId })` from it; the shipped
+  registry is NOT modified. Backward compatible: no-arg list unchanged.
+  Original text locked "extends the shipped capability-registry contract —
+  registry.register owner metadata + capability.list filter" — REVERSED by
+  audit, flagged for user review; browser-runtime v1 depends on the revision.
 - **Re-read after in-page change: re-navigate OR filtered list.**
   Both work: agent re-invokes `browser.navigate` (idempotent on same
   tab — re-navigates, re-waits, fresh caps) as the explicit sync

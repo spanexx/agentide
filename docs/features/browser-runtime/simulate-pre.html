@@ -280,7 +280,7 @@ const MAX_TIMEOUT = 120_000;               // T6: 120s cap
 const SCREENSHOT_BYTES = 12_480;           // sim: small inline png
 const BIG_SCREENSHOT_BYTES = 300 * 1024;   // sim: over cap
 
-// T2: 11 capabilities, runtime tiers (read | act | destructive)
+// T2+F8: 12 capabilities, runtime tiers (read | act | destructive)
 const CAPS = [
   ['browser.launch',    'act',        'launch browser (mode: headless|headed)'],
   ['browser.close',     'destructive','close session context + process'],
@@ -290,6 +290,7 @@ const CAPS = [
   ['browser.scroll',    'act',        'scroll direction/px or selector'],
   ['browser.wait',      'read',       'wait: selector state | duration'],
   ['browser.screenshot','read',       'screenshot: inline base64 | session resource'],
+  ['browser.query',     'read',       'count + address CSS matches — instance disambiguation (F8)'],
   ['browser.tab.open',  'act',        'open tab (numeric tabId)'],
   ['browser.tab.switch','act',        'activate + bring to front'],
   ['browser.tab.close', 'destructive','close tab (never kills the process)'],
@@ -388,6 +389,10 @@ function renderWindow() {
       <div class="pg-sub">products page · sdk-browser registered ${t.caps.length} cap(s) for tab ${t.tabId}</div>
       <div class="pg-row"><input class="pg-input pg-el" id="pg-search" placeholder="search products…"><button class="pg-btn pg-el" id="pg-search-btn">Search</button><span class="pg-tag">#search / #search-btn</span></div>
       <div class="pg-row"><span class="pg-sub">🛍 Agent Notebook — the item the agent is looking at</span><button class="pg-btn pg-el" id="pg-buy-btn" style="background:var(--info);">Buy now</button><span class="pg-tag">#buy-btn</span></div>
+      <div class="pg-row"><span class="pg-sub">🛍 product list — 3 items, each with an add-to-cart button (F8: query counts, instance targets)</span></div>
+      <div class="pg-row pg-prod" data-pid="101"><span>Earphone — $4.99</span><button class="pg-btn pg-el pg-add-cart">add to cart</button><span class="pg-tag">[data-pid="101"]</span></div>
+      <div class="pg-row pg-prod" data-pid="202"><span>Phone — $19.99</span><button class="pg-btn pg-el pg-add-cart">add to cart</button><span class="pg-tag">[data-pid="202"]</span></div>
+      <div class="pg-row pg-prod" data-pid="303"><span>Bluetooth — $12.49</span><button class="pg-btn pg-el pg-add-cart">add to cart</button><span class="pg-tag">[data-pid="303"]</span></div>
       <div class="pg-row"><span class="pg-link pg-el" id="pg-checkout">checkout →</span><span class="pg-tag">#checkout-link</span></div>
       <div class="pg-row"><span class="pg-sub">📝 form:</span><input class="pg-input pg-el" id="pg-input" value="${escapeHtml(t.inputText || '')}"><span class="pg-tag">#input (type → fill semantics)</span></div>`;
   } else if (isPlain) {
@@ -406,11 +411,18 @@ const SEL_MAP = {
   '#buy-btn': '#pg-buy-btn',
   '#checkout-link': '#pg-checkout',
   '#input': '#pg-input',
+  '.add-cart': '.pg-add-cart',
 };
 function pageSel(sel) { return SEL_MAP[sel] || sel; }
 
-function flashEl(sel, ok) {
-  const el = document.querySelector(pageSel(sel));
+// F8: count CSS matches on the current page (0 = genuinely absent, never an error here)
+function countMatches(sel) {
+  try { return pageBox.querySelectorAll(pageSel(sel)).length; } catch { return 0; }
+}
+
+function flashEl(sel, ok, idx) {
+  const els = document.querySelectorAll(pageSel(sel));
+  const el = idx !== undefined ? els[idx] : els[0];
   if (el) {
     el.classList.remove('flash', 'flash-err');
     void el.offsetWidth;
@@ -502,8 +514,11 @@ const CMD = {
       '                         caps + different url → BROWSER_NAVIGATION_DESTRUCTIVE (retryable:false),',
       '                         use "new" for a fresh tab; same-url = re-read (T4); shop.acme.com →',
       '                         tab-scoped caps; plain → empty, settled; slow:* → capsSettled:false',
-      '  click <sel> [id]     — CSS-only selector; missing → BROWSER_SELECTOR_NOT_FOUND (retryable)',
-      '  type <sel> <text> [id] — fill semantics',
+      '  click <sel> [id] [instance N] — CSS-only selector; missing → BROWSER_SELECTOR_NOT_FOUND (retryable);',
+      '                         >1 match + no instance → BROWSER_SELECTOR_AMBIGUOUS (retryable:false, F8)',
+      '  type <sel> <text> [id] [instance N] — fill semantics; ambiguous like click (F8)',
+      '  query <sel> [id]    — browser.query (F8): { matches, addresses } — pid-anchored,',
+      '                         reusable verbatim in click; 0 matches is a RESULT, never an error',
       '  scroll <down|up> [px] [id] — default one viewport',
       '  wait <sel> | wait <ms> [id] — T6 both modes; 30s default / 120s cap',
       '  screenshot [id] [big] [inline|resource] — T3 inline base64 first; 256KiB cap;',
@@ -548,7 +563,7 @@ const CMD = {
     renderCaps();
     renderWindow();
     audit('browser.launch', `mode: ${mode}`);
-    return { text: `launched — ${mode}, context ready, tab 0 open. 11 caps registered.`, color: 'ok' };
+    return { text: `launched — ${mode}, context ready, tab 0 open. 12 caps registered.`, color: 'ok' };
   },
 
   close: (args) => {
@@ -677,41 +692,82 @@ const CMD = {
     requireContext();
     const sel = args[0];
     if (!sel) throw browserError('BROWSER_SELECTOR_NOT_FOUND', 'click requires a CSS selector', true);
-    const tabId = args[1] !== undefined ? Number(args[1]) : engine.activeTabId;
+    // args: [tabId] [instance N] — any order; instance 1-based (F8)
+    let tabId, instance;
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === 'instance' && i + 1 < args.length && /^\d+$/.test(args[i + 1])) { instance = Number(args[++i]); continue; }
+      if (/^\d+$/.test(args[i])) tabId = Number(args[i]);
+    }
+    if (tabId === undefined) tabId = engine.activeTabId;
     const t = requireTab(tabId);
-    const isShop = t.url.includes('shop.acme.com');
-    const known = isShop && ['#search', '#search-btn', '#buy-btn', '#checkout-link', '#input'].includes(sel);
-    if (!known) {
+    const matches = countMatches(sel);
+    if (matches === 0) {
       flashEl(sel, false);
       throw browserError('BROWSER_SELECTOR_NOT_FOUND', `selector "${sel}" not found on tab ${tabId}`, true);
     }
+    if (matches > 1 && instance === undefined) {
+      // F8: misuse-class — the runtime knows there are N matches, the caller must disambiguate
+      flashEl(sel, false);
+      throw browserError('BROWSER_SELECTOR_AMBIGUOUS', `selector "${sel}" matches ${matches} elements on tab ${tabId} — pass instance (1-based) or a more specific selector (browser.query for addresses)`, false);
+    }
     setStep(LC_STEPS.indexOf('interact'));
-    flashEl(sel, true);
-    emitLog('evt', `clicked "${sel}" on tab ${tabId} (left button)`);
-    audit('browser.click', `selector: ${sel}, tabId: ${tabId}`);
-    return { text: `clicked ${sel} on tab ${tabId}.`, color: 'ok' };
+    flashEl(sel, true, instance !== undefined ? instance - 1 : 0);
+    emitLog('evt', `clicked "${sel}"${instance !== undefined ? ` (instance ${instance})` : ''} on tab ${tabId} (left button)`);
+    audit('browser.click', `selector: ${sel}${instance !== undefined ? ', instance: ' + instance : ''}, tabId: ${tabId}`);
+    return { text: `clicked ${sel}${instance !== undefined ? ` (instance ${instance})` : ''} on tab ${tabId}.`, color: 'ok' };
   },
 
   type: (args) => {
     requireContext();
     const sel = args[0];
-    // optional trailing numeric tabId (default: most recently active tab)
-    const lastIsNum = args.length > 1 && /^\d+$/.test(args[args.length - 1]);
-    const tabId = lastIsNum ? Number(args.pop()) : engine.activeTabId;
-    const text = args.slice(1).join(' ').replace(/^"|"$/g, '');
+    // args: <text...> [tabId] [instance N] — instance keyword anywhere (F8)
+    let instance;
+    const rest = [];
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === 'instance' && i + 1 < args.length && /^\d+$/.test(args[i + 1])) { instance = Number(args[++i]); continue; }
+      rest.push(args[i]);
+    }
+    const lastIsNum = rest.length > 0 && /^\d+$/.test(rest[rest.length - 1]);
+    const tabId = lastIsNum ? Number(rest.pop()) : engine.activeTabId;
+    const text = rest.join(' ').replace(/^"|"$/g, '');
     if (!sel || !text) throw browserError('BROWSER_SELECTOR_NOT_FOUND', 'type requires <selector> <text>', true);
     const t = requireTab(tabId);
-    const isShop = t.url.includes('shop.acme.com');
-    const known = isShop && ['#input', '#search'].includes(sel);
-    if (!known) throw browserError('BROWSER_SELECTOR_NOT_FOUND', `selector "${sel}" not found on tab ${tabId}`, true);
+    const matches = countMatches(sel);
+    if (matches === 0) throw browserError('BROWSER_SELECTOR_NOT_FOUND', `selector "${sel}" not found on tab ${tabId}`, true);
+    if (matches > 1 && instance === undefined) {
+      throw browserError('BROWSER_SELECTOR_AMBIGUOUS', `selector "${sel}" matches ${matches} elements on tab ${tabId} — pass instance (1-based) or a more specific selector (browser.query for addresses)`, false);
+    }
     setStep(LC_STEPS.indexOf('interact'));
     if (sel === '#input') t.inputText = text;
     renderWindow();
-    const el = document.querySelector(pageSel(sel));
-    if (el) { el.value = text; flashEl(sel, true); }
-    emitLog('evt', `typed "${text}" into ${sel} (fill semantics)`);
-    audit('browser.type', `selector: ${sel}, chars: ${text.length}`);
-    return { text: `typed ${text.length} chars into ${sel} (fill).`, color: 'ok' };
+    const els = document.querySelectorAll(pageSel(sel));
+    const el = instance !== undefined ? els[instance - 1] : els[0];
+    if (el) { el.value = text; flashEl(sel, true, instance !== undefined ? instance - 1 : 0); }
+    emitLog('evt', `typed "${text}" into ${sel}${instance !== undefined ? ` (instance ${instance})` : ''} (fill semantics)`);
+    audit('browser.type', `selector: ${sel}${instance !== undefined ? ', instance: ' + instance : ''}, chars: ${text.length}`);
+    return { text: `typed ${text.length} chars into ${sel}${instance !== undefined ? ` (instance ${instance})` : ''} (fill).`, color: 'ok' };
+  },
+
+  query: (args) => {
+    requireContext();
+    const sel = args[0];
+    if (!sel) throw browserError('BROWSER_SELECTOR_NOT_FOUND', 'query requires a CSS selector', false);
+    const tabId = args[1] !== undefined ? Number(args[1]) : engine.activeTabId;
+    const t = requireTab(tabId);
+    // F8: count + address — pid-anchored when the page has stable attributes, else nth-of-type
+    const psel = pageSel(sel);
+    const els = [...pageBox.querySelectorAll(psel)];
+    const addresses = els.map((el, i) => {
+      const prod = el.closest('.pg-prod');
+      if (prod && prod.dataset.pid) return `[data-pid="${prod.dataset.pid}"] ${psel}`;
+      if (el.id) return `#${el.id}`;
+      return `${psel}:nth-of-type(${i + 1})`;
+    });
+    setStep(LC_STEPS.indexOf('interact'));
+    emitLog('evt', `browser.query { selector: ${sel}, tabId: ${tabId} } → matches: ${els.length}`);
+    audit('browser.query', `selector: ${sel}, matches: ${els.length}, tabId: ${tabId}`);
+    // 0 matches is a RESULT, never an error (F8) — query exists to teach the agent
+    return { text: `{ matches: ${els.length}, addresses: [${addresses.join(', ') || 'none'}] }`, color: 'ok' };
   },
 
   scroll: (args) => {
@@ -906,6 +962,11 @@ async function runDemo() {
     'caps 0',
     'type #input "find the agent notebook"',
     'click #search-btn',
+    'query .add-cart',
+    'click .add-cart',
+    'click .add-cart instance 2',
+    'click [data-pid="101"] .pg-add-cart',
+    'query #nope',
     'scroll down 200',
     'wait #buy-btn',
     'screenshot',
