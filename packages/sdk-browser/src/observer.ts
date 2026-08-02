@@ -30,10 +30,11 @@ export function capName(el: Element): string | null {
   return value;
 }
 
-/** Count-based capability tracker. One entry per name (T2 Q4). */
+/** Capability tracker. One entry per name (T2 Q4). */
 export class CapRegistry {
   private counts = new Map<string, number>();
   private els = new Map<string, Set<Element>>();
+  private registered = new Set<string>();
 
   constructor(
     private readonly defaultTier = "act",
@@ -78,7 +79,7 @@ export class CapRegistry {
       tier: this.defaultTier,
       version: this.defaultVersion,
       count,
-      registered: false, // Phase 5 wiring flips this on connect
+      registered: this.registered.has(name),
     };
   }
 
@@ -87,6 +88,17 @@ export class CapRegistry {
     return [...this.counts.keys()]
       .map((name) => this.get(name))
       .filter((v): v is CapabilityView => v !== undefined);
+  }
+
+  /** Annotated elements for a capability (dispatch targets, T2 Q5). */
+  elements(name: string): Element[] {
+    return [...(this.els.get(name) ?? [])];
+  }
+
+  /** Flip the connection-aware registration flag (Phase 5 wiring). */
+  setRegistered(name: string, registered: boolean): void {
+    if (registered) this.registered.add(name);
+    else this.registered.delete(name);
   }
 }
 

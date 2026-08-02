@@ -19,17 +19,31 @@
 import type { BackendValue } from "@platform/backend-runtime";
 import type { ConnectionState } from "./types.js";
 
-/** Gateway→SDK wire message that triggers a dispatch (Phase 3 fan-out). */
+/** Gateway→SDK invoke wire message (sdk-node parity: callId/name/input). */
 export interface InvokeMessage {
   type: "sdk.invoke";
-  capability: string;
+  callId: string;
+  name: string;
   input?: BackendValue;
 }
 
-/** Callbacks the client fires into the state/event wiring (Phases 5). */
+/** Gateway refusal of a capability registration (fields: name, reason). */
+export interface RegisterErrorMessage {
+  type: "sdk.capability.register.error";
+  name: string;
+  reason: string;
+}
+
+/** Callbacks the client fires into the state/event wiring (Phase 5). */
 export interface ClientHooks {
   onState(state: ConnectionState): void;
   onInvoke(message: InvokeMessage): void;
+  /** Socket opened — auth sent; latency measured from connect(). */
+  onOpen(latencyMs: number): void;
+  /** Socket closed for good — with a normalized reason string. */
+  onDisconnected(reason: string): void;
+  /** Gateway refused a registration (`sdk.capability.register.error`). */
+  onRegisterError(message: RegisterErrorMessage): void;
 }
 
 /** Backoff ladder — 1s → 30s cap (GRILL T3). */
@@ -42,6 +56,7 @@ export class SdkClient {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private deliberate = false;
   private reconnectPending = false;
+  private connectStartMs = 0;
 
   constructor(
     private readonly gateway: string,
@@ -63,6 +78,7 @@ export class SdkClient {
     this.reconnectPending = false;
     this.deliberate = false;
     this.setState("connecting");
+    this.connectStartMs = Date.now();
 
     const ws = new globalThis.WebSocket(this.gateway);
     this.ws = ws;
@@ -73,6 +89,7 @@ export class SdkClient {
       ws.send(JSON.stringify({ type: "sdk.auth", token: this.token }));
       this.backoffIdx = 0;
       this.setState("connected");
+      this.hooks.onOpen(Date.now() - this.connectStartMs);
     };
 
     ws.onclose = (ev) => this.handleClose(ev);
@@ -86,12 +103,14 @@ export class SdkClient {
       }
       if (message.type === "sdk.invoke") {
         this.hooks.onInvoke(message as InvokeMessage);
+      } else if (message.type === "sdk.capability.register.error") {
+        this.hooks.onRegisterError(message as RegisterErrorMessage);
       }
     };
   }
 
-  /** Deliberate teardown — close(1000), no reconnect, timer cleared. */
-  disconnect(): void {
+  /** Deliberate teardown — close(1000, reason), no reconnect, timer cleared. */
+  disconnect(reason = "deliberate"): void {
     this.deliberate = true;
     this.clearTimer();
     this.reconnectPending = false;
@@ -99,12 +118,13 @@ export class SdkClient {
     this.ws = null;
     if (ws !== null) {
       try {
-        ws.close(1000, "deliberate");
+        ws.close(1000, reason);
       } catch {
         /* already closed */
       }
     }
     this.setState("disconnected");
+    this.hooks.onDisconnected(reason);
   }
 
   /**
@@ -130,13 +150,18 @@ export class SdkClient {
     }
   }
 
-  /** Lifecycle gate — offline (T3 Q2): drop the socket, no auto-reconnect. */
+  /**
+   * Lifecycle gate — offline (T3 Q2): drop the socket, no auto-reconnect
+   * while still offline, but remember the intent so `reconnectNow()` (fired
+   * by the `online` gate) restores the connection immediately.
+   */
   markSocketDead(): void {
     this.deliberate = true;
     this.clearTimer();
-    this.reconnectPending = false;
+    this.reconnectPending = true; // want to come back on `online`
     this.ws = null;
     this.setState("disconnected");
+    this.hooks.onDisconnected("offline");
   }
 
   /** Online (T3 Q2): backoff resets; reconnectNow fires immediately. */
@@ -161,6 +186,7 @@ export class SdkClient {
       this.reconnectPending = false;
       this.ws = null;
       this.setState("disconnected");
+      this.hooks.onDisconnected("origin-mismatch");
       return;
     }
     this.scheduleReconnect();

@@ -1,29 +1,36 @@
 /**
  * @platform/sdk-browser — public entry point.
  *
- * `createSdk` is the factory. Phase 1 scaffolds the shape; later phases wire
- * the engine:
- *   - Phase 2 (observer.ts): initial scan + MutationObserver over
- *     `observeRoot` (default `document.body`), count-based dedup
- *     (register 0→1, unregister 1→0). The DOM is the manifest.
- *   - Phase 3 (dispatch.ts): Gateway `sdk.invoke` fans out
- *     `CustomEvent("sdk:cap:<name>")` on every annotated element, with the
- *     form-fill fallback.
- *   - Phase 4 (client.ts): `globalThis.WebSocket` transport, auth-first
- *     message `{ type: "sdk.auth", token }`, reconnect backoff
- *     1s→30s ±20% jitter.
- *   - Phase 5 (lifecycle.ts / state.ts / events.ts): visibility / offline /
- *     pagehide gates, `onStateChange` 4-state surface, 8 bus events
- *     (sdk-node parity).
+ * `createSdk` is the factory. The DOM is the manifest: `data-sdk-cap`
+ * annotations are scanned on create (and on `observe()`), watched via
+ * MutationObserver (observer.ts), fanned out on `sdk.invoke` (dispatch.ts),
+ * carried over `globalThis.WebSocket` with auth-first + backoff (client.ts),
+ * gated by visibility/offline/pagehide (lifecycle.ts), and surfaced through
+ * `onStateChange` (state.ts) plus 8 bus events (events.ts).
+ *
+ * CID Index:
+ * CID:index-001 -> createSdk (validation + engine wiring)
+ * CID:index-002 -> attachRoot (scan + watch an observation root)
+ * CID:index-003 -> syncRegistration (register 0→1 / unregister 1→0)
+ * CID:index-004 -> handleInvoke (wire invoke → fan-out → events)
  */
 
+import type { BackendValue } from "@platform/backend-runtime";
+import { createEventBus } from "@platform/event-bus";
+import { SdkClient } from "./client.js";
+import type { InvokeMessage, RegisterErrorMessage } from "./client.js";
+import { dispatchInvoke } from "./dispatch.js";
+import { SdkEventPublisher } from "./events.js";
+import { attachLifecycle } from "./lifecycle.js";
+import { CapRegistry, scanRoot, watchCaps } from "./observer.js";
+import { StateStore } from "./state.js";
 import type { Sdk, SdkOptions } from "./types.js";
 
 // CID:index-001 - createSdk
-// Purpose: factory — validates options, verifies the WebSocket transport
-//   exists, and returns the public Sdk surface. Engine modules (observer,
-//   dispatch, client, lifecycle) attach in Phases 2–5.
-// Uses: types.ts
+// Purpose: factory — validates options, verifies the WebSocket transport,
+//   wires the engine modules together, and returns the public Sdk surface.
+// Uses: client.ts, dispatch.ts, events.ts, lifecycle.ts, observer.ts,
+//   state.ts, types.ts
 // Used by: page code, tests, post-impl sim
 export function createSdk(options: SdkOptions): Sdk {
   if (!options.gateway) {
@@ -43,28 +50,103 @@ export function createSdk(options: SdkOptions): Sdk {
     );
   }
 
-  // Phase 2–5 modules attach here. For now, connect()/disconnect() are
-  // no-ops so the package builds and tests can pin the factory contract.
+  const eventBus = createEventBus();
+  const registry = new CapRegistry(options.defaultTier, options.defaultVersion);
+  const publisher = new SdkEventPublisher(eventBus, options.appId);
+  const stateStore = new StateStore(registry);
+
+  let connectCount = 0;
+  let connected = false;
+  let invokeCounter = 0;
+  // Assigned after the client is built (wire sender for registrations).
+  let sendRegister: (name: string) => void = () => undefined;
+
+  // CID:index-003 - syncRegistration
+  // Purpose: 0→1 register / 1→0 unregister, gated on the connection so
+  //   capabilities are only registered while connected (GRILL T2). The
+  //   register wire message is sent to the Gateway and the bus event is
+  //   published; unregister only emits the bus event (the Gateway learns
+  //   via the socket closing or the count reaching zero).
+  const syncRegistration = (name: string) => {
+    const view = registry.get(name);
+    if (view === undefined) return;
+    if (connected && view.count > 0) {
+      if (!view.registered) {
+        registry.setRegistered(name, true);
+        sendRegister(name);
+        // reconnected=true only after the initial connection (sdk-node parity).
+        publisher.capabilityRegistered(name, connectCount > 1);
+      }
+    } else if (view.registered) {
+      registry.setRegistered(name, false);
+      publisher.capabilityUnregistered(name);
+    }
+  };
+
+  // CID:index-004 - handleInvoke
+  // Purpose: shared path for wire invokes (client hook) and the public
+  //   invoke() — emit started/failed/completed events around the fan-out,
+  //   and reply on the wire with sdk.invoke.result / sdk.invoke.error
+  //   (sdk-node parity: callId correlates the gateway's original request).
+  const handleInvoke = (callId: string, name: string, input?: BackendValue) => {
+    publisher.invokeStarted(callId, name, input ?? null);
+    const started = performance.now();
+    const ok = dispatchInvoke(registry.elements(name), name, input ?? null, options.token);
+    if (ok) {
+      client.send({ type: "sdk.invoke.result", callId, payload: null });
+      publisher.invokeCompleted(callId, name, performance.now() - started);
+    } else {
+      client.send({
+        type: "sdk.invoke.error",
+        callId,
+        code: "NO_TARGETS",
+        message: `no annotated elements for ${name}`,
+      });
+      publisher.invokeFailed(callId, name, `no annotated elements for ${name}`, "NO_TARGETS");
+    }
+  };
+
+  const client = new SdkClient(options.gateway, options.token, {
+    onState: (state) => {
+      const wasConnected = connected;
+      stateStore.setConnection(state);
+      connected = state === "connected";
+      if (connected) {
+        connectCount += 1;
+        for (const view of registry.list()) syncRegistration(view.name);
+      } else if (wasConnected) {
+        // Dropped / disconnected: unregister everything (registered
+        // only while connected).
+        for (const view of registry.list()) syncRegistration(view.name);
+      }
+    },
+    onOpen: (latencyMs) => publisher.connected(options.gateway, latencyMs),
+    onDisconnected: (reason) => publisher.disconnected(reason),
+    onInvoke: (message: InvokeMessage) => handleInvoke(message.callId, message.name, message.input),
+    onRegisterError: (message: RegisterErrorMessage) =>
+      publisher.capabilityRejected(message.name, message.reason),
+  });
+  sendRegister = (name) => client.send({ type: "sdk.capability.register", name });
+
+  // CID:index-002 - attachRoot
+  // Purpose: initial scan (GRILL T2) + MutationObserver on one root.
+  const attachRoot = (root: Element) => {
+    for (const cap of scanRoot(root)) {
+      if (registry.add(cap.el)) syncRegistration(cap.name);
+    }
+    watchCaps(root, registry, (name) => syncRegistration(name));
+  };
+
+  attachRoot(options.observeRoot ?? document.body);
+  attachLifecycle(client);
+
   return {
-    connect() {
-      /* wired in Phase 4 */
-    },
-    disconnect() {
-      /* wired in Phase 4 */
-    },
-    observe() {
-      /* wired in Phase 2 */
-    },
-    onStateChange() {
-      /* wired in Phase 5 */
-      return () => undefined;
-    },
-    state() {
-      return { connectionState: "disconnected", capabilities: [] };
-    },
-    invoke() {
-      /* wired in Phase 3 */
-    },
+    connect: () => client.connect(),
+    disconnect: () => client.disconnect(),
+    observe: (root: Element) => attachRoot(root),
+    onStateChange: (cb) => stateStore.onStateChange(cb),
+    state: () => stateStore.state(),
+    invoke: (name: string, input?: BackendValue) => handleInvoke(`inv-${++invokeCounter}`, name, input),
   };
 }
 

@@ -86,6 +86,9 @@ function makeClient() {
   const hooks = {
     onState: (s: ConnectionState) => states.push(s),
     onInvoke: vi.fn(),
+    onOpen: vi.fn(),
+    onDisconnected: vi.fn(),
+    onRegisterError: vi.fn(),
   };
   const client = new SdkClient(GATEWAY, TOKEN, hooks);
   return { client, hooks };
