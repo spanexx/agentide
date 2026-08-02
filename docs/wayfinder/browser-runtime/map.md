@@ -3,7 +3,7 @@
 > **Map title:** browser-runtime — finding the way to a shipped
 > `@platform/browser-runtime` Runtime Plugin.
 >
-> **Status:** charting complete (0/7 tickets closed). Live tracker:
+> **Status:** charting complete (2/7 tickets closed). Live tracker:
 > this file + the 7 child ticket files.
 
 ## Destination
@@ -81,7 +81,7 @@ happens via `delivery: feature-pipeline` once the way is clear.
 | 3 | Screenshot payload | `grilling` | Human observability |
 | 4 | sdk-browser coupling after navigate | `grilling` | — |
 | 5 | BrowserContext suspend/resume | `grilling` | — |
-| 6 | browser.wait semantics | `grilling` | — |
+| 6 | browser.wait semantics | `grilling` ✅ closed | — |
 | 7 | Human observability in v1 | `prototype` | — |
 
 **Frontier (open + unblocked):** Capability contracts (T2).
@@ -101,6 +101,16 @@ Everything else is blocked until Capability contracts resolves.
   lifecycle via `browser.on('disconnected')` + auto-relaunch,
   `context.close()` on `session.closed`, zombie-prevention exit
   handler.
+
+- [**browser.wait semantics**](tickets/browser-wait-semantics.md)
+  (T6, closed 2026-08-02) — waits for a condition AND has a
+  fixed-duration mode. Input = discriminated union:
+  `{ wait: 'selector', selector, state?, timeout? }` (state:
+  `visible | attached | hidden`) OR `{ wait: 'time', ms }`. Default
+  timeout 30s, per-call override capped at 120s; duration mode has no
+  timeout interplay. Timeout → error `BROWSER_WAIT_TIMEOUT`,
+  `retryable: true`; final error codes named in Capability contracts
+  (T2).
 
 ## Not yet specified
 
