@@ -3,7 +3,7 @@
 > **Map title:** browser-runtime — finding the way to a shipped
 > `@platform/browser-runtime` Runtime Plugin.
 >
-> **Status:** charting complete (3/7 tickets closed). Live tracker:
+> **Status:** charting complete (4/7 tickets closed). Live tracker:
 > this file + the 7 child ticket files.
 
 ## Destination
@@ -78,15 +78,14 @@ happens via `delivery: feature-pipeline` once the way is clear.
 |---|---|---|---|
 | 1 | Engine and browser lifecycle research | `research` ✅ closed | Capability contracts |
 | 2 | Capability contracts | `grilling` ✅ closed | — |
-| 3 | Screenshot payload | `grilling` | Human observability |
+| 3 | Screenshot payload | `grilling` ✅ closed | — |
 | 4 | sdk-browser coupling after navigate | `grilling` | — |
 | 5 | BrowserContext suspend/resume | `grilling` | — |
 | 6 | browser.wait semantics | `grilling` ✅ closed | — |
 | 7 | Human observability in v1 | `prototype` | — |
 
-**Frontier (open + unblocked):** Screenshot payload (T3). Everything
-else is blocked until Capability contracts resolves — T3/T4/T5 are
-now unblocked; T3 is the next frontier.
+**Frontier (open + unblocked):** sdk-browser coupling after navigate
+(T4). T4, T5 are open; T7 becomes unblocked once T4/T5 close.
 
 ## Decisions so far
 
@@ -115,6 +114,17 @@ now unblocked; T3 is the next frontier.
   `BROWSER_ALREADY_LAUNCHED`, `BROWSER_TAB_NOT_FOUND`,
   `BROWSER_CLOSED`, `BROWSER_NAVIGATION_FAILED`); screenshot input
   locked, output deferred to T3.
+
+- [**Screenshot payload**](tickets/screenshot-payload.md)
+  (T3, closed 2026-08-02) — inline base64 first, session Resource
+  over 256 KiB cap (context protection: 256 KiB ≈ 85k tokens worst
+  case inline; over cap the image never enters the response);
+  discriminated return `{ format, mode: 'inline'|'resource', data?,
+  resourceId?, bytes }`, audit logs shape only; input extended
+  `{ tabId?, fullPage?, format?, quality?, mode? }` (mode default
+  auto); forced inline + oversize → `BROWSER_SCREENSHOT_TOO_LARGE`
+  retryable false; resources session-owned, `session.closed`
+  cleanup.
 
 - [**browser.wait semantics**](tickets/browser-wait-semantics.md)
   (T6, closed 2026-08-02) — waits for a condition AND has a

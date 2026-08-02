@@ -1,8 +1,8 @@
 # Screenshot payload
 
 **Type:** `wayfinder:grilling` (HITL)
-**Status:** unclaimed
-**Assigned:** —
+**Status:** closed
+**Assigned:** spanexx
 **Blocked by:** Capability contracts (T2)
 **Blocks:** Human observability in v1 (T7)
 
@@ -34,4 +34,60 @@ disk?
 
 ## Resolution
 
-(AFNK — grilling session.)
+**Status: CLOSED (2026-08-02, 9 grill questions, 3 rounds).**
+
+### Locked decisions
+
+- **Carrier: inline base64 first, session Resource over cap.** Under
+  the size cap the image rides the invoke response as base64 (simple,
+  wire-instant). Above it, browser-runtime writes the image to a
+  session-owned resource file and returns a reference. Both surfaces
+  exist; the happy path stays simple, the escape hatch handles MB
+  shots. Screenshot is a low-level observation primitive, not the
+  primary agent path — this keeps that posture.
+- **Size cap: 256 KiB raw image bytes** (pre-base64). Rationale
+  grounded in context-window math: base64 inflates ~1.33×, LLM tokens
+  ≈ 4 chars each, so 256 KiB ≈ 85k tokens worst case inline. The cap
+  is context protection — above it the image never enters the
+  response, so it never enters the agent's context. Typical viewport
+  PNGs (1280×800, ~100–400 KiB raw) mostly stay inline; fullPage /
+  large viewports spill to resource.
+- **Return shape: discriminated.** `{ format: 'png'|'jpeg', mode:
+  'inline'|'resource', data?: base64, resourceId?: string, bytes }` —
+  `data` XOR `resourceId`, `mode` discriminates. Audit logs this
+  shape only (`{ mode, bytes, format }`), never the image itself, in
+  either mode (matches CONTEXT.md outputs-logged-shape rule).
+- **Input (extends T2's `{ tabId?, fullPage? }`):**
+  `{ tabId?, fullPage?, format?: 'png'|'jpeg', quality?: number,
+  mode?: 'inline'|'resource' }` — `png` default, `quality` 0–100
+  default 80 (ignored for png), `mode` default `'auto'` (cap
+  decides). `mode: 'resource'` lets the caller force a reference to
+  keep context lean; `mode: 'inline'` forces inline.
+- **Forced inline + oversize → error `BROWSER_SCREENSHOT_TOO_LARGE`,
+  `retryable: false`.** Caller forced a mode the data can't fit — fix
+  input (use resource mode), don't retry. Consistent with the T2
+  retryable policy (misuse not retryable).
+- **Resource lifecycle: session-owned.** File lives in the session
+  resource dir, cleaned on `session.closed` by session-manager — no
+  per-call cleanup, no TTL, no explicit delete cap. Reuses the
+  existing session resource tracking (map Notes: `session.closed`
+  cleanup).
+
+### What this unblocks
+
+- T7 Human observability in v1: screenshots can be Resources
+  (`mode: 'resource'`), so a human dashboard can stream them from the
+  session resource dir — but v1 doesn't depend on it; inline also
+  rides the invoke response. The dashboard question stays in T7.
+
+### Open questions for later tickets
+
+- None — payload shape, cap, lifecycle, audit all locked. Image
+  format options (jpeg quality, scale) are driver-level detail for
+  build time.
+
+### Delivery routing
+
+**`delivery: decision-only`** — this ticket resolved a contract
+question with no build work; the build happens via the map's eventual
+`delivery: feature-pipeline` for browser-runtime itself.
