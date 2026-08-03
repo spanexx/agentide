@@ -7,7 +7,7 @@
  * - GatewayErrorPayload: structured error shape (code/message/details/retryable)
  * - AuditRecord: one per invocation, persisted to disk + emitted on Event Bus
  * - TenantRecord: durable tenant state
- * - TokenClaims: JWT payload (sub: {tenantId, callerId}, scope, iat, exp)
+ * - TokenClaims: JWT payload (sub: {tenantId, callerId}, scope, expectedOrigins, iat, exp)
  * - RateLimitBucketConfig: capacity + tokensPerSecond per (tenantId, callerId)
  * - GatewayConfig: factory config (paths, timeouts, rate limit, clock)
  * - Adapter: protocol-translator interface (MCP, REST, CLI, WS plug in here)
@@ -188,6 +188,7 @@ export interface IssueTokenRequest {
   readonly callerId: string;
   readonly scope: readonly string[];
   readonly expiresInMs?: number;
+  readonly expectedOrigins?: readonly string[];
 }
 
 // CID:types-016 - CreateTenantRequest

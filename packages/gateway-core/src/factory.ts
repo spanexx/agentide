@@ -162,6 +162,9 @@ export async function createGateway(
       const claims: TokenClaims = {
         sub: { tenantId: req.tenantId, callerId: req.callerId },
         scope: [...req.scope],
+        ...(req.expectedOrigins !== undefined && req.expectedOrigins.length > 0
+          ? { expectedOrigins: [...req.expectedOrigins] }
+          : {}),
         iat: clock.now(),
         exp: clock.now() + (req.expiresInMs ?? DEFAULT_TOKEN_TTL_MS),
       };
@@ -264,7 +267,7 @@ function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
   const handlers: Record<string, (input: YamlValue, sessionId: string | undefined) => Promise<YamlValue>> = {
     // === auth ===
     "auth.token.issue": wrap((input) => {
-      const i = input as { tenantId?: string; callerId?: string; scope?: readonly string[]; expiresInMs?: number };
+      const i = input as { tenantId?: string; callerId?: string; scope?: readonly string[]; expiresInMs?: number; expectedOrigins?: readonly string[] };
       if (typeof i.tenantId !== "string" || typeof i.callerId !== "string" || !Array.isArray(i.scope)) {
         throw new GatewayError(
           ERROR_CODES.INVALID_REQUEST,
@@ -276,6 +279,9 @@ function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
       const claims: TokenClaims = {
         sub: { tenantId: i.tenantId, callerId: i.callerId },
         scope: i.scope as readonly string[],
+        ...(Array.isArray(i.expectedOrigins) && i.expectedOrigins.length > 0
+          ? { expectedOrigins: i.expectedOrigins }
+          : {}),
         iat: ctx.clock.now(),
         exp: ctx.clock.now() + (i.expiresInMs ?? DEFAULT_TOKEN_TTL_MS),
       };
