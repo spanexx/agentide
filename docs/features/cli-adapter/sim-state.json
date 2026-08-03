@@ -1,5 +1,5 @@
 {
-  "updated": "2026-08-03T13:57:07Z",
+  "updated": "2026-08-03T14:14:03Z",
   "binary": "crates/cli-adapter/target/debug/platform",
   "backend": "mock_wire (locked W4 wire; real adapter lands with BI[24])",
   "pass": 11, "fail": 0,
