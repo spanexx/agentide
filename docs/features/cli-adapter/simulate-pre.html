@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cli-adapter simulation — pre-impl (design-time)</title>
+<style>
+  :root {
+    --bg: #0f1419; --bg-elevated: #161c23; --panel: #12181f;
+    --fg: #d8dee6; --muted: #7d8896; --accent: #4da3ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922; --orange: #e8912d;
+    --dim: #55606e; --border: #232c36;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 "SF Mono", Consolas, "DejaVu Sans Mono", monospace; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; background: var(--bg-elevated); }
+  h1 { font-size: 15px; margin: 0; }
+  .badge { font-size: 10px; color: var(--yellow); border: 1px solid var(--yellow);
+    padding: 2px 8px; border-radius: 10px; }
+  main { display: grid; grid-template-columns: 380px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 120px); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; overflow-y: auto; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 0 0 10px; }
+  .section { margin-bottom: 14px; }
+  .section h3 { font-size: 11px; color: var(--accent); margin: 10px 0 6px; }
+  .row { display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 0; border-bottom: 1px dashed var(--border); gap: 8px; }
+  .row .lbl { color: var(--muted); font-size: 11px; }
+  .row .val { font-weight: bold; font-size: 12px; }
+  .val.green { color: var(--green); } .val.red { color: var(--red); }
+  .val.yellow { color: var(--yellow); } .val.dim { color: var(--dim); }
+  .toggle { cursor: pointer; user-select: none; font-size: 11px;
+    border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px;
+    background: var(--bg-elevated); color: var(--muted); }
+  .toggle.on { border-color: var(--accent); color: var(--accent); }
+  pre.file { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px; font-size: 11px; margin: 6px 0; overflow-x: auto; color: #9fb3c8; }
+  pre.file .k { color: var(--accent); } pre.file .c { color: var(--dim); }
+  pre.file .s { color: #7ee787; } pre.file .p { color: var(--orange); }
+  #exit-box { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  #exit-code { font-size: 22px; font-weight: bold; color: var(--dim); }
+  #exit-desc { font-size: 11px; color: var(--muted); }
+  .legend { font-size: 10.5px; color: var(--muted); margin-top: 8px; }
+  .legend div { padding: 1px 0; }
+  .legend code { color: var(--fg); background: var(--bg); padding: 0 4px; border-radius: 3px; }
+  #wire-log { font-size: 10.5px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; max-height: 180px; overflow-y: auto; margin-top: 6px; }
+  #wire-log div { white-space: pre-wrap; word-break: break-all; padding: 1px 0; }
+  .w-send { color: #7ee787; } .w-recv { color: #d2a8ff; }
+  /* terminal */
+  #term-box { display: flex; flex-direction: column; height: 100%; }
+  #term-log { flex: 1; overflow-y: auto; background: #0a0d11; border: 1px solid var(--border);
+    border-radius: 8px 8px 0 0; padding: 10px; font-size: 12.5px; }
+  #term-log .cmd { color: #e6edf3; } #term-log .prompt { color: var(--green); }
+  #term-log .out { color: var(--fg); white-space: pre-wrap; }
+  #term-log .out .dim { color: var(--dim); }
+  #term-log .out .err { color: var(--red); }
+  #term-log .out .warn { color: var(--yellow); }
+  #term-log .exit0 { color: var(--green); } #term-log .exit1 { color: var(--red); }
+  #term-log .exit2 { color: var(--yellow); } #term-log .exit3 { color: var(--orange); }
+  #term-log .exit4 { color: var(--red); } #term-log .exit5 { color: var(--dim); }
+  #term-log .sys { color: var(--muted); font-style: italic; }
+  table.tbl { border-collapse: collapse; margin: 4px 0; font-size: 12px; }
+  table.tbl th { color: var(--muted); text-align: left; border-bottom: 1px solid var(--border);
+    padding: 2px 14px 2px 0; font-weight: normal; }
+  table.tbl td { padding: 2px 14px 2px 0; }
+  #term-input-row { display: flex; background: #0a0d11; border: 1px solid var(--border);
+    border-top: none; border-radius: 0 0 8px 8px; padding: 8px 10px; }
+  #term-prompt { color: var(--green); white-space: nowrap; }
+  #term-input { flex: 1; background: none; border: none; outline: none; color: var(--fg);
+    font: inherit; }
+  .help { padding: 8px 16px; border-top: 1px solid var(--border); font-size: 10.5px;
+    color: var(--muted); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .help code { color: var(--accent); background: var(--bg-elevated); padding: 0 4px; border-radius: 3px; }
+  button { background: var(--bg-elevated); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 5px; padding: 4px 10px; font: inherit; font-size: 11px; cursor: pointer; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  .footnote { padding: 6px 16px 10px; font-size: 10px; color: var(--muted);
+    border-top: 1px solid var(--border); }
+  .footnote b { color: var(--yellow); }
+  .scen { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .scen button { font-size: 10px; padding: 2px 8px; }
+  input[type=text] { background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px 6px; font: inherit; font-size: 11px; width: 100%; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>platform CLI (cli-adapter)</h1>
+  <span class="badge">PRE-IMPL — DESIGN-TIME (wayfinder Q1–Q5 locked; wire W1–W6)</span>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Config sources — precedence flag &gt; env &gt; config &gt; prompt</h2>
+
+    <div class="section">
+      <h3>Gateway URL</h3>
+      <div class="row"><span class="lbl">--url flag</span><span class="val dim" id="url-flag">— (unset)</span></div>
+      <div class="row"><span class="lbl">PLATFORM_GATEWAY_URL env</span>
+        <span class="toggle on" id="tg-env-url" onclick="toggle('env-url')">set</span></div>
+      <div class="row"><span class="lbl">config gateway_url</span>
+        <span class="toggle on" id="tg-cfg-url" onclick="toggle('cfg-url')">present</span></div>
+      <div class="row"><span class="lbl">prompt (TTY only)</span><span class="val dim">last resort</span></div>
+      <div class="row"><span class="lbl"><b>→ resolved URL</b></span><span class="val" id="resolved-url">—</span></div>
+    </div>
+
+    <div class="section">
+      <h3>Token</h3>
+      <div class="row"><span class="lbl">--token flag</span><span class="val dim" id="token-flag">— (unset)</span></div>
+      <div class="row"><span class="lbl">PLATFORM_TOKEN env</span>
+        <span class="toggle on" id="tg-env-token" onclick="toggle('env-token')">set</span></div>
+      <div class="row"><span class="lbl">config token</span>
+        <span class="toggle on" id="tg-cfg-token" onclick="toggle('cfg-token')">present</span></div>
+      <div class="row"><span class="lbl">prompt (echo-free)</span><span class="val dim">last resort</span></div>
+      <div class="row"><span class="lbl"><b>→ resolved token</b></span><span class="val" id="resolved-token">—</span></div>
+    </div>
+
+    <div class="section">
+      <h3>~/.config/platform/config.toml</h3>
+      <pre class="file" id="config-file"></pre>
+      <div class="row"><span class="lbl">file perms</span>
+        <span class="toggle on" id="tg-perms" onclick="toggle('perms')">0644</span></div>
+    </div>
+
+    <div class="section">
+      <h3>Runtime conditions</h3>
+      <div class="row"><span class="lbl">stdout piped (non-TTY)</span>
+        <span class="toggle" id="tg-piped" onclick="toggle('piped')">no</span></div>
+      <div class="row"><span class="lbl">gateway reachable</span>
+        <span class="toggle on" id="tg-up" onclick="toggle('up')">yes</span></div>
+      <div class="row"><span class="lbl">TLS trusted (wss://)</span>
+        <span class="toggle on" id="tg-tls" onclick="toggle('tls')">yes</span></div>
+      <div class="row"><span class="lbl">events dropped (stats.dropped)</span>
+        <span class="toggle" id="tg-drop" onclick="toggle('drop')">0</span></div>
+      <div class="row"><span class="lbl">session scope for invoke</span>
+        <span class="val dim">admin token has <code>platform.session.write</code></span></div>
+    </div>
+
+    <div class="section">
+      <h3>Last command</h3>
+      <div class="row"><span class="lbl">command</span><span class="val" style="font-size:11px" id="last-cmd">—</span></div>
+      <div id="exit-box">
+        <span id="exit-code">—</span>
+        <span id="exit-desc" class="val dim">no command yet</span>
+      </div>
+      <h3>Wire frames (CLI ⇄ adapter, locked W4)</h3>
+      <div id="wire-log"><div class="dim">—</div></div>
+    </div>
+
+    <div class="legend">
+      <b>Exit codes (Q4 lock):</b>
+      <div><code>0</code> invoke.result</div>
+      <div><code>1</code> invoke.error (any GATEWAY_*)</div>
+      <div><code>2</code> pre-flight / connection</div>
+      <div><code>3</code> TLS / upgrade failure</div>
+      <div><code>4</code> auth.error (close 1008)</div>
+      <div><code>5</code> interrupted (Ctrl-C)</div>
+    </div>
+  </div>
+
+  <div class="panel" style="padding:0; display:flex; flex-direction:column;">
+    <h2 style="padding:12px 12px 0;">Terminal — you are the operator</h2>
+    <div id="term-box">
+      <div id="term-log"></div>
+      <div id="term-input-row">
+        <span id="term-prompt">ops@host ~ $&nbsp;</span>
+        <input id="term-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="help">
+  <span>
+    <code>platform capabilities</code> · <code>sessions</code> · <code>plugins</code> · <code>status</code> · <code>health</code> ·
+    <code>invoke &lt;cap&gt; [--args '{}'] [--session &lt;id&gt;]</code> · <code>--json</code> · <code>--watch</code> ·
+    <code>--topic &lt;pattern&gt;</code> · <code>--url &lt;ws://host/ws&gt;</code> · <code>--token &lt;jwt|path:/...&gt;</code> ·
+    <code>help</code> · <code>reset</code>
+  </span>
+  <span class="scen">
+    <button onclick="run('platform capabilities')">cap table</button>
+    <button onclick="run('platform sessions --json')">sessions JSON</button>
+    <button onclick="run('platform invoke gateway.status')">invoke pretty</button>
+    <button onclick="run('platform --token token.read invoke session.create --args \'{}\'')">exit 1 (denied)</button>
+    <button onclick="run('platform status --watch')">watch + Ctrl-C</button>
+    <button onclick="run('platform health')">health</button>
+    <button onclick="noConfig()">no config (exit 2)</button>
+    <button onclick="pipedJson()">piped JSON</button>
+    <button onclick="tlsFail()">TLS fail (exit 3)</button>
+    <button onclick="run('platform --token token.bad sessions')">auth fail (exit 4)</button>
+    <button onclick="demo()">▶ Full demo</button>
+  </span>
+</div>
+
+<div class="footnote">
+  <b>Design-time sim.</b> No real code — the engine mirrors the locked wayfinder chart (map.md + tickets Q1–Q5) and the
+  adapter wire it rides (websocket-adapter W1–W6, verbatim — no re-grilling). Tokens are claim objects standing in for JWTs:
+  <code>token.admin</code> (scope <code>platform.*.read</code> + <code>platform.session.write</code>) ·
+  <code>token.read</code> (<code>platform.*.read</code> only) · <code>token.bad</code> (expired). Env/config toggles on the
+  left drive precedence. Design assumptions to confirm in PRD-TRD: config file is never written by the CLI (operator
+  hand-writes it; docs show the example); perms warning fires once per run; watch prints snapshot then NDJSON events with
+  no re-render; <code>--watch</code> + <code>--json</code> = pure JSON stream (snapshot compact + NDJSON events);
+  exit-5 on Ctrl-C is the only signal path in watch mode.
+</div>
+
+<script>
+/* ================= engine: locked design (Q1–Q5, W1–W6) ================= */
+
+const S = {
+  envUrl: true, envToken: true, cfgUrl: true, cfgToken: true,
+  perms0644: true, piped: false, up: true, tls: true, drop: false,
+  flagUrl: null, flagToken: null,
+};
+
+const TOKENS = {
+  "token.admin": { scope: "platform.*.read platform.session.write", claims: { sub: "ops", exp: "1h" } },
+  "token.read":  { scope: "platform.*.read", claims: { sub: "ci", exp: "1h" } },
+  "token.bad":   { scope: null, claims: { sub: "ops", exp: "expired" } },
+};
+const TOKEN_FILES = {
+  "/home/ops/.platform/token.jwt": true,   // exists
+  "/tmp/nope.jwt": false,                   // missing → pre-flight exit 2
+};
+
+const CONFIG = () => [
+  `gateway_url = ${Q(S.envUrl ? "ws://127.0.0.1:7100/ws" : null)}   ${C("# --url overrides")}`,
+  `token = ${Q(S.envToken ? "path:/home/ops/.platform/token.jwt" : null)}       ${C("# literal JWT or path:/...")}`,
+  ``,
+  `${C("# unknown keys IGNORED in v1 (forward-compat)")}`,
+  `[profiles]                    ${C("# future: multi-tenant profiles")}`,
+  `  staging = { url = "ws://staging.example:7100/ws" }`,
+].join("\n");
+const Q = s => s === null ? `""` : `"${s}"`;
+const C = s => `<span class="c">${s}</span>`;
+
+const CAPS = [
+  ["gateway.status", "0.1.0", "read"], ["gateway.invocation", "0.1.0", "read"],
+  ["session.list", "0.1.0", "read"], ["session.create", "0.1.0", "write"],
+  ["plugin.list", "0.1.0", "read"], ["plugin.install", "0.1.0", "write"],
+  ["capability.list", "0.1.0", "read"], ["capability.describe", "0.1.0", "read"],
+  ["system.health", "0.1.0", "read"], ["system.info", "0.1.0", "read"],
+];
+const SESSIONS = [
+  ["s-9f2a", "active", "2026-08-03 09:12"], ["s-3c7e", "suspended", "2026-08-03 08:40"],
+  ["s-71ab", "active", "2026-08-02 21:05"],
+];
+const PLUGINS = [
+  ["com.acme.payments", "1.4.0", "enabled"], ["com.acme.inventory", "0.9.2", "disabled"],
+];
+const STATUS = { state: "running", uptime: "3d 4h 12m", version: "0.1.0", sessions: 2, adapters: ["mcp", "ws"] };
+const HEALTH = { status: "ok" };
+const ALIAS = {
+  capabilities: { cap: "capability.list", topic: "capability.*", table: ["name", "version", "tier"], rows: CAPS },
+  sessions:     { cap: "session.list",    topic: "session.*",    table: ["id", "status", "created"], rows: SESSIONS },
+  plugins:      { cap: "plugin.list",     topic: "plugin.*",     table: ["id", "version", "status"], rows: PLUGINS },
+  status:       { cap: "gateway.status",  topic: "gateway.*",    table: "kv", rows: STATUS },
+  health:       { cap: "system.health",   topic: "gateway.*",    table: "kv", rows: HEALTH },
+};
+const EVENT_POOL = {
+  "session.*":    [["session.created",  { id: "s-77c1", status: "active" }],
+                   ["session.suspended", { id: "s-3c7e", status: "suspended" }],
+                   ["session.destroyed", { id: "s-71ab", status: "destroyed" }]],
+  "plugin.*":     [["plugin.installed",  { id: "com.acme.billing", version: "0.2.1" }],
+                   ["plugin.enabled",    { id: "com.acme.inventory" }]],
+  "capability.*": [["capability.registered", { name: "billing.charge", version: "0.2.1" }]],
+  "gateway.*":    [["gateway.invocation", { name: "session.list", outcome: "ok" }],
+                   ["gateway.status.changed", { state: "running" }]],
+};
+
+/* ================= terminal UI ================= */
+
+const logEl = document.getElementById("term-log");
+const inputEl = document.getElementById("term-input");
+let wireId = 0;
+
+function print(html, cls = "out") {
+  const d = document.createElement("div");
+  d.className = cls;
+  d.innerHTML = html;
+  logEl.appendChild(d);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function row(vals) { return "<tr>" + vals.map(v => `<td>${esc(v)}</td>`).join("") + "</tr>"; }
+function tbl(cols, rows) {
+  return `<table class="tbl"><tr>` + cols.map(c => `<th>${c}</th>`).join("") + `</tr>` +
+    rows.map(r => row(r)).join("") + `</table>`;
+}
+function kv(obj) {
+  return tbl(["key", "value"], Object.entries(obj).map(([k, v]) => [k, String(v)]));
+}
+function compact(o) { return JSON.stringify(o); }
+function pretty(o) { return JSON.stringify(o, null, 2); }
+function wire(dir, frame) {
+  const d = document.createElement("div");
+  d.className = dir === "send" ? "w-send" : "w-recv";
+  d.textContent = (dir === "send" ? "→ " : "← ") + compact(frame);
+  document.getElementById("wire-log").prepend(d);
+  while (document.getElementById("wire-log").children.length > 8) {
+    document.getElementById("wire-log").lastChild.remove();
+  }
+  wireId++;
+  return wireId;
+}
+function setExit(code, desc) {
+  const el = document.getElementById("exit-code");
+  const cls = { 0: "green", 1: "red", 2: "yellow", 3: "orange", 4: "red", 5: "dim" }[code];
+  el.className = "val " + cls;
+  el.textContent = code;
+  document.getElementById("exit-desc").textContent = desc;
+}
+
+/* ================= config resolution (Q3) ================= */
+
+function resolveUrl() {
+  if (S.flagUrl) return { src: "--url flag", val: S.flagUrl };
+  if (S.envUrl) return { src: "PLATFORM_GATEWAY_URL", val: "ws://127.0.0.1:7100/ws" };
+  if (S.cfgUrl) return { src: "config gateway_url", val: "ws://127.0.0.1:7100/ws" };
+  return { src: null, val: null };
+}
+function resolveToken() {
+  if (S.flagToken) return { src: "--token flag", val: S.flagToken };
+  if (S.envToken) return { src: "PLATFORM_TOKEN", val: "path:/home/ops/.platform/token.jwt" };
+  if (S.cfgToken) return { src: "config token", val: "path:/home/ops/.platform/token.jwt" };
+  return { src: null, val: null };
+}
+function readTokenPath(p) {
+  if (p.startsWith("path:")) {
+    const f = p.slice(5).split("/").pop();
+    return { val: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…", from: `file ${f}` };
+  }
+  return { val: p, from: "literal" };
+}
+function updateSidebar(cmdline) {
+  const u = resolveUrl(), t = resolveToken();
+  document.getElementById("resolved-url").textContent = u.val ? u.val + ` (${u.src})` : "— none —";
+  document.getElementById("resolved-token").textContent = t.val ? (t.val.startsWith("path:") ? t.val + " → file" : t.val.slice(0, 24) + "…") : "— none —";
+  document.getElementById("config-file").innerHTML =
+    `gateway_url = ${Q(S.cfgUrl ? "ws://127.0.0.1:7100/ws" : null)}   ${C("# flag/env override")}\n` +
+    `token = ${Q(S.cfgToken ? "path:/home/ops/.platform/token.jwt" : null)}       ${C("# literal or path:")}\n\n` +
+    `${C("# unknown keys IGNORED in v1")}\n[profiles] ${C("# future")}\n  staging = { url = "ws://staging.example:7100/ws" }`;
+  document.getElementById("last-cmd").textContent = cmdline || "—";
+}
+
+/* ================= command runner ================= */
+
+const WATCHERS = [];
+
+function run(cmdline) {
+  print(`<span class="prompt">ops@host ~ $ </span><span class="cmd">${esc(cmdline)}</span>`, "out");
+  updateSidebar(cmdline);
+  parse(cmdline.trim());
+}
+
+function parse(line) {
+  const toks = line.split(/\s+/).filter(Boolean);
+  if (!toks.length) return;
+  if (toks[0] === "help") { print(helpText(), "out"); setExit("—", "help"); return; }
+  if (toks[0] === "reset") { location.reload(); return; }
+  if (toks[0] !== "platform") { print(`<span class="err">platform: unknown command '${esc(toks[0])}' (type 'help')</span>`, "out"); setExit(2, "unknown command"); return; }
+
+  const args = { url: null, token: null, json: false, watch: false, topic: null, argsJson: "{}", session: null };
+  let i = 1, sub = null;
+  for (; i < toks.length; i++) {
+    const t = toks[i];
+    if (t === "--url") args.url = toks[++i];
+    else if (t === "--token") args.token = toks[++i];
+    else if (t === "--json") args.json = true;
+    else if (t === "--watch") args.watch = true;
+    else if (t === "--topic") args.topic = toks[++i];
+    else if (t === "--args") { let v = toks[++i] || "{}"; if (v.startsWith("'") && v.endsWith("'")) v = v.slice(1, -1); args.argsJson = v; }
+    else if (t === "--session") args.session = toks[++i];
+    else if (t === "invoke") sub = { kind: "invoke", cap: toks[++i] };
+    else if (ALIAS[t]) sub = { kind: "alias", name: t, def: ALIAS[t] };
+    else { print(`<span class="err">platform: unknown subcommand '${esc(t)}' (see 'help')</span>`, "out"); setExit(2, "usage error"); return; }
+  }
+  if (!sub) { print(`<span class="err">platform: missing subcommand (see 'help')</span>`, "out"); setExit(2, "usage error"); return; }
+
+  // config resolution (Q3)
+  if (args.url) S.flagUrl = args.url; else S.flagUrl = null;
+  if (args.token) S.flagToken = args.token; else S.flagToken = null;
+  const u = resolveUrl(), t = resolveToken();
+  const tty = !S.piped; // stdin TTY (prompt availability) — simplified: prompt only when interactive
+  if (!u.val) {
+    if (tty) { print(`<span class="warn">Gateway URL: </span><span class="sys">(prompt — TTY only, last resort)</span>`); }
+    print(`<span class="err">platform: no gateway URL — set --url, PLATFORM_GATEWAY_URL, or config gateway_url (docs)</span>`, "out");
+    setExit(2, "pre-flight: missing URL"); return;
+  }
+  if (!t.val) {
+    print(`<span class="err">platform: no token — set --token, PLATFORM_TOKEN, or config token (docs)</span>`, "out");
+    setExit(2, "pre-flight: missing token"); return;
+  }
+  // perms warning (Q3 §4)
+  if (S.perms0644 && (t.src === "config token" || u.src === "config gateway_url")) {
+    print(`<span class="warn">warning: config.toml is group/world-readable (0644) — consider chmod 600</span>`, "out");
+  }
+
+  connect(u.val, t.val, args, sub);
+}
+
+function connect(url, token, args, sub) {
+  wire("send", { type: "auth", token: token.startsWith("path:") ? "<file contents>" : token.slice(0, 12) + "…" });
+  if (token.startsWith("path:")) {
+    const f = token.slice(5);
+    if (TOKEN_FILES[f] === false) {
+      print(`<span class="err">error: cannot read token file '${esc(f)}' — no such file (--token path:...)</span>`, "out");
+      setExit(2, "pre-flight: token file missing"); return;
+    }
+  }
+  if (url.startsWith("wss://") && !S.tls) {
+    wire("recv", { error: "TLS handshake failed: self-signed certificate" });
+    print(`<span class="err">error: TLS handshake failed (self-signed certificate)</span>`, "out");
+    setExit(3, "TLS/upgrade failure"); return;
+  }
+  if (!S.up) {
+    print(`<span class="err">error: connection refused — ws://127.0.0.1:7100/ws (is the gateway running?)</span>`, "out");
+    setExit(2, "connection refused"); return;
+  }
+  const tk = token.startsWith("path:") ? "token.admin" : token;
+  const tok = TOKENS[tk] || TOKENS["token.bad"];
+  if (!tok.scope) {
+    wire("recv", { type: "auth.error", code: "token invalid", message: "token expired or malformed" });
+    wire("recv", { close: 1008 });
+    print(`<span class="err">error: auth failed — token invalid (close 1008)</span>`, "out");
+    setExit(4, "auth.error (close 1008)"); return;
+  }
+  wire("recv", { type: "auth.ok" });
+
+  if (sub.kind === "alias") aliasCall(sub, args, tok);
+  else invokeCall(sub.cap, args, tok);
+}
+
+function aliasCall(sub, args, tok) {
+  const def = sub.def;
+  wire("send", { type: "invoke", correlationId: `c-${wireId}`, name: def.cap, input: {}, mode: "call" });
+  wire("recv", { type: "invoke.result", correlationId: `c-${wireId}`, output: def.table === "kv" ? def.rows : { items: def.rows } });
+
+  const jsonMode = args.json || S.piped;
+  if (jsonMode) {
+    const out = def.table === "kv" ? def.rows : { count: def.rows.length, items: def.rows.map(r => Object.fromEntries(def.table.map((c, i) => [c, r[i]]))) };
+    print(esc(compact(out)), "out");
+  } else if (def.table === "kv") {
+    print(kv(def.rows), "out");
+  } else {
+    print(tbl(def.table, def.rows), "out");
+  }
+
+  if (args.watch) startWatch(def, args, tok);
+  else setExit(0, "invoke.result");
+}
+
+function invokeCall(cap, args, tok) {
+  wire("send", { type: "invoke", correlationId: `c-${wireId}`, name: cap, input: JSON.parse(args.argsJson || "{}"), mode: "call", ...(args.session ? { sessionId: args.session } : {}) });
+  const writeCap = cap === "session.create" || cap === "plugin.install";
+  if (writeCap && !tok.scope.includes("write")) {
+    wire("recv", { type: "invoke.error", correlationId: `c-${wireId}`, code: "GATEWAY_INSUFFICIENT_SCOPE", message: "token scope lacks platform.session.write" });
+    print(`<span class="err">error: GATEWAY_INSUFFICIENT_SCOPE — token scope lacks ${writeCap ? "the required write permission" : "permission"}</span>`, "out");
+    setExit(1, "invoke.error (GATEWAY_INSUFFICIENT_SCOPE)"); return;
+  }
+  if (!CAPS.some(c => c[0] === cap) && cap !== "gateway.status") {
+    wire("recv", { type: "invoke.error", correlationId: `c-${wireId}`, code: "GATEWAY_CAPABILITY_NOT_FOUND", message: `no capability '${cap}'` });
+    print(`<span class="err">error: GATEWAY_CAPABILITY_NOT_FOUND — no capability '${esc(cap)}'</span>`, "out");
+    setExit(1, "invoke.error (GATEWAY_CAPABILITY_NOT_FOUND)"); return;
+  }
+  const out = cap === "gateway.status" ? STATUS : cap === "system.health" ? HEALTH : { ok: true };
+  wire("recv", { type: "invoke.result", correlationId: `c-${wireId}`, output: out });
+  print(esc((args.json || S.piped) ? compact(out) : pretty(out)), "out");
+  setExit(0, "invoke.result");
+}
+
+/* ================= watch (Q4 §4) ================= */
+
+function startWatch(def, args, tok) {
+  const topic = args.topic || def.topic;
+  wire("send", { type: "subscribe", topics: [topic] });
+  wire("recv", { type: "subscribe.ok", topics: [topic] });
+  print(`<span class="sys">watching ${topic} — Ctrl-C to stop (NDJSON events)</span>`, "out");
+  if (args.json || S.piped) print(`<span class="sys">(pure JSON stream: snapshot + NDJSON)</span>`, "out");
+
+  let n = 0, dropped = 0, warned = false;
+  const pool = EVENT_POOL[topic] || EVENT_POOL["gateway.*"];
+  const iv = setInterval(() => {
+    if (S.drop && n % 2 === 1 && !warned) {
+      dropped++; warned = true;
+      wire("recv", { type: "stats", dropped });
+      print(`<span class="warn">warning: 1 event dropped (stats.dropped=1) — snapshot may be stale</span>`, "out");
+    }
+    const [t, payload] = pool[n % pool.length];
+    n++;
+    const evt = { type: "event", topic: t, id: `evt-${n}`, publishedAt: new Date().toISOString(), payload };
+    wire("recv", evt);
+    print(esc(compact(evt)), "out");
+  }, 1400);
+  WATCHERS.push(iv);
+
+  const stop = () => {
+    clearInterval(iv);
+    print(`<span class="sys">^C</span>`, "out");
+    setExit(5, "interrupted (Ctrl-C)");
+    document.removeEventListener("keydown", keyStop);
+  };
+  const keyStop = e => { if (e.key === "c" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); stop(); } };
+  document.addEventListener("keydown", keyStop);
+  // Ctrl-C button affordance
+  print(`<span class="sys">(press Ctrl-C or click <button onclick="ctrlC()">⌃C</button>)</span>`, "out");
+}
+function ctrlC() {
+  WATCHERS.forEach(clearInterval);
+  WATCHERS.length = 0;
+  print(`<span class="sys">^C</span>`, "out");
+  setExit(5, "interrupted (Ctrl-C)");
+}
+
+/* ================= helpers ================= */
+
+function helpText() {
+  return `<span class="dim">
+  platform [--url &lt;ws://host:port/ws&gt;] [--token &lt;jwt|path:/...&gt;] [--config &lt;path&gt;] &lt;subcommand&gt; [flags]
+
+  aliases (curated tables / key:value on TTY, compact JSON piped or --json):
+    capabilities → capability.list   sessions → session.list   plugins → plugin.list
+    status       → gateway.status    health   → system.health
+
+  invoke:    platform invoke &lt;capability&gt; [--args '{"k":"v"}'] [--session &lt;id&gt;] [--json]
+  watch:     aliases only: snapshot + subscribe &lt;default topic&gt; → NDJSON events, Ctrl-C → exit 5
+             --topic &lt;pattern&gt; overrides default; no reconnect in v1; --stream OUT of v1
+  exit codes: 0 result · 1 invoke.error · 2 pre-flight/connection · 3 TLS · 4 auth.error · 5 interrupted
+</span>`;
+}
+
+function toggle(which) {
+  const map = {
+    "env-url": ["envUrl", "PLATFORM_GATEWAY_URL"], "cfg-url": ["cfgUrl", "config gateway_url"],
+    "env-token": ["envToken", "PLATFORM_TOKEN"], "cfg-token": ["cfgToken", "config token"],
+    "perms": ["perms0644", "0644"], "piped": ["piped", "piped"], "up": ["up", "up"],
+    "tls": ["tls", "tls"], "drop": ["drop", "drop"],
+  };
+  const [k, label] = map[which];
+  S[k] = !S[k];
+  document.getElementById("tg-" + which).classList.toggle("on", S[k]);
+  document.getElementById("tg-" + which).textContent = (k === "piped" || k === "drop") ? (S[k] ? "yes" : "no") : (S[k] ? label : (k === "perms0644" ? "0600" : "unset"));
+  updateSidebar(null);
+}
+
+function noConfig() {
+  // all sources silent → missing URL + token → exit 2 (non-TTY hard fail)
+  const prev = { envUrl: S.envUrl, cfgUrl: S.cfgUrl, envToken: S.envToken, cfgToken: S.cfgToken };
+  S.envUrl = S.cfgUrl = S.envToken = S.cfgToken = false;
+  updateSidebar(null);
+  run("platform capabilities");
+  Object.assign(S, prev);
+  updateSidebar(null);
+}
+function pipedJson() {
+  const prev = S.piped;
+  S.piped = true; updateSidebar(null);
+  run("platform plugins");
+  S.piped = prev; updateSidebar(null);
+}
+function tlsFail() {
+  const prev = S.tls;
+  S.tls = false; updateSidebar(null);
+  run("platform --url wss://gw.example.com/ws status");
+  S.tls = prev; updateSidebar(null);
+}
+
+async function demo() {
+  // reset state to defaults first
+  for (const [id, k, label] of [["env-url","envUrl","PLATFORM_GATEWAY_URL"],["cfg-url","cfgUrl","config gateway_url"],
+       ["env-token","envToken","PLATFORM_TOKEN"],["cfg-token","cfgToken","config token"],["perms","perms0644","0644"],
+       ["up","up","up"],["tls","tls","tls"]]) { if (!S[k]) { S[k] = true; document.getElementById("tg-"+id).classList.add("on"); } }
+  S.piped = false; document.getElementById("tg-piped").classList.remove("on");
+  S.drop = false; document.getElementById("tg-drop").classList.remove("on");
+  updateSidebar(null);
+  const cmds = [
+    "platform capabilities",                                  // 1: table (env sources)
+    "platform sessions --json",                               // 2: compact JSON
+    "platform invoke gateway.status",                         // 3: pretty JSON
+    "platform --token token.read invoke session.create --args '{}'", // 4: denied → exit 1
+    "platform --token token.bad sessions",                    // 5: auth fail → exit 4
+    "platform --token path:/tmp/nope.jwt status",             // 6: missing token file → exit 2
+    "platform health",                                        // 7: health kv
+  ];
+  for (const c of cmds) { run(c); await sleep(500); }
+  tlsFail();                                                   // 8: TLS fail → exit 3
+  await sleep(500);
+  run("platform status --watch");                             // 9: watch
+  await sleep(6500);
+  ctrlC();                                                     // 10: Ctrl-C → exit 5
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* init */
+inputEl.addEventListener("keydown", e => {
+  if (e.key === "Enter") { run(inputEl.value); inputEl.value = ""; }
+});
+updateSidebar(null);
+print(`<span class="sys">platform CLI — design-time simulation. Type 'help' or click a scenario button.
+Wire: websocket-adapter W1–W6 (verbatim). Config: Q3. Output/exit/watch: Q4. Repo: crates/cli-adapter (Q5).</span>`, "out");
+</script>
+</body>
+</html>
