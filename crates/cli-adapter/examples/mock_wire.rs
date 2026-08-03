@@ -1,5 +1,7 @@
-//! Throwaway manual-test mock: scripted W4 wire server for driving the real
-//! `platform` binary by hand. Not shipped — dev-only verification aid.
+//! Dev-only scripted W4 wire server: drives the real `platform` binary by
+//! hand (`cargo run --example mock_wire`), used for the Phase 5 manual smoke
+//! and audit round-1 verification. Committed on purpose — it is the e2e
+//! evidence for the IMPL verify boxes. NOT part of the shipped binary.
 
 use std::net::TcpListener;
 
@@ -27,7 +29,7 @@ fn main() {
                         Some("capability.list") => json!({
                             "type": "invoke.result",
                             "correlationId": v["correlationId"],
-                            "result": [
+                            "output": [
                                 {"name": "session", "version": "1.0.0", "tier": "core"},
                                 {"name": "plugin", "version": "2.1.0", "tier": "core"}
                             ]
@@ -35,20 +37,20 @@ fn main() {
                         Some("session.list") => json!({
                             "type": "invoke.result",
                             "correlationId": v["correlationId"],
-                            "result": [
-                                {"id": "s-1", "status": "active", "created": "2025-07-30"},
-                                {"id": "s-2", "status": "closed", "created": "2025-07-29"}
+                            "output": [
+                                {"id": "s-1", "status": "active", "createdAt": 1700000000000_u64},
+                                {"id": "s-2", "status": "archived", "createdAt": 1699900000000_u64}
                             ]
                         }),
                         Some("gateway.status") => json!({
                             "type": "invoke.result",
                             "correlationId": v["correlationId"],
-                            "result": {"status": "ok", "uptime_s": 42}
+                            "output": {"status": "ok", "uptime_s": 42}
                         }),
                         Some("system.health") => json!({
                             "type": "invoke.result",
                             "correlationId": v["correlationId"],
-                            "result": {"healthy": true, "checks": 3}
+                            "output": {"healthy": true, "checks": 3}
                         }),
                         Some("deny.me") => json!({
                             "type": "invoke.error",
@@ -59,17 +61,22 @@ fn main() {
                         Some(other) => json!({
                             "type": "invoke.result",
                             "correlationId": v["correlationId"],
-                            "result": {"echo": other, "input": v.get("input")}
+                            "output": {"echo": other, "input": v.get("input")}
                         }),
-                        None => json!({"type": "error", "code": "GATEWAY_BUSY", "message": "busy"}),
+                        None => {
+                            json!({"type": "error", "code": "WS_INTERNAL", "message": "invoke without name"})
+                        }
                     },
                     Some("subscribe") => json!({
-                        "type": "subscribe.result",
-                        "correlationId": v["correlationId"],
-                        "topic": v.get("topic")
+                        "type": "subscribe.ok",
+                        "topics": v["topics"]
+                    }),
+                    Some("unsubscribe") => json!({
+                        "type": "unsubscribe.ok",
+                        "topics": v["topics"]
                     }),
                     _ => {
-                        json!({"type": "error", "code": "GATEWAY_UNKNOWN_FRAME", "message": "huh"})
+                        json!({"type": "error", "code": "WS_INVALID_FRAME", "message": "unknown frame type"})
                     }
                 };
                 let text = reply.to_string();

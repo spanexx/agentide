@@ -60,6 +60,17 @@ fn sessions_table_columns() {
 }
 
 #[test]
+fn sessions_table_falls_back_to_created_at() {
+    // Real session-manager payloads carry `createdAt` (epoch ms), not
+    // `created` — the PRD S3 column must still render.
+    let rows = serde_json::json!([
+        {"id": "s-9", "status": "active", "createdAt": 1700000000000u64}
+    ]);
+    let out = render(View::Sessions, &rows, true);
+    assert!(out.contains("1700000000000"), "missing epoch value: {out}");
+}
+
+#[test]
 fn plugins_table_columns() {
     let out = render(View::Plugins, &plugins(), true);
     let header = out.lines().next().unwrap();

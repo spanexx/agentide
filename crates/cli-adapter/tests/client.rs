@@ -107,6 +107,7 @@ fn connect_err(url: &str, token: &str) -> ClientError {
 
 // CID:client-test-002 - scenario_auth_ok_result
 // Purpose: happy path — auth.ok then invoke.result → ExitCode::InvokeResult.
+// W4 lock: `invoke.result` carries `output`, not `result`.
 #[test]
 fn scenario_auth_ok_result() {
     let server = MockServer::spawn(vec![
@@ -119,7 +120,7 @@ fn scenario_auth_ok_result() {
             reply: Reply::Text(json!({
                 "type": "invoke.result",
                 "correlationId": "1",
-                "result": {"ok": true}
+                "output": {"ok": true}
             })),
         },
     ]);
@@ -253,7 +254,9 @@ fn scenario_no_upgrade() {
     assert_eq!(err.exit_code(), ExitCode::PreFlight);
 }
 
-/// Close frame during auth → not auth.error; exit 2 (no auth result yet).
+/// Close 1008 during auth → PRD S5 / GRILL Q4: `auth.error` before `auth.ok`,
+/// exit 4. The close is the server's way of rejecting the handshake (the
+/// `auth.error` frame may or may not arrive first; either way, exit 4).
 #[test]
 fn scenario_close_during_auth() {
     let server = MockServer::spawn(vec![Script {
@@ -261,6 +264,49 @@ fn scenario_close_during_auth() {
         reply: Reply::Close(1008, "policy"),
     }]);
     let err = connect_err(&server.url(), "tok");
+    assert_eq!(err.exit_code(), ExitCode::Auth);
+    if let ClientError::Auth { code, .. } = err {
+        assert_eq!(code, "policy");
+    } else {
+        panic!("expected Auth error, got {err:?}");
+    }
+    server.join();
+}
+
+/// Close 1009 during invoke → pre-flight/connection (PRD S5), exit 2.
+#[test]
+fn scenario_close_during_invoke_1009() {
+    let server = MockServer::spawn(vec![
+        Script {
+            expect_type: "auth",
+            reply: Reply::Text(json!({"type": "auth.ok"})),
+        },
+        Script {
+            expect_type: "invoke",
+            reply: Reply::Close(1009, "frame too large"),
+        },
+    ]);
+    let mut client = WireClient::connect(&server.url(), "tok").unwrap();
+    let err = client.invoke("cap.x", None, None).unwrap_err();
+    assert_eq!(err.exit_code(), ExitCode::PreFlight);
+    server.join();
+}
+
+/// Close 1011 during invoke → pre-flight/connection (PRD S5), exit 2.
+#[test]
+fn scenario_close_during_invoke_1011() {
+    let server = MockServer::spawn(vec![
+        Script {
+            expect_type: "auth",
+            reply: Reply::Text(json!({"type": "auth.ok"})),
+        },
+        Script {
+            expect_type: "invoke",
+            reply: Reply::Close(1011, "heartbeat timeout"),
+        },
+    ]);
+    let mut client = WireClient::connect(&server.url(), "tok").unwrap();
+    let err = client.invoke("cap.x", None, None).unwrap_err();
     assert_eq!(err.exit_code(), ExitCode::PreFlight);
     server.join();
 }
@@ -277,6 +323,9 @@ fn scenario_wss_tls_failure() {
         // Plain HTTP response — TLS handshake will reject it.
         let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
         let _ = stream.flush();
+        // Keep the listener alive so the client's reachability probe (which
+        // re-connects to decide transport-vs-TLS) deterministically succeeds.
+        std::thread::sleep(std::time::Duration::from_millis(300));
     });
     let err = connect_err(&url, "tok");
     handle.join().unwrap();
@@ -285,5 +334,24 @@ fn scenario_wss_tls_failure() {
         // expected
     } else {
         panic!("expected Tls error");
+    }
+}
+
+/// `wss://` to a dead port → connection refused is a *transport* failure,
+/// not a TLS failure → exit 2, not 3 (PRD S5: 3 = TLS-layer only).
+#[test]
+fn scenario_wss_connect_refused_is_preflight() {
+    // Bind then drop: port is free but nothing listens on it.
+    let port = {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().port()
+    };
+    let url = format!("wss://127.0.0.1:{port}/ws");
+    let err = connect_err(&url, "tok");
+    assert_eq!(err.exit_code(), ExitCode::PreFlight);
+    if let ClientError::Handshake(_) = err {
+        // expected
+    } else {
+        panic!("expected Handshake error, got {err:?}");
     }
 }

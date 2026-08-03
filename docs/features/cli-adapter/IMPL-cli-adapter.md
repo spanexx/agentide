@@ -47,29 +47,35 @@ edition 2021.
 - [x] Unit tests: precedence order (each source wins over lower), env absent, config
       absent, `--config` override path, `path:` file read + missing-file exit 2, unknown
       key ignored, perms warning fires once (0600 vs 0644).
-- [ ] TTY detection via `std::io::IsTerminal` on stdin. (Seam tested via `tty` flag;
-      stdin wiring lands with dispatch in Phase 5.)
+- [x] TTY detection via `std::io::IsTerminal` on stdin (`config.rs` `resolve_real` gates
+      the interactive prompt on it; unit-tested via the `tty` seam).
 
 **Blocked by:** Phase 1
 
 ### Phase 3: Client — connect/auth/invoke (PRD S4, S5, S8)
 
 **Build:**
-- `src/client.rs` — `tungstenite::connect(url)`; TLS via rustls feature; handshake error
-  → exit 3. Send `{type:"auth", token}`; await `auth.ok` (else `auth.error` + close 1008
+- `src/client.rs` — `tungstenite::connect(url)`; TLS via rustls feature; TLS-layer
+  failure on wss:// → exit 3, transport (refused/DNS) and HTTP-upgrade failure → exit 2
+  (tungstenite 0.30 + rustls handshake lazily, so errors are classified by a TCP
+  reachability probe — see `classify_connect_error`, CID:client-005). Send
+  `{type:"auth", token}`; await `auth.ok` (else `auth.error` frame OR close 1008
   → exit 4). `invoke` frame `{type:"invoke", correlationId, name, input?, sessionId?,
-  mode:"call"}`; map `invoke.result` → exit 0, `invoke.error` → print code+message
-  verbatim, exit 1. Close 1009/1011, `error` frame, unreachable → exit 2.
-  `correlationId`: per-run counter or std-generated hex — one in-flight invoke at a
-  time, no `uuid` crate (delay-complexity).
+  mode:"call"}`; map `invoke.result` (`output` key per locked W4 wire) → exit 0,
+  `invoke.error` → print code+message verbatim, exit 1. Close 1009/1011 (before or
+  after auth), `error` frame, unreachable → exit 2. `correlationId`: per-run counter —
+  one in-flight invoke at a time, no `uuid` crate (delay-complexity).
 - `src/errors.rs` — `ExitCode` enum 0–5 + layer mapping.
 
 **Verify:**
 - [x] Integration tests (scripted MockServer over real TCP+WS): auth.ok path,
       auth.error → exit 4, invoke.result → 0, invoke.error passthrough → 1,
-      close 1009 → 2, `error` frame → 2, connect refused → 2, close during
-      auth → 2, no-upgrade → 2, wss TLS handshake failure → exit 3 (rustls
-      ring provider pinned + `install_default`).
+      close 1009 → 2, close 1011 during invoke → 2, `error` frame → 2,
+      connect refused → 2, close during auth (1008) → exit 4 (PRD S5 — the
+      close IS the rejection when the `auth.error` frame is skipped),
+      no-upgrade → 2, wss TLS handshake failure → exit 3 AND wss connect
+      refused → exit 2 (transport ≠ TLS, rustls ring provider pinned +
+      `install_default`).
 - [x] `cargo clippy -- -D warnings` clean.
 
 **Blocked by:** Phase 2
@@ -85,9 +91,11 @@ edition 2021.
 - [x] Unit tests: each table shape (capabilities name/version/tier, sessions
       id/status/created, plugins id/version/status), status/health key:value,
       invoke pretty vs compact, `--json` (force non-TTY) path, missing fields
-      render dash, string cells unquoted.
+      render dash, string cells unquoted, `createdAt` fallback for the
+      sessions `created` column (real session-manager vocabulary).
 - [x] Manual: `platform capabilities | cat` renders compact (piped); TTY renders
-      table (name/version/tier), status/health key:value, invoke pretty JSON.
+      table (name/version/tier), status/health key:value, invoke pretty JSON
+      (re-verified 2026-08-03 against `examples/mock_wire.rs`).
 
 **Blocked by:** Phase 3 (output consumed in client)
 
@@ -96,18 +104,25 @@ edition 2021.
 **Build:**
 - `src/main.rs` — alias map (`capabilities`→`capability.list`, `sessions`→`session.list`,
   `plugins`→`plugin.list`, `status`→`gateway.status`, `health`→`system.health`);
-  `invoke <cap> [--args '<json>'] [--session <id>]`; `--json`/`--watch`/`--topic` flags;
-  unknown subcommand / missing subcommand → usage error exit 2.
+  `invoke <cap> [--args '<json>'] [--session <id>]`; full flag surface `--url`
+  /`--token`/`--config`/`--args`/`--session`/`--json`/`--watch`/`--topic`/`--help`
+  /`--version` (flags may precede the subcommand; `--help` → stdout + exit 0);
+  unknown subcommand / missing subcommand → usage error exit 2. Output view is
+  chosen by ENTRY PATH (PRD S3): aliases → tables/kv, `invoke <cap>` → pretty JSON.
 
 **Verify:**
 - [x] Unit tests: alias mapping table, flag parsing (any order, value flags do not
-      swallow the next flag), `--args` passed through verbatim (serde_json parse,
-      no client-side quote stripping — a literal quote pair is DATA, never stripped;
-      unparseable → None), view selection (alias tables, status/health kv, invoke JSON).
-- [x] Manual smoke against scripted mock (`examples/mock_wire.rs`): capabilities table
-      on TTY + compact piped, sessions `--json` compact, status/health key:value,
-      `invoke` with `--args` round-trips input verbatim, deny → `error: CODE — msg`
-      exit 1, unknown subcommand → usage exit 2, connect refused → exit 2.
+      swallow the next flag, `--url`/`--token` parsed), `--args` passed through
+      verbatim (serde_json parse, no client-side quote stripping — a literal quote
+      pair is DATA, never stripped; unparseable → None), view selection by entry
+      path (`invoke gateway.status` → JSON; aliases → tables/kv), usage text covers
+      the full PRD flag surface.
+- [x] Manual smoke against scripted mock (`examples/mock_wire.rs`, re-verified
+      2026-08-03): capabilities table on TTY + compact piped, sessions `--json`
+      compact, status/health key:value, `invoke` with `--args` round-trips input
+      verbatim, deny → `error: CODE — msg` exit 1, unknown subcommand → usage exit
+      2, connect refused → exit 2, `--token path:` missing file → exit 2,
+      `--help` → exit 0.
 
 **Blocked by:** Phase 4
 

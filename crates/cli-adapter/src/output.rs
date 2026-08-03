@@ -51,7 +51,15 @@ pub fn render(view: View, result: &Value, tty: bool) -> String {
         View::Invoke => pretty_json(result),
         View::StatusHealth => render_kv(result),
         View::Capabilities => render_table(result, &["name", "version", "tier"]),
-        View::Sessions => render_table(result, &["id", "status", "created"]),
+        View::Sessions => {
+            // Real session-manager payloads carry `createdAt` (epoch ms); the
+            // PRD S3 table column is `created` — normalize so it renders.
+            let norm = result
+                .as_array()
+                .map(|rows| Value::Array(rows.iter().map(normalize_session_row).collect()))
+                .unwrap_or_else(|| result.clone());
+            render_table(&norm, &["id", "status", "created"])
+        }
         View::Plugins => render_table(result, &["id", "version", "status"]),
     }
 }
@@ -64,6 +72,21 @@ fn cell_str(v: &Value) -> String {
         Value::String(s) => s.clone(),
         other => other.to_string(),
     }
+}
+
+/// Copy `createdAt` → `created` when the latter is missing (session-manager
+/// vocabulary is camelCase; the PRD S3 table column is snake_case).
+fn normalize_session_row(row: &Value) -> Value {
+    let Some(obj) = row.as_object() else {
+        return row.clone();
+    };
+    let mut obj = obj.clone();
+    if !obj.contains_key("created") {
+        if let Some(v) = obj.get("createdAt").cloned() {
+            obj.insert("created".to_string(), v);
+        }
+    }
+    Value::Object(obj)
 }
 
 // CID:output-003 - render_table

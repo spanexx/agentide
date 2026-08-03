@@ -12,6 +12,7 @@
  * CID:client-002 -> WireClient::invoke
  * CID:client-003 -> InvokeOutcome::exit_code
  * CID:client-004 -> ClientError::exit_code
+ * CID:client-005 -> classify_connect_error
  *
  * Quick lookup: rg -n "CID:client-" crates/cli-adapter/src/client.rs
  */
@@ -19,6 +20,7 @@
 use std::net::TcpStream;
 
 use serde_json::{json, Value};
+use tungstenite::error::Error;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
@@ -87,6 +89,52 @@ pub struct WireClient {
     correlation_counter: u64,
 }
 
+// CID:client-005 - classify_connect_error
+// Purpose: map a tungstenite connect error to ClientError per PRD S5.
+fn classify_connect_error(e: Error, url: &str) -> ClientError {
+    match e {
+        // Native-tls / rustls config-level failures arrive as Error::Tls.
+        Error::Tls(_) => ClientError::Tls(e.to_string()),
+        // With rustls the TLS handshake is lazy: a handshake failure is an
+        // Error::Io. If TCP is reachable, the failure happened inside the
+        // TLS/upgrade layer → 3; if the probe fails, it was pure transport
+        // (refused, DNS) → 2.
+        Error::Io(_) if url.starts_with("wss://") => match host_port(url) {
+            Some((host, port)) => {
+                if TcpStream::connect((host.as_str(), port)).is_err() {
+                    ClientError::Handshake(e.to_string())
+                } else {
+                    ClientError::Tls(e.to_string())
+                }
+            }
+            None => ClientError::Handshake(e.to_string()),
+        },
+        other => ClientError::Handshake(other.to_string()),
+    }
+}
+
+/// Extract (host, port) from a wss:// URL; wss default port is 443.
+fn host_port(url: &str) -> Option<(String, u16)> {
+    let rest = url.strip_prefix("wss://")?;
+    let host = rest.split(['/', '?', '#']).next()?;
+    if host.is_empty() {
+        return None;
+    }
+    if let Some(end) = host.find(']') {
+        // [v6]:port or [v6]
+        let inner = &host[1..end];
+        let port = host[end + 1..]
+            .strip_prefix(':')
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(443);
+        return Some((inner.to_string(), port));
+    }
+    match host.rsplit_once(':') {
+        Some((h, p)) => Some((h.to_string(), p.parse().ok()?)),
+        None => Some((host.to_string(), 443)),
+    }
+}
+
 // CID:client-001 - WireClient::connect
 // Purpose: open socket, send `{type:"auth", token}`, await auth.ok.
 impl WireClient {
@@ -94,15 +142,12 @@ impl WireClient {
         // rustls needs a process-level CryptoProvider; ring is our pinned one.
         // install_default returns Err if already installed — that is fine.
         let _ = rustls::crypto::ring::default_provider().install_default();
-        // PRD S5: TLS failure on wss:// → exit 3; plain handshake failure → 2.
-        let tls = url.starts_with("wss://");
-        let (ws, _) = connect(url).map_err(|e| {
-            if tls {
-                ClientError::Tls(e.to_string())
-            } else {
-                ClientError::Handshake(e.to_string())
-            }
-        })?;
+        // PRD S5: TLS-layer failure on wss:// → exit 3; TCP/DNS/HTTP-upgrade
+        // failures → exit 2. tungstenite 0.30 + rustls performs the TLS
+        // handshake lazily, so a failed TLS handshake surfaces as Error::Io,
+        // indistinguishable from a refused TCP connect by variant alone —
+        // probe raw TCP reachability to tell them apart.
+        let (ws, _) = connect(url).map_err(|e| classify_connect_error(e, url))?;
         let mut client = WireClient {
             ws,
             correlation_counter: 0,
@@ -140,6 +185,16 @@ impl WireClient {
                 Message::Close(f) => {
                     let code = f.as_ref().map(|c| c.code.into()).unwrap_or(0);
                     let reason = f.map(|c| c.reason.to_string());
+                    // PRD S5 / GRILL Q4: close 1008 during auth = auth rejected
+                    // before auth.ok → exit 4 (the `auth.error` frame may be
+                    // skipped; the close IS the rejection).
+                    if code == 1008 {
+                        let message = reason.clone().unwrap_or_default();
+                        return Err(ClientError::Auth {
+                            code: message.clone(),
+                            message,
+                        });
+                    }
                     return Err(ClientError::Closed(code, reason));
                 }
                 _ => { /* ping/pong/binary ignored */ }
@@ -184,8 +239,9 @@ impl WireClient {
                     let v: Value = serde_json::from_str(&t)
                         .map_err(|e| ClientError::Wire(format!("bad frame: {e}")))?;
                     match v["type"].as_str() {
+                        // W4 sub-Q 2: `invoke.result` carries `output` (NOT `result`).
                         Some("invoke.result") => {
-                            return Ok(InvokeOutcome::Result(v["result"].clone()))
+                            return Ok(InvokeOutcome::Result(v["output"].clone()))
                         }
                         Some("invoke.error") => {
                             return Ok(InvokeOutcome::Error {
@@ -194,11 +250,12 @@ impl WireClient {
                             })
                         }
                         Some("error") => {
+                            // W4: `error` frame codes are WS_* uppercase strings.
                             return Err(ClientError::Wire(format!(
                                 "{}: {}",
-                                v["code"].as_str().unwrap_or("GATEWAY_ERROR"),
+                                v["code"].as_str().unwrap_or("WS_INTERNAL"),
                                 v["message"].as_str().unwrap_or("")
-                            )))
+                            )));
                         }
                         _ => { /* ignore other frames */ }
                     }
