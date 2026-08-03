@@ -64,6 +64,8 @@ const ENV_URL: &str = "PLATFORM_GATEWAY_URL";
 const ENV_TOKEN: &str = "PLATFORM_TOKEN";
 
 /// Default config file: `<OS config dir>/platform/config.toml`.
+// CID:config-002 - default_config_path
+// Purpose: OS config-dir location for the v1 config.toml.
 pub fn default_config_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("platform").join("config.toml"))
 }
@@ -94,6 +96,9 @@ pub fn resolve_real(cli: &CliOverrides) -> Result<Config, ConfigError> {
 /// (once-per-run perms warning), `prompt_line` / `prompt_secret` (used only
 /// when `tty`). An explicit `--config` path that is missing is a pre-flight
 /// error; a missing *default* path simply falls through.
+// CID:config-001 - resolve
+// Purpose: seam version — env/tty/prompt behavior injected by callers;
+// integration tests swap in in-memory fakes (PRD S1/S6).
 #[allow(clippy::too_many_arguments)]
 pub fn resolve(
     cli: &CliOverrides,

@@ -10,6 +10,8 @@
  * CID:output-002 -> render
  * CID:output-003 -> render_table
  * CID:output-004 -> render_kv
+ * CID:output-005 -> view_for
+ * CID:output-006 -> alias_view
  *
  * Quick lookup: rg -n "CID:output-" crates/cli-adapter/src/output.rs
  */
@@ -29,6 +31,38 @@ pub enum View {
     StatusHealth,
     /// `invoke <cap>` renders JSON (pretty on TTY, compact piped).
     Invoke,
+}
+
+/// How the capability was reached — decides the output view (PRD S3):
+/// aliases render tables/kv, `invoke <cap>` renders pretty JSON.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Entry {
+    Alias,
+    Invoke,
+}
+
+// CID:output-005 - view_for
+// Purpose: pick the output view from the *entry path* (PRD S3) — aliases
+// render tables/kv, `invoke <cap>` always renders pretty JSON. Pure fn so
+// the alias/table mapping is unit-testable.
+pub fn view_for(capability: &str, entry: Entry) -> View {
+    match entry {
+        Entry::Alias => alias_view(capability),
+        Entry::Invoke => View::Invoke,
+    }
+}
+
+// CID:output-006 - alias_view
+// Purpose: alias → table/kv view mapping (PRD S2/S3). Unknown capabilities
+// reached via alias fall back to JSON (defensive; aliases are fixed names).
+fn alias_view(capability: &str) -> View {
+    match capability {
+        "capability.list" => View::Capabilities,
+        "session.list" => View::Sessions,
+        "plugin.list" => View::Plugins,
+        "gateway.status" | "system.health" => View::StatusHealth,
+        _ => View::Invoke,
+    }
 }
 
 // CID:output-001 - stdout_is_tty

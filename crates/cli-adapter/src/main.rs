@@ -3,13 +3,13 @@
  * - main: parse args → resolve config → connect → invoke → render → exit
  * - alias: 5 convenience aliases → capability names (PRD S2)
  * - run_invoke: config→connect→invoke→output pipeline (S3/S4/S5)
+ * (usage text lives in usage.rs, view selection in output.rs)
  *
  * CID Index:
  * CID:main-001 -> main
  * CID:main-002 -> parse_flags
  * CID:main-003 -> alias
  * CID:main-004 -> run_invoke
- * CID:main-005 -> view_for
  *
  * Quick lookup: rg -n "CID:main-" crates/cli-adapter/src/main.rs
  */
@@ -19,7 +19,8 @@ use std::process::ExitCode;
 use cli_adapter::client::{ClientError, InvokeOutcome, WireClient};
 use cli_adapter::config::{resolve_real, CliOverrides, ConfigError};
 use cli_adapter::errors::ExitCode as CmdExit;
-use cli_adapter::output::{render, stdout_is_tty, View};
+use cli_adapter::output::{render, stdout_is_tty, view_for, Entry};
+use cli_adapter::usage::print_usage;
 use serde_json::Value;
 
 // CID:main-001 - main
@@ -98,14 +99,6 @@ fn main() -> ExitCode {
     )
 }
 
-/// How the capability was reached — decides the output view (PRD S3):
-/// aliases render tables/kv, `invoke <cap>` renders pretty JSON.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Entry {
-    Alias,
-    Invoke,
-}
-
 /// Flags parsed after the subcommand name (any order, repeatable).
 #[derive(Default)]
 struct Flags {
@@ -145,7 +138,7 @@ fn parse_flags(args: &[String]) -> Flags {
     flags
 }
 
-// CID:main-002 - alias
+// CID:main-003 - alias
 // Purpose: PRD S2 — convenience names map to capability invokes.
 fn alias(name: &str) -> Option<&'static str> {
     match name {
@@ -158,42 +151,7 @@ fn alias(name: &str) -> Option<&'static str> {
     }
 }
 
-/// Full usage text (PRD binary surface). `--help` prints it to stdout with
-/// exit 0; usage *errors* print it to stderr with exit 2.
-fn print_usage(w: &mut impl std::io::Write) {
-    let _ = writeln!(w, "platform — Agentide remote gateway CLI");
-    let _ = writeln!(w, "usage: platform <alias|invoke <capability>> [flags]");
-    let _ = writeln!(w, "       platform --help | --version");
-    let _ = writeln!(
-        w,
-        "aliases: capabilities, sessions, plugins, status, health"
-    );
-    let _ = writeln!(w, "flags:");
-    let _ = writeln!(
-        w,
-        "  --url <ws://host/ws>        gateway URL (flag > env > config > prompt)"
-    );
-    let _ = writeln!(
-        w,
-        "  --token <jwt|path:/...>     auth token or token file (same precedence)"
-    );
-    let _ = writeln!(w, "  --config <path>             TOML config file");
-    let _ = writeln!(w, "  --args '<json>'             invoke input payload");
-    let _ = writeln!(
-        w,
-        "  --session <id>              invoke in an existing session"
-    );
-    let _ = writeln!(w, "  --json                      force compact JSON output");
-    let _ = writeln!(w, "  --watch                     stream mode (Phase 6)");
-    let _ = writeln!(
-        w,
-        "  --topic <pattern>           stream subscription (Phase 6)"
-    );
-    let _ = writeln!(w, "  --help, -h                  this help, exit 0");
-    let _ = writeln!(w, "  --version, -V               version, exit 0");
-}
-
-// CID:main-003 - run_invoke
+// CID:main-004 - run_invoke
 // Purpose: config → connect → auth → invoke → render; maps failures to
 // exit codes (PRD S3/S4/S5/S8).
 #[allow(clippy::too_many_arguments)]
@@ -259,27 +217,6 @@ fn run_invoke(
             eprintln!("error: {code} — {message}");
             ExitCode::from(CmdExit::InvokeError.as_u8())
         }
-    }
-}
-
-// CID:main-004 - view_for
-// Purpose: pick the output view from the *entry path* (PRD S3) — aliases
-// render tables/kv, `invoke <cap>` always renders pretty JSON. Kept as a
-// pure fn so the alias/table mapping is unit-testable.
-fn view_for(capability: &str, entry: Entry) -> View {
-    match entry {
-        Entry::Alias => alias_view(capability),
-        Entry::Invoke => View::Invoke,
-    }
-}
-
-fn alias_view(capability: &str) -> View {
-    match capability {
-        "capability.list" => View::Capabilities,
-        "session.list" => View::Sessions,
-        "plugin.list" => View::Plugins,
-        "gateway.status" | "system.health" => View::StatusHealth,
-        _ => View::Invoke,
     }
 }
 
@@ -377,30 +314,9 @@ mod tests {
     }
 
     #[test]
-    fn view_for_uses_entry_path_not_capability_name() {
-        // PRD S3 regression: `platform invoke gateway.status` renders pretty
-        // JSON (View::Invoke); only the *aliases* render tables/kv.
-        use super::view_for;
-        use super::Entry;
-        use cli_adapter::output::View;
-        assert_eq!(
-            view_for("capability.list", Entry::Alias),
-            View::Capabilities
-        );
-        assert_eq!(view_for("session.list", Entry::Alias), View::Sessions);
-        assert_eq!(view_for("plugin.list", Entry::Alias), View::Plugins);
-        assert_eq!(view_for("gateway.status", Entry::Alias), View::StatusHealth);
-        assert_eq!(view_for("system.health", Entry::Alias), View::StatusHealth);
-        // The same capability reached via `invoke` must render as JSON.
-        assert_eq!(view_for("gateway.status", Entry::Invoke), View::Invoke);
-        assert_eq!(view_for("capability.list", Entry::Invoke), View::Invoke);
-        assert_eq!(view_for("custom.cap", Entry::Invoke), View::Invoke);
-    }
-
-    #[test]
     fn print_usage_lists_full_flag_surface() {
         // PRD binary surface: --url/--token/--help must be documented.
-        use super::print_usage;
+        use cli_adapter::usage::print_usage;
         let mut buf: Vec<u8> = Vec::new();
         print_usage(&mut buf);
         let text = String::from_utf8(buf).unwrap();

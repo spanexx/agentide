@@ -8,6 +8,7 @@
  * CID:output-test-002 -> status/health key:value
  * CID:output-test-003 -> invoke pretty vs compact
  * CID:output-test-004 -> piped = compact
+ * CID:output-test-005 -> view_for entry-path selection
  *
  * Quick lookup: rg -n "CID:output-test-" crates/cli-adapter/tests/output.rs
  */
@@ -133,4 +134,24 @@ fn missing_fields_dash_in_table() {
 fn stdout_is_terminal_probe_exists() {
     // Just assert the probe runs without panicking.
     let _ = stdout_is_tty();
+}
+
+// CID:output-test-005 - view_for entry-path selection
+// PRD S3 regression: `platform invoke gateway.status` renders pretty JSON
+// (View::Invoke); only the *aliases* render tables/kv.
+#[test]
+fn view_for_uses_entry_path_not_capability_name() {
+    use cli_adapter::output::{view_for, Entry};
+    assert_eq!(
+        view_for("capability.list", Entry::Alias),
+        View::Capabilities
+    );
+    assert_eq!(view_for("session.list", Entry::Alias), View::Sessions);
+    assert_eq!(view_for("plugin.list", Entry::Alias), View::Plugins);
+    assert_eq!(view_for("gateway.status", Entry::Alias), View::StatusHealth);
+    assert_eq!(view_for("system.health", Entry::Alias), View::StatusHealth);
+    // The same capability reached via `invoke` must render as JSON.
+    assert_eq!(view_for("gateway.status", Entry::Invoke), View::Invoke);
+    assert_eq!(view_for("capability.list", Entry::Invoke), View::Invoke);
+    assert_eq!(view_for("custom.cap", Entry::Invoke), View::Invoke);
 }

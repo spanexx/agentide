@@ -4,4 +4,5 @@ pub mod client;
 pub mod config;
 pub mod errors;
 pub mod output;
+pub mod usage;
 pub mod watch;
