@@ -112,3 +112,9 @@ Continue (post-compaction): execute-pack closeout — post-impl sim for Phase 6 
 Finish up: verify feature-pipeline deliverable checklist for cli-adapter (CONTEXT.md term check, backlog update if possible, final clean state).
 
 ---
+
+## 2026-08-03 16:20:41 | source: direct
+
+Create a branch in the main repo agentide for cli adapter and take the cli adapter work to that branch.
+
+---
