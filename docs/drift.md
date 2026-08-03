@@ -1,15 +1,7 @@
 # Drift Log
-**Last updated:** 2026-08-03  **Open:** 9  **Resolved:** 34  **Critical/High:** 2
+**Last updated:** 2026-08-03  **Open:** 8  **Resolved:** 35  **Critical/High:** 1
 
 ## Open
-
-- **D-50** (High, 2026-08-03, reporter: dashboard-core D4 resolution) — Origin-bound browser tokens cannot be minted: the `expectedOrigins` claim is never issued.
-  - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — "every browser SDK token MUST carry a signed `expectedOrigins` claim; `auth.token.issue` CLI gains `--kind browser` + `--origin` / `--origins` flags" (`docs/features/sdk-browser/GRILL-sdk-browser.txt:223-230`); adapter-websocket W2 sub-Q 4 (closed 2026-08-03) locks enforcement — browser `Origin` present → claim REQUIRED, exact match, deny-by-default, mismatch → `auth.error "origin mismatch"` → close 1008.
-  - Code reality: `issueToken` mints NO `expectedOrigins` — claims are only `sub`/`scope`/`iat`/`exp` (`packages/gateway-core/src/factory.ts:161-170`); CLI `token issue` supports only `--tenant`/`--caller`/`--scope` (`packages/agentide/src/cli.ts:200-222`); the only origin enforcement code anywhere is the simulator (`packages/agentide/scripts/simulate-sdk-browser.mjs:193`); sdk-browser documents the claim but no server ever sees it.
-  - Why matters: with W2 Q4 enforcement locked (deny-by-default for browsers), NO browser client can authenticate until the mint side lands — a hard cross-pack blocker for `@platform/dashboard` v1 (its browser-held token, Q4 lock) and for any sdk-browser consumer.
-  - Owner: gateway-core (`IssueTokenRequest` + `issueToken`) + agentide CLI (`token issue --origin/--origins`); enforcement already locked in adapter-websocket W2 Q4 (adapter pack).
-  - To fix: code — additive optional `expectedOrigins?: string[]` on `IssueTokenRequest`, minted into the JWT claims when present; CLI `--origin`/`--origins` flags; scheduled in the `@platform/dashboard` feature-pipeline IMPL (D4 lock). Dashboard's internal `dashboard` caller token omits the claim (never crosses the wire).
-  - Related: D4 ticket (token-handling), adapter W2 Q4, sdk-browser T5 Q2.
 
 - **D-52** (Low, 2026-08-03, reporter: feature-pipeline-review) — silent test swap in `packages/gateway-core/src/__tests__/auth.test.ts`.
   - Doc claim: tests in this file exercise every branch of `verifyToken` / `issueToken` (locked behavior).
@@ -79,6 +71,15 @@
 ---
 
 ## Resolved
+
+- **D-50** (Resolved 2026-08-03, expected-origins implementation) — Origin-bound browser tokens cannot be minted: the `expectedOrigins` claim is never issued.
+  - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — every browser SDK token MUST carry a signed `expectedOrigins` claim; `auth.token.issue` CLI gains `--origin` / `--origins` flags; adapter-websocket W2 sub-Q 4 (closed 2026-08-03) locks enforcement — browser `Origin` present → claim REQUIRED, exact match, deny-by-default, mismatch → `auth.error "origin mismatch"` → close 1008.
+  - Code reality (before): `issueToken` minted NO `expectedOrigins`; CLI `token issue` supported only `--tenant`/`--caller`/`--scope`.
+  - Why matters: with W2 Q4 enforcement locked (deny-by-default for browsers), NO browser client could authenticate until the mint side landed — a hard cross-pack blocker for `@platform/dashboard` v1 (browser-held token, D4 lock).
+  - Owner: gateway-core + agentide CLI (this pack, `docs/features/expected-origins/`).
+  - To fix: additive optional `expectedOrigins?: readonly string[]` on `IssueTokenRequest`, minted into the JWT claims when present and non-empty (`[]` → absent, GRILL Q4); CLI `--origin` (repeatable) + `--origins` (csv) flags (union, trim, drop-empty, dedupe first-occurrence; no flags → claim omitted); pre-impl sim skipped by design (design locked by T5 Q2 / W2 Q4 / D4 grills).
+  - Related: D4 ticket (token-handling), adapter W2 Q4, sdk-browser T5 Q2, D-54 (backend-runtime enforcement still open).
+  - Verified by: `packages/gateway-core/src/types.ts:186-193` (IssueTokenRequest), `packages/gateway-core/src/factory.ts:161-175,269-292` (both mint sites), `packages/agentide/src/cli.ts:220-244` (`--origin`/`--origins` parse + pass-through), 6 gateway-core tests (`issue-token.test.ts`) + 7 CLI tests (`cli.test.ts`), post-impl sim S4b (CLI-minted token → matching origin `auth.ok` / mismatched `auth.error origin mismatch` + 1008; 37/37 assertions PASS).
 
 - **D-51** (Resolved 2026-08-03, websocket-adapter implementation) — Event Bus `validatePattern` was not exported at its package root; consumer needed a public seam for the locked subscription grammar.
   - Doc claim: adapter-websocket PRD-TRD and IMPL require `validatePattern` reuse from `@platform/event-bus` for subscription grammar (`docs/features/websocket-adapter/PRD-TRD-websocket-adapter.md:242-243`, `docs/features/websocket-adapter/IMPL-websocket-adapter.md:70-78`).
