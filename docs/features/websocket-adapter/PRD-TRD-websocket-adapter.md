@@ -185,11 +185,23 @@ queue/dropped meters).
 
 ```ts
 // ConnectionRecord — one entry per open socket
+//   Field naming reflects the shipped implementation (per the drift close-out
+//   recorded in .reports/2026-08-03-drift-final-websocket-adapter.md):
+//   - `origin` is `string | undefined` (not `null`); the PRD lock used `null`
+//     but every other surface in the package uses `undefined` for "absent"
+//     (browser upgrade header missing on Node clients).
+//   - `state` includes an `open` pre-state for the instant before the pre-auth
+//     timer arms and an `auth-error-closed` terminal state for sockets closed
+//     after `auth.error` is sent — both are internal-only and never visible
+//     to the caller.
+//   - `awaitingPong` + `pongTimer` are the W4-sub-Q-4 heartbeat's
+//     protocol-level ping/pong bookkeeping; close 1011 on miss.
+//   - `closeReason` records the last close reason for diagnostics only.
 interface ConnectionRecord {
   readonly id: string;                 // "ws-<n>"
   socket: WebSocket;                   // raw ws socket
-  readonly origin: string | null;      // upgrade-time Origin; null = Node
-  state: "pre-auth" | "authenticated" | "closed";
+  readonly origin: string | undefined;  // upgrade-time Origin; undefined = Node
+  state: "open" | "pre-auth" | "authenticated" | "auth-error-closed";
   token: string | null;                // raw JWT for handleInvocation
   claims: TokenClaims | null;          // verified claims (scope for authz)
   subs: Map<string, () => void>;       // pattern → bus unsubscribe handle
@@ -198,7 +210,10 @@ interface ConnectionRecord {
   dropped: number;                     // cumulative, monotonic
   statsTimer: ReturnType<typeof setTimeout> | null;
   preAuthTimer: ReturnType<typeof setTimeout> | null;
-  authTimer: ReturnType<typeof setTimeout> | null;  // heartbeat deadline
+  heartbeatTimer: ReturnType<typeof setTimeout> | null; // ping deadline
+  pongTimer: ReturnType<typeof setTimeout> | null;     // pong deadline
+  awaitingPong: boolean;
+  closeReason: string | null;         // diagnostic only
 }
 ```
 
