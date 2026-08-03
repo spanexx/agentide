@@ -44,10 +44,11 @@ edition 2021.
   URL+token with no TTY → exit 2.
 
 **Verify:**
-- [ ] Unit tests: precedence order (each source wins over lower), env absent, config
+- [x] Unit tests: precedence order (each source wins over lower), env absent, config
       absent, `--config` override path, `path:` file read + missing-file exit 2, unknown
       key ignored, perms warning fires once (0600 vs 0644).
-- [ ] TTY detection via `std::io::IsTerminal` on stdin.
+- [ ] TTY detection via `std::io::IsTerminal` on stdin. (Seam tested via `tty` flag;
+      stdin wiring lands with dispatch in Phase 5.)
 
 **Blocked by:** Phase 1
 
