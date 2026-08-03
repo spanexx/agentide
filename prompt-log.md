@@ -94,3 +94,9 @@ Wayfinder work-through with ticket: T7 "sdk-browser and browser-runtime boundary
 Fresh-eyes drift review of sdk-browser pack: compare PRD-TRD + IMPL docs vs code + post-impl sim; verify the 1→0 unregister fix (CapRegistry.isRegistered + syncRegistration view); run tests (61) and sim (10/10); check GRILL T1-T7, bus events, file sizes; write gap report to .reports/.
 
 ---
+
+## 2026-08-03 14:53:31 | source: direct
+
+Plan mint-side expectedOrigins (origin-bound tokens) in agentide. Research-only: 8 research questions with path:line evidence, then write full file-by-file plan to docs/features/expected-origins/PLAN.md. Do not modify implementation source. Do not run tests/builds.
+
+---
