@@ -1,7 +1,7 @@
 # PRD-TRD: CLI Adapter (`platform`)
 
 **Slug:** cli-adapter
-**Status:** Draft
+**Status:** Approved
 **Date:** 2026-08-03
 
 ## Why This Exists
