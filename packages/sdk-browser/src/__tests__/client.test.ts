@@ -106,6 +106,23 @@ describe("auth-first handshake (GRILL T5 Q1)", () => {
     ]);
   });
 
+  it("sends tabId in the auth frame when provided (drift D-43)", () => {
+    const hooks = {
+      onState: (s: ConnectionState) => states.push(s),
+      onInvoke: vi.fn(),
+      onOpen: vi.fn(),
+      onDisconnected: vi.fn(),
+      onRegisterError: vi.fn(),
+    };
+    const client = new SdkClient(GATEWAY, TOKEN, hooks, "tab-42");
+    client.connect();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    expect(ws.sent.map((raw) => JSON.parse(raw))).toEqual([
+      { type: "sdk.auth", token: TOKEN, tabId: "tab-42" },
+    ]);
+  });
+
   it("connects to the gateway URL", () => {
     const { client } = makeClient();
     client.connect();

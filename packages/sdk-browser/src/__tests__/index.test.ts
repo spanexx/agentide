@@ -113,11 +113,16 @@ describe("register-on-connect (T2)", () => {
     ws.open();
 
     const messages = lastSent(ws);
-    expect(messages[0]).toEqual({ type: "sdk.auth", token: TOKEN });
+    // D-43: the SDK auto-generates a per-instance tabId and sends it in the
+    // auth frame so two tabs of the same app stay distinguishable.
+    expect(messages[0]).toMatchObject({ type: "sdk.auth", token: TOKEN });
+    expect(typeof messages[0].tabId).toBe("string");
     expect(messages.slice(1)).toEqual(
       expect.arrayContaining([
-        { type: "sdk.capability.register", name: "shop.cart.add" },
-        { type: "sdk.capability.register", name: "notes.write" },
+        // D-40: full frame mirrors sdk-node — description/version/permissions/tier
+        // required by gateway validation (validateRecord).
+        { type: "sdk.capability.register", name: "shop.cart.add", description: "shop.cart.add", version: "1.0.0", permissions: "", tier: "act" },
+        { type: "sdk.capability.register", name: "notes.write", description: "notes.write", version: "1.0.0", permissions: "", tier: "act" },
       ]),
     );
   });
@@ -150,7 +155,7 @@ describe("register-on-connect (T2)", () => {
     ws2.open();
     expect(sdk.state().capabilities[0].registered).toBe(true);
     expect(lastSent(ws2).filter((m) => m.type === "sdk.capability.register")).toEqual([
-      { type: "sdk.capability.register", name: "shop.cart.add" },
+      { type: "sdk.capability.register", name: "shop.cart.add", description: "shop.cart.add", version: "1.0.0", permissions: "", tier: "act" },
     ]);
   });
 

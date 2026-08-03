@@ -1,7 +1,10 @@
 # PRD-TRD: Browser Runtime
 
 **Slug:** browser-runtime
-**Status:** Draft
+**Status:** Shipped 2026-08-02
+**Drift report:** .reports/20260802-155253-drift-browser-runtime.md (Verdict: Minor Drift, 2 follow-ups resolved: DR-BR-10 doc wording, DR-BR-11 driver.ts split)
+**Tests:** 31/31 pass (`npx vitest run packages/browser-runtime`)
+**Shipped package:** packages/browser-runtime/ (8 source files, 1356→1439 lines after split)
 **Date:** 2026-08-02
 
 ## Why This Exists
@@ -57,8 +60,10 @@ navigate freely
 **Given** a page with three `.add-cart` buttons
 **When** the agent calls `browser.query { selector: '.add-cart', tabId }`
 **Then** `{ matches: 3, addresses: string[] }` — concrete CSS addresses
-(pid-anchored `[data-pid="202"] .add-cart` when the DOM has data attrs,
-else nth-of-type) reusable verbatim in click/type; `matches: 0` is a
+(self-anchored `button[data-pid="202"]` when the element itself carries
+a data-* attr, ancestor+selector `[data-pid="202"] .add-cart` when the
+data-* lives on an ancestor, else `tag:nth-of-type(n)` for data-less
+elements) reusable verbatim in click/type; `matches: 0` is a
 result, never an error
 **When** click/type is called without `instance` and the selector matches
 >1 element
@@ -126,7 +131,7 @@ Q6) MUST demonstrate, in order:
 launch            # → { launched: true, mode: 'headless' }; tab 0
 launch            # → BROWSER_ALREADY_LAUNCHED (retryable: false)
 # Scenario 4
-query .add-cart   # → { matches: 3, addresses: [...pid-anchored...] }
+query .add-cart   # → { matches: 3, addresses: [...self or ancestor+selector...] }
 click .add-cart   # → BROWSER_SELECTOR_AMBIGUOUS (retryable: false)
 click .add-cart instance 2   # → { clicked: true }
 # Scenario 2 + 3
@@ -220,11 +225,13 @@ click/type → screenshot → wait), matching the pre-impl sim's flow.
 - `text=`/`role=`/`xpath=` selectors — CSS-only in v1.
 - Per-context proxy/interception config — defaults only (Q3).
 - Hard concurrency cap / session limits (Q2).
-- Multi-tab-same-app at the gateway — backend-runtime replaces the first
-  connection (D-43); per-tab snapshot makes it invisible to the agent.
+- Multi-tab-same-app at the gateway — was a v1 non-goal (D-43), now FIXED:
+  sdk-browser sends a per-instance `tabId` in `sdk.auth`; backend-runtime keys
+  connections `appId:tabId` (see `docs/drift.md` D-43 resolved).
 - Keep-alive knob for suspended memory — v2 candidate (T5).
 - Fixing the sdk-browser register-frame bug (D-40) — separate fix,
-  approved out of this scope.
+  approved out of this scope; FIXED same day (sdk-browser sendRegister
+  full frame parity with sdk-node, see `docs/drift.md` D-40 resolved).
 
 ## Out of Scope (Future)
 
@@ -237,7 +244,7 @@ click/type → screenshot → wait), matching the pre-impl sim's flow.
 - `AUDIT-vs-shipped-code.md` — 10 findings with file:line evidence
 - `docs/wayfinder/browser-runtime/tickets/` — T1-T7 tickets (capability-
   contracts.md = authoritative per-cap tables)
-- `docs/drift.md` — D-40..D-43 (open), D-37..D-39 (resolved)
+- `docs/drift.md` — D-40/D-43 (resolved), D-37..D-39 (resolved)
 - `IMPL-browser-runtime.md` — execution plan (separate doc)
 - `simulate-pre.html` — pre-impl sim (to be reconciled)
 - `docs/CONTEXT.md` — glossary + decision records

@@ -146,9 +146,10 @@ is clear. Route: feature-pipeline for the package build.
   (F7, feature-pipeline): different-url navigate on a caps-bearing tab →
   `BROWSER_NAVIGATION_DESTRUCTIVE` (retryable false) — use `newTab:
   true`; same-url re-navigate stays allowed**; `browser.page.read` ruled
-  out. Known limitation (F12): two tabs of the same app evict each
-  other at the gateway (backend-runtime single-slot per appId) — v1
-  non-goal, invisible to the agent via the per-tab snapshot. Agent loop (sdk-browser T1) now has its sync point.
+  out. Two-tabs-same-app eviction was a v1 non-goal (F12) but is now
+  FIXED at the gateway (drift D-43): sdk-browser sends a per-instance
+  `tabId` in `sdk.auth`; backend-runtime keys connections `appId:tabId`
+  so two tabs of the same app coexist (same key still replaces). Agent loop (sdk-browser T1) now has its sync point.
 
 - [**BrowserContext suspend/resume**](tickets/browsercontext-suspend-resume.md)
   (T5, closed 2026-08-02, resolved autonomously — user delegated

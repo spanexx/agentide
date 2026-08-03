@@ -69,13 +69,16 @@ export interface BackendRuntime {
 }
 
 // CID:types-003 - BackendConnection
-// Purpose: in-memory state for one connected SDK app
+// Purpose: in-memory state for one connected SDK app (one per appId:tabId
+//   connection key — drift D-43)
 // Used by: registry.ts (Phase 2)
 //   Note: `socket` is the ws.WebSocket. We type it via the structural minimum
 //   the registry needs (close method) instead of importing ws.WebSocket and
 //   hard-coupling backend-runtime to the third-party transport.
 export interface BackendConnection {
   readonly appId: string;
+  /** Page-instance id from the auth frame; null for non-browser SDKs (sdk-node). */
+  readonly tabId: string | null;
   readonly connectedAt: number;
   readonly capabilities: RegisteredCapability[];
   socket: WebSocketLike;
@@ -111,6 +114,8 @@ export interface RegisteredCapability {
 // Used by: events.ts (Phase 2)
 export interface ConnectionAcceptedPayload {
   readonly appId: string;
+  /** Set when the SDK sent a tabId in the auth frame (drift D-43). */
+  readonly tabId: string | null;
   readonly gatewayUrl: string;
   readonly latencyMs: number;
 }
@@ -120,6 +125,8 @@ export interface ConnectionAcceptedPayload {
 // Used by: events.ts (Phase 2)
 export interface ConnectionClosedPayload {
   readonly appId: string;
+  /** Set when the SDK sent a tabId in the auth frame (drift D-43). */
+  readonly tabId: string | null;
   readonly reason: "explicit" | "dropped";
 }
 

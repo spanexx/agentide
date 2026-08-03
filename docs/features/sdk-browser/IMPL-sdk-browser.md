@@ -119,3 +119,8 @@ From the [drift review](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agent
 - **D-37** — GRILL T3 Q3 wire-message `sdk.disconnect` vs close-only code; GRILL amended, accepted (drift.md).
 - **D-38** — post-impl sim placement `packages/agentide/scripts/simulate-sdk-browser.mjs` (Node ESM, D-33/D-34 precedent); accepted (drift.md).
 - **D-39** — two naming nits (test name at `index.test.ts:297`, `events.ts:24` comment listing a non-emitted "drop" reason); fixed during reconcile.
+
+Resolved in the D-40/D-43 follow-up fix (2026-08-02, see docs/drift.md):
+
+- **D-40** — register frame was name-only, failing gateway validation (`register-failed` close). Fixed: `sendRegister` sends the full sdk-node-parity frame (description = cap name, version/tier from CapRegistry view, permissions "").
+- **D-43** — gateway evicted the first connection on duplicate appId (two tabs of one app). Fixed: sdk-browser sends a per-instance `tabId` in `sdk.auth` (`SdkOptions.tabId`, auto-generated per JS context); backend-runtime keys connections `appId:tabId`.

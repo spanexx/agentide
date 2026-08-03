@@ -67,7 +67,7 @@ Without 8a and 8b, the kernel works but only for the 25 platform caps — runtim
 | # | Topic slug | Scope | Depends on | Source doc |
 |---|---|---|---|---|
 | 11 | `sdk-browser` | Register browser capabilities, UI state, browser↔Gateway communication. Package: `@platform/sdk-browser` (Frontend SDK role — single package, no per-language variants since it's inherently browser JS/TS). **SHIPPED 2026-08-02** via feature-pipeline (GRILL T1–T7, phases 1–6, post-impl sim 10/10, 61 tests, drift clean). | `gateway-core`, `capability-registry` | Agentide → Section 6, Phase 4 |
-| 12 | `browser-runtime` | Launch/close browser, tabs, navigate, click, type, screenshot — session-scoped, owns its own resources | `session-manager`, `sdk-browser`, `permission-tiering` | Runtime Capabilities → Browser Runtime example |
+| 12 | `browser-runtime` | Launch/close browser, tabs, navigate, click, type, screenshot — session-scoped, owns its own resources. **SHIPPED 2026-08-02** via feature-pipeline (GRILL T1–T5, PRD-TRD + IMPL, phases 1–8, post-impl sim 8/8 scenarios + demo verified, 31 tests, drift review → 9 items BR-1..BR-9 all resolved/accepted — see `docs/drift.md`). Package: `@platform/browser-runtime`. | `session-manager`, `sdk-browser`, `permission-tiering` | Runtime Capabilities → Browser Runtime example |
 
 ## Tier 5 — Visibility
 

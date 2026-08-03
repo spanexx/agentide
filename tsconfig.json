@@ -9,6 +9,9 @@
       "path": "packages/errors"
     },
     {
+      "path": "packages/browser-runtime"
+    },
+    {
       "path": "packages/application"
     },
     {

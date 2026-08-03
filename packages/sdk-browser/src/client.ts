@@ -62,6 +62,7 @@ export class SdkClient {
     private readonly gateway: string,
     private readonly token: string,
     private readonly hooks: ClientHooks,
+    private readonly tabId?: string,
   ) {}
 
   get connectionState(): ConnectionState {
@@ -85,8 +86,15 @@ export class SdkClient {
 
     ws.onopen = () => {
       if (this.ws !== ws) return; // stale socket
-      // Auth-first: the very first frame on the wire (T5 Q1).
-      ws.send(JSON.stringify({ type: "sdk.auth", token: this.token }));
+      // Auth-first: the very first frame on the wire (T5 Q1). tabId is sent
+      // when present so the Gateway can key two tabs of the same app
+      // separately (drift D-43).
+      const auth: { type: "sdk.auth"; token: string; tabId?: string } = {
+        type: "sdk.auth",
+        token: this.token,
+      };
+      if (this.tabId !== undefined) auth.tabId = this.tabId;
+      ws.send(JSON.stringify(auth));
       this.backoffIdx = 0;
       this.setState("connected");
       this.hooks.onOpen(Date.now() - this.connectStartMs);

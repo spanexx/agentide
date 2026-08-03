@@ -13,11 +13,15 @@
  *   - Good token → registered, server sends sdk.auth.ack {protocolVersion},
  *     sdk.connection.accepted emitted.
  *   - SDK closes the socket → sdk.connection.closed {reason:"dropped"}.
- *   - Server replaces an appId's connection → old socket closed (server-initiated).
- *     The old socket's close handler sees the socket is no longer the registered
- *     one (registry was overwritten) and does NOT publish a closed event for it.
+ *   - Server replaces a connection key's socket → old socket closed
+ *     (server-initiated). The old socket's close handler sees the socket is
+ *     no longer the registered one (registry was overwritten) and does NOT
+ *     publish a closed event for it.
+ *   - Connection key (drift D-43): `appId` for SDKs without a tabId
+ *     (sdk-node); `appId:tabId` for browser SDKs, so two tabs of the same
+ *     app are distinct connections instead of evicting each other.
  *   - stop() → snapshot+clear the registry, close every socket, publish
- *     sdk.connection.closed {reason:"explicit"} for each appId.
+ *     sdk.connection.closed {reason:"explicit"} for each connection key.
  *
  * Wire protocol versioning (Phase 2.5):
  *   - PROTOCOL_VERSION = 1. Every server-to-SDK wire message carries it.
@@ -75,10 +79,11 @@ export interface ServerHandle {
 export function createServer(config: BackendRuntimeConfig): ServerHandle {
   const clock: Clock = config.clock ?? defaultClock();
   const registry = new ConnectionRegistry();
-  // Per-connection cap accumulator (Phase 3). Keyed by appId so each appId's
-  // current cap list can be re-registered atomically. The value is the *current*
-  // list for that appId — overwritten on every register, fully cleared on close.
-  const capsByAppId = new Map<string, CapabilityRecord[]>();
+  // Per-connection cap accumulator (Phase 3). Keyed by connection key
+  // (appId or appId:tabId — drift D-43) so each connection's current cap
+  // list can be re-registered atomically. The value is the *current* list
+  // for that connection — overwritten on every register, cleared on close.
+  const capsByConnection = new Map<string, CapabilityRecord[]>();
   // Set of sockets that have been server-initiated-replaced; their close
   // handlers must NOT publish a sdk.connection.closed event (the new owner
   // already won). Keyed by socket identity via a WeakMap so we don't leak.
@@ -101,7 +106,7 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
    */
   function handleConnection(socket: WSWebSocket, dispatcher: InvocationDispatcher): void {
     const openedAt = clock.now();
-    let authedAppId: string | null = null;
+    let authed: { appId: string; key: string; tabId: string | null } | null = null;
 
     socket.on("message", (raw: Buffer | string) => {
       const text = typeof raw === "string" ? raw : raw.toString("utf-8");
@@ -118,7 +123,7 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
       const msg = parsed as { readonly [key: string]: BackendValue };
 
       // Pre-auth: only sdk.auth is accepted. Everything else is silently ignored.
-      if (authedAppId === null) {
+      if (authed === null) {
         if (!isAuthMessage(msg)) return;
         const result = verifyToken(msg.token, clock, config.tokenSecret);
         if (!result.ok) {
@@ -127,10 +132,14 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
           return;
         }
         const appId = result.claims.sub.callerId;
+        // Drift D-43: browser SDKs send a per-page tabId in the auth frame;
+        // connections are keyed appId:tabId so two tabs of the same app are
+        // distinct. sdk-node sends none → key = appId (unchanged behavior).
+        const tabId = typeof msg["tabId"] === "string" && msg["tabId"] !== "" ? msg["tabId"] : null;
         const acceptedAt = clock.now();
         const latencyMs = acceptedAt - openedAt;
-        const previous = registry.accept(appId, socket, clock);
-        authedAppId = appId;
+        const previous = registry.accept(appId, tabId, socket, clock);
+        authed = { appId, tabId, key: connectionKey(appId, tabId) };
         if (previous) {
           // Mark the previous (about-to-be-closed) socket as replaced so its
           // close handler doesn't publish sdk.connection.closed for the prior
@@ -141,11 +150,13 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
           // connection was just replaced is logically gone from the registry
           // too. Phase 4 dispatch would have already failed for the prior
           // connection anyway.
-          capsByAppId.delete(previous.appId);
-          void config.capabilityRegistry.removeByOwner(`backend-sdk-${previous.appId}`);
+          const prevKey = connectionKey(previous.appId, previous.tabId);
+          capsByConnection.delete(prevKey);
+          void config.capabilityRegistry.removeByOwner(`backend-sdk-${prevKey}`);
         }
         void emitConnectionAccepted(config.eventBus, {
           appId,
+          tabId,
           gatewayUrl: `ws://${boundAddress?.host ?? "127.0.0.1"}:${boundAddress?.port ?? config.port}`,
           latencyMs,
         });
@@ -165,7 +176,7 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
         return;
       }
       if (isCapabilityRegisterMessage(msg)) {
-        const owner = `backend-sdk-${authedAppId}`;
+        const owner = `backend-sdk-${authed.key}`;
         // Business caps (the type SDKs register) MUST have tier=null per BI[7]
         // (capability-registry validateRecord rejects any non-null tier). The
         // SDK may send a non-empty tier string in the wire frame (its handler
@@ -183,11 +194,12 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
         };
         // Append to the per-connection accumulator, then re-register the FULL
         // list atomically. The registry's replace semantics mean each
-        // register() call must contain every cap currently held by this appId.
-        // Sending just the new cap would wipe the previously-registered ones.
-        const current = capsByAppId.get(authedAppId) ?? [];
+        // register() call must contain every cap currently held by this
+        // connection. Sending just the new cap would wipe the
+        // previously-registered ones.
+        const current = capsByConnection.get(authed.key) ?? [];
         const next = [...current.filter((c) => c.name !== record.name), record];
-        capsByAppId.set(authedAppId, next);
+        capsByConnection.set(authed.key, next);
         void config.capabilityRegistry
           .register(owner, { owner, capabilities: next })
           .catch((err: unknown) => {
@@ -209,18 +221,20 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
     });
 
     socket.on("close", () => {
-      if (authedAppId === null) return; // never accepted; no event
+      if (authed === null) return; // never accepted; no event
       if (replacedSockets.has(socket as object)) return; // server-initiated replacement; caller already handled
-      const current = registry.get(authedAppId);
+      const current = registry.get(authed.key);
       if (!current || current.socket !== socket) return; // registry no longer holds us
-      // Reject every in-flight invocation owned by this appId — the connection
-      // is gone and the SDK can no longer respond. Phase 4 dispatch path.
-      dispatcher.rejectAllPending(authedAppId, "socket closed");
-      registry.remove(authedAppId);
-      capsByAppId.delete(authedAppId); // also clear the per-connection accumulator
-      void config.capabilityRegistry.removeByOwner(`backend-sdk-${authedAppId}`);
+      // Reject every in-flight invocation owned by this connection — the
+      // connection is gone and the SDK can no longer respond. Phase 4
+      // dispatch path.
+      dispatcher.rejectAllPending(authed.key, "socket closed");
+      registry.remove(authed.key);
+      capsByConnection.delete(authed.key); // also clear the per-connection accumulator
+      void config.capabilityRegistry.removeByOwner(`backend-sdk-${authed.key}`);
       void emitConnectionClosed(config.eventBus, {
-        appId: authedAppId,
+        appId: authed.appId,
+        tabId: authed.tabId,
         reason: "dropped",
       });
     });
@@ -260,17 +274,20 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
    * CID:server-004 - stop
    * Snapshot the current connections, clear the registry (so close handlers
    * don't fire sdk.connection.closed for replaced sockets), remove every
-   * appId's caps from the capability registry, publish sdk.connection.closed
-   * {reason:"explicit"} for each, then close every socket and the ws.Server.
+   * connection's caps from the capability registry, publish
+   * sdk.connection.closed {reason:"explicit"} for each, then close every
+   * socket and the ws.Server.
    */
   async function stop(): Promise<void> {
     if (wss === null) return;
     const snapshot = registry.clear();
     for (const conn of snapshot) {
-      capsByAppId.delete(conn.appId); // also clear the per-connection accumulator
-      await config.capabilityRegistry.removeByOwner(`backend-sdk-${conn.appId}`);
+      const key = connectionKey(conn.appId, conn.tabId);
+      capsByConnection.delete(key); // also clear the per-connection accumulator
+      await config.capabilityRegistry.removeByOwner(`backend-sdk-${key}`);
       await emitConnectionClosed(config.eventBus, {
         appId: conn.appId,
+        tabId: conn.tabId,
         reason: "explicit",
       });
       safeClose(conn.socket as WSWebSocket, 1000, "server-stop");
@@ -304,8 +321,13 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
   return { start, stop, address, connectionCount, dispatchInvocation };
 }
 
-function isAuthMessage(value: { readonly [key: string]: BackendValue }): value is { type: "sdk.auth"; token: string } {
+function isAuthMessage(value: { readonly [key: string]: BackendValue }): value is { type: "sdk.auth"; token: string; tabId?: string } {
   return value["type"] === "sdk.auth" && typeof value["token"] === "string";
+}
+
+/** Connection key (drift D-43): appId for non-browser SDKs, appId:tabId for browser SDKs. */
+function connectionKey(appId: string, tabId: string | null): string {
+  return tabId === null ? appId : `${appId}:${tabId}`;
 }
 
 interface CapabilityRegisterMessage {
