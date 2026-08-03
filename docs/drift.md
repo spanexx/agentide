@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-03  **Open:** 7  **Resolved:** 34  **Critical/High:** 2
+**Last updated:** 2026-08-03  **Open:** 9  **Resolved:** 34  **Critical/High:** 2
 
 ## Open
 
@@ -19,6 +19,22 @@
   - To fix: re-add the leeway-default test and avoid replacing shipped tests without an explicit drift entry.
   - Related: gateway-core Q9 leeway option.
   - Verified by: both tests now present at `packages/gateway-core/src/__tests__/auth.test.ts:106-120`.
+
+- **D-53** (Low, 2026-08-03, reporter: websocket-adapter test-authenticity review) — `recordAudit` in the shared sim state module hardcodes `channel: "mcp"`, so every websocket-adapter sim run is misattributed to the MCP channel in `data/sim-state.json`.
+  - Doc claim: the websocket sim appends `capability: "websocket-adapter-post-impl-sim"` records with correct provenance (`.reports/2026-08-03-drift-websocket-adapter-tests.md`).
+  - Code reality: `packages/agentide/scripts/sim-state.mjs:81` builds audit records with `channel: "mcp"` unconditionally; no caller-supplied channel exists.
+  - Why matters: anyone reading the interconnected sim data sees wrong provenance — every ws run looks like an MCP run.
+  - Owner: agentide (sim tooling).
+  - To fix: pass the channel from the caller (`recordAudit({ channel, ... })`), default `"mcp"` for backward compat.
+  - Related: expected-origins PLAN Phase 3 (scheduled opportunistic fix), websocket-adapter post-impl sim.
+
+- **D-54** (Medium, 2026-08-03, reporter: websocket-adapter test-authenticity review) — backend-runtime never ships the locked `expectedOrigins` enforcement; only adapter-websocket enforces origin binding.
+  - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — "backend-runtime reads the claim after verifyToken succeeds; if inbound Origin header doesn't match, close 1008" (`docs/CONTEXT.md`); adapter-websocket `auth.ts:24-27` comment claims "so backend-runtime + adapter-websocket share one primitive".
+  - Code reality: `grep -n origin packages/backend-runtime/src/server.ts` → zero hits; backend-runtime accepts any browser token regardless of Origin. The adapter comment overclaims a sharing that doesn't exist.
+  - Why matters: browser-SDK connections (sdk-browser → backend-runtime) are NOT origin-bound — a stolen browser token replayed from a rogue origin still authenticates on the backend-runtime door. Adapter-websocket is safe; the other door isn't.
+  - Owner: backend-runtime (+ sdk-browser follow-up).
+  - To fix: code — enforce the claim in backend-runtime's post-verify path using the canonical `originMatches` (`packages/gateway-core/src/origin.ts`) once mint-side (D-50) lands. Cross-pack, pre-existing — not the websocket-adapter pack's regression.
+  - Related: D-50 (mint side), adapter-websocket W2 sub-Q 4, sdk-browser T5 Q2, Feature_Backlog row 24 follow-up.
 
 - **D-45** (High, 2026-08-03, reporter: dashboard-core D1 grilling) — `session.list` is a v1 stub returning `[]` always; the dashboard's Sessions view has no snapshot source, violating the D1 acceptance bar (snapshot + live, both required).
   - Doc claim: `platform-capabilities read-tier caps are ready: session.list, plugin.list, ...` (`docs/features/dashboard-core/GRILL-dashboard-core.txt:14`); D1 acceptance bar: every in-v1 view needs a snapshot source AND a live-update story (locked 2026-08-03).
