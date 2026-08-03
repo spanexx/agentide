@@ -5,13 +5,8 @@
  * - run_invoke: config→connect→invoke→output pipeline (S3/S4/S5)
  * (usage text lives in usage.rs, view selection in output.rs)
  *
- * CID Index:
- * CID:main-001 -> main
- * CID:main-002 -> parse_flags
- * CID:main-003 -> alias
- * CID:main-004 -> run_invoke
- *
- * Quick lookup: rg -n "CID:main-" crates/cli-adapter/src/main.rs
+ * CID Index: main-001 main · main-002 parse_flags · main-003 alias ·
+ *            main-004 run_invoke — rg -n "CID:main-" crates/cli-adapter/src/main.rs
  */
 
 use std::process::ExitCode;
@@ -24,13 +19,11 @@ use cli_adapter::usage::print_usage;
 use cli_adapter::watch;
 use serde_json::Value;
 
-// CID:main-001 - main
-// Purpose: parse args, dispatch, return process exit code (PRD S5).
+// CID:main-001 - main — parse args, dispatch, return process exit code (PRD S5).
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
-    // Short-circuit flags may appear in any position — but never as the
-    // VALUE of a value flag (`--args --version` is data, not a request).
+    // Short-circuit flags may appear anywhere — but never as a VALUE flag's value.
     {
         const VALUE_FLAGS: [&str; 6] = [
             "--topic",
@@ -56,9 +49,8 @@ fn main() -> ExitCode {
 
     let flags = parse_flags(&args);
 
-    // Subcommand resolution: flags may precede the subcommand, so the first
-    // token in `rest` is the subcommand; `invoke` takes its capability from
-    // the second.
+    // Flags may precede the subcommand; first `rest` token = subcommand,
+    // `invoke` takes its capability from the second.
     let (capability, entry) = {
         let mut rest = flags.rest.iter();
         let sub = match rest.next().map(String::as_str) {
@@ -117,9 +109,8 @@ struct Flags {
 // CID:main-002 - parse_flags
 // Purpose: `--json`, `--watch`, `--topic`, `--config`, `--args`, `--session`,
 // `--url`, `--token` in any order; unknown tokens accumulate in `rest`
-// (e.g. invoke's capability). `--args` is parsed via serde_json with NO
-// manual quote stripping — a literal quote pair in the payload is DATA,
-// never stripped.
+// (e.g. invoke's capability). `--args` parsed via serde_json, NO manual quote
+// stripping — a literal quote pair in the payload is DATA, never stripped.
 fn parse_flags(args: &[String]) -> Flags {
     let mut flags = Flags::default();
     let mut iter = args.iter();
@@ -139,8 +130,7 @@ fn parse_flags(args: &[String]) -> Flags {
     flags
 }
 
-// CID:main-003 - alias
-// Purpose: PRD S2 — convenience names map to capability invokes.
+// CID:main-003 - alias — PRD S2: convenience names map to capability invokes.
 fn alias(name: &str) -> Option<&'static str> {
     match name {
         "capabilities" => Some("capability.list"),
@@ -152,9 +142,8 @@ fn alias(name: &str) -> Option<&'static str> {
     }
 }
 
-// CID:main-004 - run_invoke
-// Purpose: config → connect → auth → invoke → render; maps failures to
-// exit codes (PRD S3/S4/S5/S8).
+// CID:main-004 - run_invoke — config → connect → auth → invoke → render;
+// maps failures to exit codes (PRD S3/S4/S5/S8).
 #[allow(clippy::too_many_arguments)]
 fn run_invoke(
     capability: &str,
@@ -217,8 +206,7 @@ fn run_invoke(
 
     match outcome {
         InvokeOutcome::Result(v) => {
-            let tty = stdout_is_tty() && !json;
-            let out = render(view_for(capability, entry), &v, tty);
+            let out = render(view_for(capability, entry), &v, stdout_is_tty() && !json);
             print!("{out}");
             ExitCode::SUCCESS
         }
@@ -232,7 +220,7 @@ fn run_invoke(
 
 fn config_msg(e: &ConfigError) -> String {
     match e {
-        ConfigError::Missing(what) => format!("missing {what}"),
+        ConfigError::Missing(w) => format!("missing {w}"),
         ConfigError::TokenFileMissing(p) => format!("token file missing: {}", p.display()),
         ConfigError::ConfigFileRead(p) => format!("config file unreadable: {}", p.display()),
     }
@@ -333,5 +321,29 @@ mod tests {
         ] {
             assert!(text.contains(flag), "usage missing {flag}: {text}");
         }
+    }
+
+    #[test]
+    fn watch_on_invoke_is_preflight() {
+        // PRD S7: --watch is alias-only — `invoke X --watch` → exit 2,
+        // BEFORE any config resolution or connection is attempted.
+        use super::{run_invoke, CmdExit, Entry};
+
+        let code = run_invoke(
+            "gateway.status",
+            Entry::Invoke,
+            false,                       // json
+            true,                        // watch
+            None,                        // topic
+            None,                        // config_path
+            None,                        // input
+            None,                        // session
+            Some("ws://127.0.0.1:1/ws"), // url — unreachable, must NOT connect
+            None,                        // token
+        );
+        assert_eq!(
+            code,
+            std::process::ExitCode::from(CmdExit::PreFlight.as_u8())
+        );
     }
 }

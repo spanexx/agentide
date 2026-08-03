@@ -24,6 +24,12 @@ fn main() {
                 let v: Value = serde_json::from_str(&t).unwrap();
                 eprintln!("<- {t}");
                 let reply = match v["type"].as_str() {
+                    // S5: a bad token is rejected before auth.ok — mirrors
+                    // the real adapter (auth.error; the CLI then closes 1008).
+                    Some("auth") if v["token"] == "token.bad" => {
+                        json!({"type": "auth.error", "code": "WS_AUTH_FAILED",
+                               "message": "bad token"})
+                    }
                     Some("auth") => json!({"type": "auth.ok"}),
                     Some("invoke") => match v["name"].as_str() {
                         Some("capability.list") => json!({
@@ -51,6 +57,14 @@ fn main() {
                             "type": "invoke.result",
                             "correlationId": v["correlationId"],
                             "output": {"healthy": true, "checks": 3}
+                        }),
+                        Some("session.create") => json!({
+                            // PRD S4 Simulation Contract: literal command the
+                            // sim drives — a scope check the CLI passes through.
+                            "type": "invoke.error",
+                            "correlationId": v["correlationId"],
+                            "code": "GATEWAY_INSUFFICIENT_SCOPE",
+                            "message": "session.create denied"
                         }),
                         Some("deny.me") => json!({
                             "type": "invoke.error",

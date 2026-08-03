@@ -1,7 +1,7 @@
 # IMPL: CLI Adapter (`platform`)
 
 **Slug:** cli-adapter
-**Status:** Draft
+**Status:** Phases 1-6 SHIPPED · Phase 7 BLOCKED on BI[24]
 **Date:** 2026-08-03
 **PRD-TRD:** [PRD-TRD-cli-adapter.md](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/docs/features/cli-adapter/PRD-TRD-cli-adapter.md)
 **GRILL:** [GRILL-cli-adapter.txt](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/docs/features/cli-adapter/GRILL-cli-adapter.txt)
@@ -145,6 +145,18 @@ edition 2021.
 - [x] `platform sessions --watch --json` = pure JSON stream (compact snapshot + NDJSON).
       (Verified vs `examples/mock_wire`: snapshot + `ev-1`/`ev-2` events, `--topic`
       override echoed on the wire, SIGTERM → exit 5, `invoke --watch` → exit 2.)
+- [x] Post-impl sim (`docs/features/cli-adapter/simulate.sh`) drives the real `platform`
+      binary against the locked W4 mock. **11/11 scenarios PASS** (exit 0) — covers
+      every PRD Simulation Contract command 1:1 (`capabilities`/`sessions --json`/
+      `invoke gateway.status`/`invoke session.create --args '{}'` exit 1/`--token
+      token.bad` exit 4/`--token path:/tmp/nope.jwt` exit 2/no-config non-tty
+      exit 2/`wss://` exit 3/`status --watch` + SIGINT exit 5/`sessions --watch
+      --json` exit 5/`config.toml` 0644 one warn). Backend swap to BI[24] is
+      `--url` + `--token` only (D-59).
+- [x] Sub-agent review (feature-pipeline-review skill): accepted with drift — D-59
+      (mock vs real adapter), D-60 (TLS exit-code path via TCP probe), D-61 (mock
+      `publishedAt` timestamps are placeholders, not per-event monotonic). All three
+      logged in `docs/drift.md`. No fixes required.
 
 **Blocked by:** Phase 5
 

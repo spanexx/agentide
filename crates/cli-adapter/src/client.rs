@@ -110,19 +110,14 @@ pub struct WireClient {
 // Purpose: map a tungstenite connect error to ClientError per PRD S5.
 fn classify_connect_error(e: Error, url: &str) -> ClientError {
     match e {
-        // Native-tls / rustls config-level failures arrive as Error::Tls.
         Error::Tls(_) => ClientError::Tls(e.to_string()),
         // rustls handshakes lazily: TLS failures surface as Error::Io, so
         // probe raw TCP reachability to tell TLS-layer from transport.
         Error::Io(_) if url.starts_with("wss://") => match host_port(url) {
-            Some((host, port)) => {
-                if TcpStream::connect((host.as_str(), port)).is_err() {
-                    ClientError::Handshake(e.to_string())
-                } else {
-                    ClientError::Tls(e.to_string())
-                }
+            Some((h, p)) if TcpStream::connect((h.as_str(), p)).is_ok() => {
+                ClientError::Tls(e.to_string())
             }
-            None => ClientError::Handshake(e.to_string()),
+            _ => ClientError::Handshake(e.to_string()),
         },
         other => ClientError::Handshake(other.to_string()),
     }
@@ -137,11 +132,10 @@ fn host_port(url: &str) -> Option<(String, u16)> {
     }
     if let Some(end) = host.find(']') {
         // [v6]:port or [v6]
-        let inner = &host[1..end];
         let port = host[end + 1..]
             .strip_prefix(':')
             .and_then(|p| p.parse().ok());
-        return Some((inner.to_string(), port.unwrap_or(443)));
+        return Some((host[1..end].to_string(), port.unwrap_or(443)));
     }
     match host.rsplit_once(':') {
         Some((h, p)) => Some((h.to_string(), p.parse().ok()?)),
@@ -285,26 +279,27 @@ impl WireClient {
             .map_err(|e| ClientError::Wire(e.to_string()))?;
 
         loop {
-            match self.read_raw_frame()? {
+            let v = match self.read_raw_frame()? {
                 None => continue,
-                Some(v) => match v["type"].as_str() {
-                    Some("subscribe.ok") => return Ok(()),
-                    Some("subscribe.error") => {
-                        return Err(ClientError::Wire(format!(
-                            "subscribe.error: {} (topics: {:?})",
-                            v["code"].as_str().unwrap_or("WS_TOPIC_INVALID"),
-                            v["topics"]
-                        )))
-                    }
-                    Some("error") => {
-                        return Err(ClientError::Wire(format!(
-                            "{}: {}",
-                            v["code"].as_str().unwrap_or("WS_INTERNAL"),
-                            v["message"].as_str().unwrap_or("")
-                        )))
-                    }
-                    _ => { /* ignore unrelated frames while awaiting subscribe.ok */ }
-                },
+                Some(v) => v,
+            };
+            match v["type"].as_str() {
+                Some("subscribe.ok") => return Ok(()),
+                Some("subscribe.error") => {
+                    return Err(ClientError::Wire(format!(
+                        "subscribe.error: {} (topics: {:?})",
+                        v["code"].as_str().unwrap_or("WS_TOPIC_INVALID"),
+                        v["topics"]
+                    )))
+                }
+                Some("error") => {
+                    return Err(ClientError::Wire(format!(
+                        "{}: {}",
+                        v["code"].as_str().unwrap_or("WS_INTERNAL"),
+                        v["message"].as_str().unwrap_or("")
+                    )))
+                }
+                _ => { /* ignore unrelated frames while awaiting subscribe.ok */ }
             }
         }
     }
@@ -333,10 +328,10 @@ impl WireClient {
             Ok(Message::Text(t)) => serde_json::from_str(&t)
                 .map(Some)
                 .map_err(|e| ClientError::Wire(format!("bad frame: {e}"))),
-            Ok(Message::Close(f)) => {
-                let code = f.as_ref().map(|c| c.code.into()).unwrap_or(0);
-                Err(ClientError::Closed(code, f.map(|c| c.reason.to_string())))
-            }
+            Ok(Message::Close(f)) => Err(ClientError::Closed(
+                f.as_ref().map(|c| c.code.into()).unwrap_or(0),
+                f.map(|c| c.reason.to_string()),
+            )),
             Ok(_) => Ok(None), // ping/pong/binary ignored
             Err(Error::Io(e))
                 if matches!(

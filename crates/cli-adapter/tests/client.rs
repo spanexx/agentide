@@ -13,6 +13,7 @@
  * CID:client-test-003 -> scenario_invoke_error
  * CID:client-test-004 -> scenario_close_1009
  * CID:client-test-005 -> scenario_connect_refused
+ * CID:client-test-006 -> scenario_invoke_session_id_on_wire
  *
  * Quick lookup: rg -n "CID:client-test-" crates/cli-adapter/tests/client.rs
  */
@@ -139,6 +140,35 @@ fn scenario_connect_refused() {
     let url = format!("ws://127.0.0.1:{port}/ws");
     let err = connect_err(&url, "tok");
     assert_eq!(err.exit_code(), ExitCode::PreFlight);
+}
+
+// CID:client-test-006 - scenario_invoke_session_id_on_wire
+// Purpose: `--session` is carried verbatim as `sessionId` on the invoke
+// frame (W4 wire lock) — asserted by exact frame body on the mock.
+#[test]
+fn scenario_invoke_session_id_on_wire() {
+    let server = MockServer::spawn(vec![
+        step("auth", Reply::Text(json!({"type": "auth.ok"}))),
+        Script {
+            expect_type: "invoke",
+            expect_frame: Some(json!({
+                "type": "invoke",
+                "correlationId": "1",
+                "name": "session.resume",
+                "mode": "call",
+                "sessionId": "s-9"
+            })),
+            reply: Reply::Text(json!({
+                "type": "invoke.result",
+                "correlationId": "1",
+                "output": {"ok": true}
+            })),
+        },
+    ]);
+    let mut client = WireClient::connect(&server.url(), "tok").unwrap();
+    let outcome = client.invoke("session.resume", None, Some("s-9")).unwrap();
+    assert_eq!(outcome.exit_code(), ExitCode::InvokeResult);
+    server.join();
 }
 
 /// Frame-level `error` frame → PreFlight (2).
