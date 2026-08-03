@@ -24,6 +24,7 @@
     "@platform/capability-registry": "workspace:*"
   },
   "devDependencies": {
+    "@platform/event-bus": "workspace:*",
     "@types/node": "^22.10.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",

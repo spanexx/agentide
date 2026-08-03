@@ -389,6 +389,9 @@ importers:
         specifier: workspace:*
         version: link:../capability-registry
     devDependencies:
+      '@platform/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.1
