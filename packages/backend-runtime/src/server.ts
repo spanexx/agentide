@@ -10,6 +10,11 @@
  *   - Any other message before sdk.auth is silently ignored.
  *   - Bad/expired token → server sends sdk.auth.error {protocolVersion, code, message}
  *     then closes the socket; no accepted event.
+ *   - Origin binding (drift D-54): browser sockets present an Origin header;
+ *     the token's expectedOrigins claim must allow it (RFC 6125 §6.4.3 match,
+ *     deny-by-default when the claim is absent). Mismatch → sdk.auth.error
+ *     {code:"ORIGIN_MISMATCH"} + close 1008, no accepted event. Node clients
+ *     without an Origin header bypass (mirrors adapter-websocket).
  *   - Good token → registered, server sends sdk.auth.ack {protocolVersion},
  *     sdk.connection.accepted emitted.
  *   - SDK closes the socket → sdk.connection.closed {reason:"dropped"}.
@@ -37,10 +42,12 @@
  * CID:server-006 -> PROTOCOL_VERSION
  * CID:server-007 -> sendAuthAck
  * CID:server-008 -> sendAuthError
+ * CID:server-009 -> originMatches enforcement (handleConnection post-verify)
  */
 
 import { WebSocketServer, type WebSocket as WSWebSocket } from "ws";
 import type { CapabilityRecord } from "@platform/capability-registry";
+import { originMatches } from "@platform/origin";
 import type { BackendRuntimeConfig, BackendValue, Clock } from "./types.js";
 import { ConnectionRegistry } from "./registry.js";
 import { InvocationDispatcher } from "./dispatch.js";
@@ -104,7 +111,7 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
    *      its appId, publish sdk.connection.closed {reason:"dropped"}. If a
    *      replacement happened, the registry was already overwritten — no event.
    */
-  function handleConnection(socket: WSWebSocket, dispatcher: InvocationDispatcher): void {
+  function handleConnection(socket: WSWebSocket, dispatcher: InvocationDispatcher, requestOrigin: string | undefined): void {
     const openedAt = clock.now();
     let authed: { appId: string; key: string; tabId: string | null } | null = null;
 
@@ -129,6 +136,17 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
         if (!result.ok) {
           sendAuthError(socket, result.code);
           safeClose(socket, 1000, "auth-failed");
+          return;
+        }
+        // CID:server-009 - drift D-54: bind the token to the socket's Origin.
+        // Browser sockets always send Origin; a present Origin must match the
+        // token's expectedOrigins claim (deny-by-default when absent). Node
+        // clients without an Origin header bypass — same primitive and
+        // semantics as adapter-websocket's post-verify path.
+        const expectedOrigins = result.claims.expectedOrigins ?? [];
+        if (!originMatches(requestOrigin, expectedOrigins)) {
+          sendAuthError(socket, "ORIGIN_MISMATCH");
+          safeClose(socket, 1008, "origin-mismatch");
           return;
         }
         const appId = result.claims.sub.callerId;
@@ -257,7 +275,11 @@ export function createServer(config: BackendRuntimeConfig): ServerHandle {
     // so that pending invocations are tracked centrally across the server.
     dispatcher = new InvocationDispatcher(registry, config.handlerTimeoutMs ?? 30_000, clock);
     wss = new WebSocketServer({ port: config.port, host: "127.0.0.1" });
-    wss.on("connection", (socket) => handleConnection(socket, dispatcher as InvocationDispatcher));
+    wss.on("connection", (socket, request) => {
+      const header = request.headers.origin;
+      const requestOrigin = typeof header === "string" && header !== "" ? header : undefined;
+      handleConnection(socket, dispatcher as InvocationDispatcher, requestOrigin);
+    });
     await new Promise<void>((resolve, reject) => {
       wss!.once("listening", () => resolve());
       wss!.once("error", (err) => reject(err));
@@ -420,13 +442,13 @@ function sendAuthAck(socket: WSWebSocket): void {
   }
 }
 
-function sendAuthError(socket: WSWebSocket, code: "TOKEN_INVALID" | "TOKEN_EXPIRED"): void {
+function sendAuthError(socket: WSWebSocket, code: "TOKEN_INVALID" | "TOKEN_EXPIRED" | "ORIGIN_MISMATCH"): void {
   try {
     socket.send(JSON.stringify({
       type: "sdk.auth.error",
       protocolVersion: PROTOCOL_VERSION,
       code,
-      message: code === "TOKEN_EXPIRED" ? "token expired" : "token invalid",
+      message: code === "TOKEN_EXPIRED" ? "token expired" : code === "TOKEN_INVALID" ? "token invalid" : "origin mismatch",
     }));
   } catch {
     // Defensive: ignore send failures here; the close handler runs.

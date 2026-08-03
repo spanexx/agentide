@@ -12,7 +12,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Clock } from "./types.js";
 
 export type VerifyResult =
-  | { readonly ok: true; readonly claims: { readonly sub: { readonly tenantId: string; readonly callerId: string } } }
+  | {
+      readonly ok: true;
+      readonly claims: {
+        readonly sub: { readonly tenantId: string; readonly callerId: string };
+        readonly expectedOrigins?: readonly string[];
+      };
+    }
   | { readonly ok: false; readonly code: "TOKEN_INVALID" | "TOKEN_EXPIRED" };
 
 function base64urlDecode(input: string): Buffer {
@@ -50,7 +56,7 @@ export function verifyToken(token: string, clock: Clock, secret: Uint8Array): Ve
     return { ok: false, code: "TOKEN_INVALID" };
   }
 
-  let claims: { sub?: { tenantId?: string; callerId?: string }; exp?: number };
+  let claims: { sub?: { tenantId?: string; callerId?: string }; exp?: number; expectedOrigins?: readonly string[] };
   try {
     claims = JSON.parse(base64urlDecode(payload).toString("utf-8"));
   } catch {
@@ -62,6 +68,15 @@ export function verifyToken(token: string, clock: Clock, secret: Uint8Array): Ve
   if (!claims.sub || typeof claims.sub.tenantId !== "string" || typeof claims.sub.callerId !== "string") {
     return { ok: false, code: "TOKEN_INVALID" };
   }
+  // Drift D-54: surface the expectedOrigins claim (string array) so the
+  // origin-binding check in server.ts can enforce it. Runtime-defensive:
+  // non-array garbage in the claim is treated as absent → deny-by-default for
+  // browser sockets.
+  let expectedOrigins: readonly string[] | undefined;
+  if (Array.isArray(claims.expectedOrigins)) {
+    const strings = claims.expectedOrigins.filter((entry): entry is string => typeof entry === "string");
+    expectedOrigins = strings.length > 0 ? strings : undefined;
+  }
 
-  return { ok: true, claims: { sub: { tenantId: claims.sub.tenantId, callerId: claims.sub.callerId } } };
+  return { ok: true, claims: { sub: { tenantId: claims.sub.tenantId, callerId: claims.sub.callerId }, expectedOrigins } };
 }

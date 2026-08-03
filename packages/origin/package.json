@@ -1,0 +1,33 @@
+{
+  "name": "@platform/origin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared origin-matching primitive (RFC 6125 §6.4.3 single-label wildcard) for expectedOrigins JWT claims — consumed by gateway-core (re-export), backend-runtime, and adapter-websocket to avoid a circular dep.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build --pretty",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "typecheck": "tsc --build --pretty"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "eslint": "^10.8.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0"
+  }
+}

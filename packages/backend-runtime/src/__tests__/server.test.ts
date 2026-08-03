@@ -9,6 +9,9 @@
  * - latencyMs: clock advance between connection open and sdk.auth = latency
  * - address(): returns bound address after start, null after stop
  * - buffered non-auth messages: ignored (sdk.auth must come first)
+ * - drift D-54: expectedOrigins origin binding — browser Origin must match the
+ *   claim (exact or RFC 6125 wildcard), deny-by-default when absent, close 1008
+ *   on mismatch, Node clients without an Origin header bypass
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -772,5 +775,146 @@ describe("Phase 4: dispatch round-trip", () => {
       code: "GATEWAY_SDK_UNREACHABLE",
       retryable: true,
     });
+  });
+});
+
+describe("Phase 6 (drift D-54): expectedOrigins origin binding", () => {
+  let bus: EventBus;
+  let clock: FakeClock;
+  let secret: Uint8Array;
+  let registry: CapabilityRegistry;
+  let runtime: BackendRuntime;
+  let port: number;
+
+  beforeEach(async () => {
+    bus = createEventBus();
+    clock = new FakeClock();
+    secret = secretFrom("test-1");
+    registry = createCapabilityRegistry(bus);
+    runtime = createBackendRuntime({
+      port: 0,
+      tokenSecret: secret,
+      eventBus: bus,
+      capabilityRegistry: registry,
+      clock,
+    });
+    await runtime.start();
+    const addr = runtime.address();
+    if (!addr) throw new Error("runtime.address() returned null after start()");
+    port = addr.port;
+  });
+
+  afterEach(async () => {
+    await runtime.stop();
+  });
+
+  function wsUrl(): string { return `ws://127.0.0.1:${port}`; }
+
+  function captureMessages(sock: WebSocket): { messages: unknown[]; close: () => void } {
+    const messages: unknown[] = [];
+    const handler = (raw: WebSocket.RawData) => {
+      try {
+        messages.push(JSON.parse(raw.toString()));
+      } catch {
+        // ignore non-JSON
+      }
+    };
+    sock.on("message", handler);
+    return { messages, close: () => sock.off("message", handler) };
+  }
+
+  function connectWithOrigin(origin: string | undefined): WebSocket {
+    const options = origin === undefined ? undefined : { origin };
+    return options === undefined ? new WebSocket(wsUrl()) : new WebSocket(wsUrl(), options);
+  }
+
+  it("accepts a browser origin listed in the expectedOrigins claim", async () => {
+    const events = collectEvents(bus);
+    const sock = connectWithOrigin("https://app.acme.com");
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken(
+        { tenantId: "acme", callerId: "origin-app", expectedOrigins: ["https://app.acme.com", "https://*.acme.com"] },
+        secret,
+        clock,
+      ),
+    }));
+    await waitFor(() => events.accepted.length === 1, 1000);
+    expect(events.accepted[0].appId).toBe("origin-app");
+    sock.close();
+  });
+
+  it("accepts a wildcard match (RFC 6125 §6.4.3 single-label)", async () => {
+    const events = collectEvents(bus);
+    const sock = connectWithOrigin("https://shop.acme.com");
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken(
+        { tenantId: "acme", callerId: "wildcard-app", expectedOrigins: ["https://*.acme.com"] },
+        secret,
+        clock,
+      ),
+    }));
+    await waitFor(() => events.accepted.length === 1, 1000);
+    expect(events.accepted[0].appId).toBe("wildcard-app");
+    sock.close();
+  });
+
+  it("denies a browser origin not allowed by the claim: error ORIGIN_MISMATCH + close 1008", async () => {
+    const events = collectEvents(bus);
+    let closeCode: number | undefined;
+    const sock = connectWithOrigin("https://evil.com");
+    sock.once("close", (code) => { closeCode = code; });
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    const reader = captureMessages(sock);
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken(
+        { tenantId: "acme", callerId: "blocked-app", expectedOrigins: ["https://app.acme.com"] },
+        secret,
+        clock,
+      ),
+    }));
+
+    await waitFor(() => reader.messages.some((m) => (m as { type?: string }).type === "sdk.auth.error"), 1000);
+    const err = reader.messages.find((m) => (m as { type?: string }).type === "sdk.auth.error") as { code: string; message: string };
+    expect(err.code).toBe("ORIGIN_MISMATCH");
+    expect(err.message).toBe("origin mismatch");
+    await waitFor(() => sock.readyState === WebSocket.CLOSED, 1000);
+    expect(closeCode).toBe(1008);
+    expect(events.accepted).toHaveLength(0);
+    expect(runtime.connectionCount()).toBe(0);
+  });
+
+  it("deny-by-default: a browser origin with no expectedOrigins claim is rejected", async () => {
+    const events = collectEvents(bus);
+    const sock = connectWithOrigin("https://app.acme.com");
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken({ tenantId: "acme", callerId: "no-claim-app" }, secret, clock),
+    }));
+    await waitForSocketClose(sock);
+    expect(events.accepted).toHaveLength(0);
+    expect(runtime.connectionCount()).toBe(0);
+  });
+
+  it("bypasses the check for Node clients without an Origin header", async () => {
+    const events = collectEvents(bus);
+    const sock = new WebSocket(wsUrl());
+    await new Promise<void>((resolve) => sock.once("open", () => resolve()));
+    sock.send(JSON.stringify({
+      type: "sdk.auth",
+      token: mintToken(
+        { tenantId: "acme", callerId: "node-app", expectedOrigins: ["https://app.acme.com"] },
+        secret,
+        clock,
+      ),
+    }));
+    await waitFor(() => events.accepted.length === 1, 1000);
+    expect(events.accepted[0].appId).toBe("node-app");
+    sock.close();
   });
 });

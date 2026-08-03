@@ -9,6 +9,11 @@
  *   - NEVER matches `https://a.b.acme.com` (multi-label)
  *   - NEVER matches `https://acme.com.evil.com` (literal suffix)
  * `origin === undefined` (Node client without Origin header) bypasses the check.
+ *
+ * Lives in @platform/origin (not gateway-core) so backend-runtime can consume
+ * it without a package cycle (gateway-core depends on backend-runtime).
+ * gateway-core re-exports it to keep its public surface stable; adapter-websocket
+ * imports it via @platform/gateway-core's re-export.
  */
 export function originMatches(origin: string | undefined, expectedOrigins: readonly string[]): boolean {
   if (origin === undefined) return true;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { originMatches } from "../origin.js";
+import { originMatches } from "./origin.js";
 
 describe("originMatches (RFC 6125 §6.4.3)", () => {
   it("bypasses the check when the upgrade had no Origin header (Node client)", () => {

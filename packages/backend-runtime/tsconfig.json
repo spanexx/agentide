@@ -9,6 +9,7 @@
   "references": [
     { "path": "../event-bus" },
     { "path": "../capability-registry" },
-    { "path": "../errors" }
+    { "path": "../errors" },
+    { "path": "../origin" }
   ]
 }

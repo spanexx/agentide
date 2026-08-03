@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-03  **Open:** 8  **Resolved:** 35  **Critical/High:** 1
+**Last updated:** 2026-08-03  **Open:** 7  **Resolved:** 36  **Critical/High:** 1
 
 ## Open
 
@@ -19,14 +19,6 @@
   - Owner: agentide (sim tooling).
   - To fix: pass the channel from the caller (`recordAudit({ channel, ... })`), default `"mcp"` for backward compat.
   - Related: expected-origins PLAN Phase 3 (scheduled opportunistic fix), websocket-adapter post-impl sim.
-
-- **D-54** (Medium, 2026-08-03, reporter: websocket-adapter test-authenticity review) — backend-runtime never ships the locked `expectedOrigins` enforcement; only adapter-websocket enforces origin binding.
-  - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — "backend-runtime reads the claim after verifyToken succeeds; if inbound Origin header doesn't match, close 1008" (`docs/CONTEXT.md`); adapter-websocket `auth.ts:24-27` comment claims "so backend-runtime + adapter-websocket share one primitive".
-  - Code reality: `grep -n origin packages/backend-runtime/src/server.ts` → zero hits; backend-runtime accepts any browser token regardless of Origin. The adapter comment overclaims a sharing that doesn't exist.
-  - Why matters: browser-SDK connections (sdk-browser → backend-runtime) are NOT origin-bound — a stolen browser token replayed from a rogue origin still authenticates on the backend-runtime door. Adapter-websocket is safe; the other door isn't.
-  - Owner: backend-runtime (+ sdk-browser follow-up).
-  - To fix: code — enforce the claim in backend-runtime's post-verify path using the canonical `originMatches` (`packages/gateway-core/src/origin.ts`) once mint-side (D-50) lands. Cross-pack, pre-existing — not the websocket-adapter pack's regression.
-  - Related: D-50 (mint side), adapter-websocket W2 sub-Q 4, sdk-browser T5 Q2, Feature_Backlog row 24 follow-up.
 
 - **D-45** (High, 2026-08-03, reporter: dashboard-core D1 grilling) — `session.list` is a v1 stub returning `[]` always; the dashboard's Sessions view has no snapshot source, violating the D1 acceptance bar (snapshot + live, both required).
   - Doc claim: `platform-capabilities read-tier caps are ready: session.list, plugin.list, ...` (`docs/features/dashboard-core/GRILL-dashboard-core.txt:14`); D1 acceptance bar: every in-v1 view needs a snapshot source AND a live-update story (locked 2026-08-03).
@@ -71,6 +63,14 @@
 ---
 
 ## Resolved
+
+- **D-54** (Resolved 2026-08-03, backend-runtime origin enforcement) — backend-runtime now enforces the locked `expectedOrigins` origin binding in its post-verify path, sharing the canonical primitive with adapter-websocket.
+  - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — "backend-runtime reads the claim after verifyToken succeeds; if inbound Origin header doesn't match, close 1008"; adapter-websocket `auth.ts:24-27` comment claims "so backend-runtime + adapter-websocket share one primitive".
+  - Code reality (before): `grep -n origin packages/backend-runtime/src/server.ts` → zero hits; backend-runtime accepted any browser token regardless of Origin; the adapter comment overclaimed a sharing that didn't exist.
+  - Why matters: browser-SDK connections (sdk-browser → backend-runtime) were NOT origin-bound — a stolen browser token replayed from a rogue origin still authenticated on the backend-runtime door.
+  - Owner: backend-runtime.
+  - To fix: enforce the claim in backend-runtime's post-verify path using the canonical `originMatches`. The primitive moved to a new shared package `@platform/origin` (extracted from `packages/gateway-core/src/origin.ts`) so backend-runtime can consume it without a package cycle (gateway-core depends on backend-runtime — same precedent as `@platform/errors`); gateway-core re-exports it (`src/index.ts`) keeping its public surface stable; adapter-websocket's re-export path unchanged.
+  - Verified by: `packages/origin/src/origin.ts` (CID:origin-001, moved verbatim + 6 tests), `packages/backend-runtime/src/server.ts` (CID:server-009 — post-verify `originMatches(requestOrigin, claims.expectedOrigins ?? [])`, mismatch → `sdk.auth.error {code:"ORIGIN_MISMATCH"}` + close 1008, deny-by-default for browser Origin when claim absent, Node no-Origin bypass), `packages/backend-runtime/src/verify.ts` (claims now surface `expectedOrigins`), upgrade `Origin` captured in the `wss.on("connection")` handler, 5 new tests in `server.test.ts` (match / wildcard / mismatch 1008 / deny-by-default / Node bypass), full suite 706/706, lint + build + check-banned-types clean, ws sim 37/37.
 
 - **D-50** (Resolved 2026-08-03, expected-origins implementation) — Origin-bound browser tokens cannot be minted: the `expectedOrigins` claim is never issued.
   - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — every browser SDK token MUST carry a signed `expectedOrigins` claim; `auth.token.issue` CLI gains `--origin` / `--origins` flags; adapter-websocket W2 sub-Q 4 (closed 2026-08-03) locks enforcement — browser `Origin` present → claim REQUIRED, exact match, deny-by-default, mismatch → `auth.error "origin mismatch"` → close 1008.

@@ -22,9 +22,10 @@ import { AUTH_ERROR_CODES } from "./types.js";
 
 // CID:auth-002 - originMatches
 // Purpose: shared RFC 6125 §6.4.3 single-label wildcard primitive. Canonical
-//   implementation lives in `@platform/gateway-core/src/origin.ts`; re-exported
-//   here so adapter consumers can wire auth without a direct gateway-core
-//   import.
+//   implementation lives in `@platform/origin`; re-exported via
+//   @platform/gateway-core here so adapter consumers can wire auth without a
+//   direct gateway-core import. backend-runtime consumes the same primitive
+//   directly from @platform/origin (no package cycle).
 export { originMatches };
 
 export interface AuthContext {

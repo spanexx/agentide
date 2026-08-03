@@ -24,6 +24,7 @@
     "@platform/capability-registry": "workspace:*",
     "@platform/errors": "workspace:*",
     "@platform/event-bus": "workspace:*",
+    "@platform/origin": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

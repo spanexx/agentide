@@ -23,18 +23,26 @@ export function secretFrom(seed: string): Uint8Array {
 }
 
 export function mintToken(
-  claims: { tenantId: string; callerId: string; scope?: string[]; iat?: number; exp?: number },
+  claims: {
+    tenantId: string;
+    callerId: string;
+    scope?: string[];
+    iat?: number;
+    exp?: number;
+    expectedOrigins?: readonly string[];
+  },
   secret: Uint8Array,
   clock: Clock,
 ): string {
   const iat = claims.iat ?? clock.now();
   const exp = claims.exp ?? clock.now() + 3600_000; // 1h default
-  const payload = {
+  const payload: Record<string, unknown> = {
     sub: { tenantId: claims.tenantId, callerId: claims.callerId },
     scope: claims.scope ?? [],
     iat,
     exp,
   };
+  if (claims.expectedOrigins !== undefined) payload.expectedOrigins = claims.expectedOrigins;
   const header = base64url(Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })));
   const payloadEnc = base64url(Buffer.from(JSON.stringify(payload)));
   const signingInput = `${header}.${payloadEnc}`;

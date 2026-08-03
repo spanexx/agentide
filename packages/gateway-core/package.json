@@ -25,6 +25,7 @@
     "@platform/capability-registry": "workspace:*",
     "@platform/errors": "workspace:*",
     "@platform/event-bus": "workspace:*",
+    "@platform/origin": "workspace:*",
     "@platform/platform-capabilities": "workspace:*",
     "@platform/plugin-manager": "workspace:*",
     "@platform/session-manager": "workspace:*"
