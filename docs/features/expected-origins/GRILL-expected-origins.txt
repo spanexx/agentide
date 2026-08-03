@@ -1,0 +1,89 @@
+expected-origins — Grill Notes (grill-lite)
+
+Status: LOCKED (2026-08-03) — grill-lite run, resolved autonomously (user
+delegated decision authority; review later). Six questions, assumed answers,
+why, and source.
+Date: 2026-08-03
+Source: PLAN.md `docs/features/expected-origins/PLAN.md`; locked decisions
+sdk-browser T5 Q2 (permanent origin binding), adapter-websocket W2 sub-Q 4
+(enforcement), dashboard-core D4 (mint pattern); drift D-50.
+
+What this feature is about
+
+- The mint half of origin-bound tokens: make the `expectedOrigins` JWT claim
+  issuable. Enforcement is already shipped (adapter-websocket rejects an
+  upgrade `Origin` that doesn't match `claims.expectedOrigins`, deny-by-default
+  for browsers). Today NO token can carry the claim — `IssueTokenRequest` has
+  no field, `issueToken` never emits it, the CLI has no flags (drift D-50).
+- Cross-package, additive: gateway-core (`IssueTokenRequest` +
+  `issueToken` + `auth.token.issue` handler) and agentide CLI
+  (`token issue --origin` / `--origins`).
+
+What this feature does NOT do
+
+- Does NOT touch enforcement (adapter-websocket `auth.ts` / `origin.ts` /
+  `originMatches` — shipped and correct, zero changes).
+- Does NOT add backend-runtime sdk-browser enforcement (tracked cross-pack
+  follow-up, Feature_Backlog row 24; minted claims ignored there until that
+  pack lands).
+- Does NOT add a `--kind browser|node` flag — enforcement keys on
+  `Origin`-header presence (W2 sub-Q 4: "Origin absent (Node client) → no
+  check"), so `--kind` adds no behavior.
+- Does NOT validate origin patterns at mint (URL parse / wildcard grammar).
+  Invalid patterns are safe: they simply never match, and enforcement is
+  deny-by-default.
+- Does NOT touch the dashboard (D4 mints in-process per page load; the call
+  works unchanged once the field exists), revocation, or token refresh.
+
+Questions and answers locked
+
+1. Flag syntax: `--origin <url>` repeatable AND `--origins <csv>`?
+   LOCKED: both. Each `--origin` occurrence adds one entry; `--origins`
+   splits on comma; both given → union; dedupe keeping first-occurrence
+   order. WHY: T5 Q2 wording is "`--origin` / `--origins` options"; multi-
+   origin tokens are locked (W2 sub-Q 4 "dev + staging in one token"; D4
+   "expectedOrigins carries BOTH localhost/127.0.0.1 forms" — two exact
+   entries, no wildcard trick possible).
+   Source: T5 Q2 lock; W2 sub-Q 4 lock; D4 lock.
+
+2. Empty / whitespace values?
+   LOCKED: entries are trimmed; empty or whitespace-only entries are dropped
+   silently (exactly mirrors `--scope` csv handling, cli.ts:218). Resulting
+   empty list → field omitted entirely → claim absent → behavior identical
+   to today (Node bypass / browser deny-by-default per W2 Q4).
+   Source: cli.ts:218; W2 sub-Q 4 lock.
+
+3. Duplicates?
+   LOCKED: dedupe exact strings, keep first-occurrence order. Wildcard +
+   exact overlap (`https://*.acme.com` + `https://app.acme.com`) both kept —
+   an allowlist union is harmless; no conflict semantics.
+   Source: W2 sub-Q 4 lock (allowlist union).
+
+4. Empty array from a direct API caller (`expectedOrigins: []`)?
+   LOCKED: normalized to absent (claim omitted). Cosmetic: both shapes are
+   deny-by-default for browsers (W2 Q4: "missing/empty claim … deny-by-
+   default"). The CLI never produces `[]` — it omits the field instead.
+   Source: W2 sub-Q 4 lock.
+
+5. Validation at mint?
+   LOCKED: CLI-level only — trim, drop empty, dedupe. No URL parsing, no
+   wildcard grammar check. Gateway stays additive-no-validation, mirroring
+   how `scope` is passed through unvalidated.
+   Source: PLAN §3 Non-goals; cli.ts:218 (`--scope` precedent).
+
+6. `--kind browser|node` flag?
+   LOCKED: NOT in this pack. Enforcement keys on `Origin`-header presence
+   (W2 sub-Q 4), not on a mint-time kind marker; `--kind` adds no behavior.
+   Revisit only if a real consumer asks.
+   Source: PLAN §3 Non-goals; W2 sub-Q 4 lock.
+
+Deferred / noted
+
+- Pre-impl sim skipped by design: the design is already locked by three
+  prior wayfinder grills (T5 Q2, W2 Q4, D4) and this pack only connects
+  existing seams — a design-time sim would re-litigate locked decisions.
+  Documented in the PRD-TRD.
+- Post-impl sim adds scenario S4b (mint through the real CLI path →
+  matching origin auth.ok / mismatched origin auth.error + 1008).
+- Existing docs to update on close: drift D-50, Feature_Backlog rows 24/13,
+  CONTEXT.md decision log.
