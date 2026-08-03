@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-03  **Open:** 9  **Resolved:** 47  **Critical/High:** 2
+**Last updated:** 2026-08-03  **Open:** 9  **Resolved:** 39  **Critical/High:** 2
 
 ## Open
 
