@@ -15,12 +15,14 @@ edition 2021.
 ### Phase 1: Crate scaffold + precommit chain
 
 **Build:**
-- `agentide/crates/cli-adapter/` — `cargo init --name platform`; `Cargo.toml` with the 7
-  pinned deps (Dependency Analysis) + `[[bin]] name = "platform"` (Q5).
+- `agentide/crates/cli-adapter/` — `cargo init --name cli-adapter`; `Cargo.toml` with the 7
+  pinned deps (Dependency Analysis) + `[[bin]] name = "platform"` (Q5 — package name
+  `cli-adapter`, binary name `platform`).
 - Module skeleton: `src/main.rs` (arg parse + dispatch), `config.rs`, `client.rs`,
   `output.rs`, `watch.rs`, `errors.rs` (empty stubs, PRD-TRD §Architecture Notes).
-- `agentide/scripts/precommit-rust.sh` (Q5) — `cargo fmt --check` + `cargo clippy -- -D
-  warnings` + `cargo test`; if no cargo installed → skip with one warning line, exit 0.
+- `agentide/scripts/precommit-rust.sh` (Q5) — `cargo fmt --check` + `cargo clippy
+  --all-targets -- -D warnings` + `cargo test`; if no cargo installed → skip with one
+  warning line, exit 0.
   Chained after `npm run build` in root precommit.
 
 **Verify:**
@@ -37,7 +39,7 @@ edition 2021.
   `PLATFORM_TOKEN`) > TOML (`dirs::config_dir()/platform/config.toml`, override via
   `--config <path>`) > prompt (TTY-only, `rpassword::prompt_password`). Unknown TOML keys
   ignored (`#[serde(default)]`, no deny_unknown_fields). `path:` indirection on token from
-  ANY source; missing file → exit 2. Per ms warning for config file OR `path:` file when
+  ANY source; missing file → exit 2. Perms warning for config file OR `path:` file when
   perms looser than 0600 — once per run (PRD S6). No hardcoded default URL; missing
   URL+token with no TTY → exit 2.
 
@@ -57,6 +59,8 @@ edition 2021.
   → exit 4). `invoke` frame `{type:"invoke", correlationId, name, input?, sessionId?,
   mode:"call"}`; map `invoke.result` → exit 0, `invoke.error` → print code+message
   verbatim, exit 1. Close 1009/1011, `error` frame, unreachable → exit 2.
+  `correlationId`: per-run counter or std-generated hex — one in-flight invoke at a
+  time, no `uuid` crate (delay-complexity).
 - `src/errors.rs` — `ExitCode` enum 0–5 + layer mapping.
 
 **Verify:**
@@ -88,8 +92,9 @@ edition 2021.
   unknown subcommand / missing subcommand → usage error exit 2.
 
 **Verify:**
-- [ ] Unit tests: alias mapping table, flag parsing, `--args` JSON quote-stripping
-      (single/double quotes), unknown subcommand → exit 2.
+- [ ] Unit tests: alias mapping table, flag parsing, `--args` passed through verbatim
+      (the shell strips quotes; no client-side stripping — a literal leading/trailing
+      quote pair in the payload is DATA, never stripped), unknown subcommand → exit 2.
 
 **Blocked by:** Phase 4
 
@@ -99,12 +104,14 @@ edition 2021.
 - `src/watch.rs` — one connection: snapshot `invoke` (mode:"call") → `subscribe` default
   topic (sessions→`session.*`, plugins→`plugin.*`, capabilities→`capability.*`,
   status/health→`gateway.*`; `--topic` overrides) → NDJSON `event` frames until Ctrl-C
-  (`ctrlc::set_handler` sets flag) → exit 5. `stats.dropped > 0` → one stderr warning.
-  No reconnect v1 (drop → exit 2). Watch only on the 5 aliases.
+  (`ctrlc::set_handler` sets flag; SIGTERM → exit 5 via ctrlc `termination` feature,
+  per Q4 lock) → exit 5. `stats.dropped > 0` → one stderr warning.
+  `subscribe.error` → exit 2 (PRD S5). No reconnect v1 (drop → exit 2). Watch only on
+  the 5 aliases.
 
 **Verify:**
 - [ ] Unit tests (mock server): snapshot then events, `--topic` override, stats warning,
-      Ctrl-C flag → exit 5.
+      `subscribe.error` → exit 2, Ctrl-C/SIGTERM flag → exit 5.
 - [ ] `platform sessions --watch --json` = pure JSON stream (compact snapshot + NDJSON).
 
 **Blocked by:** Phase 5

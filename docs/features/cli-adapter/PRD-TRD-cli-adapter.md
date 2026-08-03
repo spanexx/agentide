@@ -68,17 +68,20 @@ and the response maps to the terminal: `invoke.result` → output (exit 0); `inv
 
 **Given** any run
 **Then** exit codes are: 0 = `invoke.result`; 1 = `invoke.error` (any `GATEWAY_*` code);
-2 = pre-flight/connection failure (missing config, token unparseable, connect refused,
-close 1009/1011, `subscribe.error`, `error` frame); 3 = TLS/upgrade failure; 4 =
+2 = pre-flight/connection failure (usage errors, missing config, token unparseable,
+connect refused, close 1009/1011, `subscribe.error`, `error` frame); 3 = TLS/upgrade
+failure; 4 =
 `auth.error` before `auth.ok` (close 1008 — all W2 auth codes except `origin mismatch`;
-the CLI never sends Origin); 5 = interrupted (Ctrl-C).
+the CLI never sends Origin); 5 = interrupted (Ctrl-C/SIGTERM, per Q4 lock).
 
 ### Scenario 6: Token hygiene
 
 **Given** config file present with perms looser than 0600
 **When** a run starts and the config source actually supplies the token or URL
-**Then** exactly ONE stderr warning (`config.toml is group/world-readable — consider
-chmod 600`) per run. `path:` token files follow the same 0600 rule for the warning
+then exactly ONE stderr warning per run, naming the offending file (`<file> is
+group/world-readable — consider chmod 600`, where `<file>` is the `config.toml` or the
+`path:` token file that triggered it). `path:` token files follow the same 0600 rule for
+the warning
 (PRD-level refinement beyond the Q3 lock — security-positive; confirm at IMPL); a
 missing `path:` file → error + exit 2.
 
@@ -166,7 +169,8 @@ id, publishedAt, payload}`, `{type:"stats", dropped}`.
 - `ctrlc` — SIGINT flag for watch mode.
 - `std::io::IsTerminal` — TTY detection (no extra dep).
 
-Versions pinned at scaffold time; opensrc verification for each during IMPL Phase A.
+Versions pinned at scaffold time; opensrc verification for each during IMPL Phase 1
+(done — see IMPL Dependency Analysis).
 Rust edition 2021, static-ish release profile (musl target optional at build time, not a
 v1 lock).
 
