@@ -138,9 +138,13 @@ edition 2021.
   the 5 aliases.
 
 **Verify:**
-- [ ] Unit tests (mock server): snapshot then events, `--topic` override, stats warning,
-      `subscribe.error` → exit 2, Ctrl-C/SIGTERM flag → exit 5.
-- [ ] `platform sessions --watch --json` = pure JSON stream (compact snapshot + NDJSON).
+- [x] Unit tests (mock server): snapshot then events, `--topic` override, stats warning,
+      `subscribe.error` → exit 2, Ctrl-C/SIGTERM flag → exit 5. (7 tests in
+      `tests/watch.rs` green; SIGTERM EINTR treated as transient so the flag path
+      wins — `client.rs` `read_raw_frame`.)
+- [x] `platform sessions --watch --json` = pure JSON stream (compact snapshot + NDJSON).
+      (Verified vs `examples/mock_wire`: snapshot + `ev-1`/`ev-2` events, `--topic`
+      override echoed on the wire, SIGTERM → exit 5, `invoke --watch` → exit 2.)
 
 **Blocked by:** Phase 5
 

@@ -16,11 +16,12 @@
 
 use std::process::ExitCode;
 
-use cli_adapter::client::{ClientError, InvokeOutcome, WireClient};
+use cli_adapter::client::{InvokeOutcome, WireClient};
 use cli_adapter::config::{resolve_real, CliOverrides, ConfigError};
 use cli_adapter::errors::ExitCode as CmdExit;
 use cli_adapter::output::{render, stdout_is_tty, view_for, Entry};
 use cli_adapter::usage::print_usage;
+use cli_adapter::watch;
 use serde_json::Value;
 
 // CID:main-001 - main
@@ -167,11 +168,13 @@ fn run_invoke(
     url: Option<&str>,
     token: Option<&str>,
 ) -> ExitCode {
-    if watch {
-        eprintln!("error: --watch lands in Phase 6");
+    // PRD S7: watch mode is alias-only — invoke has no event stream.
+    if watch && entry == Entry::Invoke {
+        eprintln!(
+            "error: --watch requires an alias (sessions, plugins, capabilities, status, health)"
+        );
         return ExitCode::from(CmdExit::PreFlight.as_u8());
     }
-    let _ = topic; // Phase 6 consumes --topic.
 
     // Config resolution: flag > env > TOML > TTY prompt (PRD S1, S6).
     let cli = CliOverrides {
@@ -192,15 +195,22 @@ fn run_invoke(
     let mut client = match WireClient::connect(url, token) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("error: {}", client_msg(&e));
+            eprintln!("error: {e}");
             return ExitCode::from(e.exit_code().as_u8());
         }
     };
 
+    // PRD S7: watch — snapshot, subscribe, NDJSON events until Ctrl-C.
+    if watch {
+        return watch::run(&mut client, capability, json, topic, input, session)
+            .as_u8()
+            .into();
+    }
+
     let outcome = match client.invoke(capability, input, session) {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("error: {}", client_msg(&e));
+            eprintln!("error: {e}");
             return ExitCode::from(e.exit_code().as_u8());
         }
     };
@@ -225,17 +235,6 @@ fn config_msg(e: &ConfigError) -> String {
         ConfigError::Missing(what) => format!("missing {what}"),
         ConfigError::TokenFileMissing(p) => format!("token file missing: {}", p.display()),
         ConfigError::ConfigFileRead(p) => format!("config file unreadable: {}", p.display()),
-    }
-}
-
-fn client_msg(e: &ClientError) -> String {
-    match e {
-        ClientError::Handshake(s) | ClientError::Tls(s) | ClientError::Wire(s) => s.clone(),
-        ClientError::Auth { code, message } => format!("auth failed: {code} — {message}"),
-        ClientError::Closed(code, reason) => match reason {
-            Some(r) => format!("connection closed ({code}): {r}"),
-            None => format!("connection closed ({code})"),
-        },
     }
 }
 

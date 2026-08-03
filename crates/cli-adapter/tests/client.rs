@@ -4,96 +4,35 @@
 //! envelope, invoke/result/error/auth frames.
 
 /*
- * Code Map: mock WS server + client scenarios
- * - MockServer: TcpListener + tungstenite::accept, runs a scripted handler
+ * Code Map: wire client scenarios
+ * (MockServer lives in tests/common/mod.rs — shared with watch tests)
  *
  * CID Index:
- * CID:client-test-001 -> MockServer
- * CID:client-test-002 -> scenario_auth_ok_result
- * CID:client-test-003 -> scenario_auth_error
- * CID:client-test-004 -> scenario_invoke_error
- * CID:client-test-005 -> scenario_close_1009
+ * CID:client-test-001 -> scenario_auth_ok_result
+ * CID:client-test-002 -> scenario_auth_error
+ * CID:client-test-003 -> scenario_invoke_error
+ * CID:client-test-004 -> scenario_close_1009
+ * CID:client-test-005 -> scenario_connect_refused
  *
  * Quick lookup: rg -n "CID:client-test-" crates/cli-adapter/tests/client.rs
  */
 
+mod common;
+
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::thread;
 
 use cli_adapter::client::{ClientError, InvokeOutcome, WireClient};
 use cli_adapter::errors::ExitCode;
-use serde_json::{json, Value};
-use tungstenite::Message;
+use common::{MockServer, Reply, Script};
+use serde_json::json;
 
-/// Scripted reply to a client frame.
-#[derive(Clone)]
-enum Reply {
-    Text(Value),
-    Close(u16, &'static str),
-}
-
-/// One script entry: match incoming text's `type`, then reply.
-#[derive(Clone)]
-struct Script {
-    expect_type: &'static str,
-    reply: Reply,
-}
-
-// CID:client-test-001 - MockServer
-// Purpose: scripted W4 wire server; asserts frame `type` order.
-struct MockServer {
-    url: String,
-    _thread: thread::JoinHandle<()>,
-    _seen: Arc<AtomicUsize>,
-}
-
-impl MockServer {
-    fn spawn(script: Vec<Script>) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let url = format!("ws://127.0.0.1:{port}/ws");
-        let seen = Arc::new(AtomicUsize::new(0));
-        let seen2 = seen.clone();
-        let handle = thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            let mut ws = tungstenite::accept(stream).unwrap();
-            for step in script {
-                let msg = ws.read().unwrap();
-                if let Message::Text(t) = msg {
-                    let v: Value = serde_json::from_str(&t).unwrap();
-                    assert_eq!(v["type"], step.expect_type, "frame type mismatch");
-                }
-                seen2.fetch_add(1, Ordering::SeqCst);
-                match step.reply {
-                    Reply::Text(v) => {
-                        ws.send(Message::Text(v.to_string().into())).unwrap();
-                    }
-                    Reply::Close(code, reason) => {
-                        ws.close(Some(tungstenite::protocol::CloseFrame {
-                            code: code.into(),
-                            reason: reason.into(),
-                        }))
-                        .unwrap();
-                    }
-                }
-            }
-        });
-        MockServer {
-            url,
-            _thread: handle,
-            _seen: seen,
-        }
-    }
-
-    fn url(&self) -> String {
-        self.url.clone()
-    }
-
-    /// Join the handler thread so panics (frame mismatch) surface in the test.
-    fn join(self) {
-        let _ = self._thread.join();
+/// Script shorthand: type-only match.
+fn step(expect_type: &'static str, reply: Reply) -> Script {
+    Script {
+        expect_type,
+        expect_frame: None,
+        reply,
     }
 }
 
@@ -105,24 +44,21 @@ fn connect_err(url: &str, token: &str) -> ClientError {
     }
 }
 
-// CID:client-test-002 - scenario_auth_ok_result
+// CID:client-test-001 - scenario_auth_ok_result
 // Purpose: happy path — auth.ok then invoke.result → ExitCode::InvokeResult.
 // W4 lock: `invoke.result` carries `output`, not `result`.
 #[test]
 fn scenario_auth_ok_result() {
     let server = MockServer::spawn(vec![
-        Script {
-            expect_type: "auth",
-            reply: Reply::Text(json!({"type": "auth.ok"})),
-        },
-        Script {
-            expect_type: "invoke",
-            reply: Reply::Text(json!({
+        step("auth", Reply::Text(json!({"type": "auth.ok"}))),
+        step(
+            "invoke",
+            Reply::Text(json!({
                 "type": "invoke.result",
                 "correlationId": "1",
                 "output": {"ok": true}
             })),
-        },
+        ),
     ]);
     let mut client = WireClient::connect(&server.url(), "tok").unwrap();
     let outcome = client.invoke("capability.list", None, None).unwrap();
@@ -135,14 +71,14 @@ fn scenario_auth_ok_result() {
 // Purpose: auth.error before auth.ok → ExitCode::Auth.
 #[test]
 fn scenario_auth_error() {
-    let server = MockServer::spawn(vec![Script {
-        expect_type: "auth",
-        reply: Reply::Text(json!({
+    let server = MockServer::spawn(vec![step(
+        "auth",
+        Reply::Text(json!({
             "type": "auth.error",
             "code": "token invalid",
             "message": "bad token"
         })),
-    }]);
+    )]);
     let err = connect_err(&server.url(), "bad");
     assert_eq!(err.exit_code(), ExitCode::Auth);
     if let ClientError::Auth { code, .. } = err {
@@ -158,19 +94,16 @@ fn scenario_auth_error() {
 #[test]
 fn scenario_invoke_error() {
     let server = MockServer::spawn(vec![
-        Script {
-            expect_type: "auth",
-            reply: Reply::Text(json!({"type": "auth.ok"})),
-        },
-        Script {
-            expect_type: "invoke",
-            reply: Reply::Text(json!({
+        step("auth", Reply::Text(json!({"type": "auth.ok"}))),
+        step(
+            "invoke",
+            Reply::Text(json!({
                 "type": "invoke.error",
                 "correlationId": "1",
                 "code": "GATEWAY_INSUFFICIENT_SCOPE",
                 "message": "scope missing"
             })),
-        },
+        ),
     ]);
     let mut client = WireClient::connect(&server.url(), "tok").unwrap();
     let outcome = client.invoke("session.create", None, None).unwrap();
@@ -188,14 +121,8 @@ fn scenario_invoke_error() {
 #[test]
 fn scenario_close_1009() {
     let server = MockServer::spawn(vec![
-        Script {
-            expect_type: "auth",
-            reply: Reply::Text(json!({"type": "auth.ok"})),
-        },
-        Script {
-            expect_type: "invoke",
-            reply: Reply::Close(1009, "frame too large"),
-        },
+        step("auth", Reply::Text(json!({"type": "auth.ok"}))),
+        step("invoke", Reply::Close(1009, "frame too large")),
     ]);
     let mut client = WireClient::connect(&server.url(), "tok").unwrap();
     let err = client.invoke("capability.list", None, None).unwrap_err();
@@ -218,18 +145,15 @@ fn scenario_connect_refused() {
 #[test]
 fn scenario_error_frame() {
     let server = MockServer::spawn(vec![
-        Script {
-            expect_type: "auth",
-            reply: Reply::Text(json!({"type": "auth.ok"})),
-        },
-        Script {
-            expect_type: "invoke",
-            reply: Reply::Text(json!({
+        step("auth", Reply::Text(json!({"type": "auth.ok"}))),
+        step(
+            "invoke",
+            Reply::Text(json!({
                 "type": "error",
                 "code": "GATEWAY_BUSY",
                 "message": "busy"
             })),
-        },
+        ),
     ]);
     let mut client = WireClient::connect(&server.url(), "tok").unwrap();
     let err = client.invoke("gateway.status", None, None).unwrap_err();
@@ -259,10 +183,7 @@ fn scenario_no_upgrade() {
 /// `auth.error` frame may or may not arrive first; either way, exit 4).
 #[test]
 fn scenario_close_during_auth() {
-    let server = MockServer::spawn(vec![Script {
-        expect_type: "auth",
-        reply: Reply::Close(1008, "policy"),
-    }]);
+    let server = MockServer::spawn(vec![step("auth", Reply::Close(1008, "policy"))]);
     let err = connect_err(&server.url(), "tok");
     assert_eq!(err.exit_code(), ExitCode::Auth);
     if let ClientError::Auth { code, .. } = err {
@@ -277,14 +198,8 @@ fn scenario_close_during_auth() {
 #[test]
 fn scenario_close_during_invoke_1009() {
     let server = MockServer::spawn(vec![
-        Script {
-            expect_type: "auth",
-            reply: Reply::Text(json!({"type": "auth.ok"})),
-        },
-        Script {
-            expect_type: "invoke",
-            reply: Reply::Close(1009, "frame too large"),
-        },
+        step("auth", Reply::Text(json!({"type": "auth.ok"}))),
+        step("invoke", Reply::Close(1009, "frame too large")),
     ]);
     let mut client = WireClient::connect(&server.url(), "tok").unwrap();
     let err = client.invoke("cap.x", None, None).unwrap_err();
@@ -296,14 +211,8 @@ fn scenario_close_during_invoke_1009() {
 #[test]
 fn scenario_close_during_invoke_1011() {
     let server = MockServer::spawn(vec![
-        Script {
-            expect_type: "auth",
-            reply: Reply::Text(json!({"type": "auth.ok"})),
-        },
-        Script {
-            expect_type: "invoke",
-            reply: Reply::Close(1011, "heartbeat timeout"),
-        },
+        step("auth", Reply::Text(json!({"type": "auth.ok"}))),
+        step("invoke", Reply::Close(1011, "heartbeat timeout")),
     ]);
     let mut client = WireClient::connect(&server.url(), "tok").unwrap();
     let err = client.invoke("cap.x", None, None).unwrap_err();

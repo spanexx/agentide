@@ -13,11 +13,14 @@
  * CID:client-003 -> InvokeOutcome::exit_code
  * CID:client-004 -> ClientError::exit_code
  * CID:client-005 -> classify_connect_error
+ * CID:client-006 -> subscribe
+ * CID:client-007 -> try_read_frame
  *
  * Quick lookup: rg -n "CID:client-" crates/cli-adapter/src/client.rs
  */
 
 use std::net::TcpStream;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tungstenite::error::Error;
@@ -44,8 +47,6 @@ impl InvokeOutcome {
             InvokeOutcome::Error { .. } => ExitCode::InvokeError,
         }
     }
-
-    /// Borrow the result payload (panics if this is an Error outcome).
     pub fn as_result(&self) -> &Value {
         match self {
             InvokeOutcome::Result(v) => v,
@@ -83,6 +84,22 @@ impl ClientError {
     }
 }
 
+/// Human-readable failure message (shared by main + watch error paths).
+impl std::fmt::Display for ClientError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClientError::Handshake(s) | ClientError::Tls(s) | ClientError::Wire(s) => {
+                write!(f, "{s}")
+            }
+            ClientError::Auth { code, message } => write!(f, "auth failed: {code} — {message}"),
+            ClientError::Closed(code, reason) => match reason {
+                Some(r) => write!(f, "connection closed ({code}): {r}"),
+                None => write!(f, "connection closed ({code})"),
+            },
+        }
+    }
+}
+
 /// W4 wire client — one connection, one in-flight invoke at a time.
 pub struct WireClient {
     ws: WebSocket<MaybeTlsStream<TcpStream>>,
@@ -95,10 +112,8 @@ fn classify_connect_error(e: Error, url: &str) -> ClientError {
     match e {
         // Native-tls / rustls config-level failures arrive as Error::Tls.
         Error::Tls(_) => ClientError::Tls(e.to_string()),
-        // With rustls the TLS handshake is lazy: a handshake failure is an
-        // Error::Io. If TCP is reachable, the failure happened inside the
-        // TLS/upgrade layer → 3; if the probe fails, it was pure transport
-        // (refused, DNS) → 2.
+        // rustls handshakes lazily: TLS failures surface as Error::Io, so
+        // probe raw TCP reachability to tell TLS-layer from transport.
         Error::Io(_) if url.starts_with("wss://") => match host_port(url) {
             Some((host, port)) => {
                 if TcpStream::connect((host.as_str(), port)).is_err() {
@@ -125,9 +140,8 @@ fn host_port(url: &str) -> Option<(String, u16)> {
         let inner = &host[1..end];
         let port = host[end + 1..]
             .strip_prefix(':')
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(443);
-        return Some((inner.to_string(), port));
+            .and_then(|p| p.parse().ok());
+        return Some((inner.to_string(), port.unwrap_or(443)));
     }
     match host.rsplit_once(':') {
         Some((h, p)) => Some((h.to_string(), p.parse().ok()?)),
@@ -139,14 +153,10 @@ fn host_port(url: &str) -> Option<(String, u16)> {
 // Purpose: open socket, send `{type:"auth", token}`, await auth.ok.
 impl WireClient {
     pub fn connect(url: &str, token: &str) -> Result<Self, ClientError> {
-        // rustls needs a process-level CryptoProvider; ring is our pinned one.
-        // install_default returns Err if already installed — that is fine.
+        // rustls needs a process-level CryptoProvider; ring is pinned
+        // (install_default errors if already installed — that is fine).
         let _ = rustls::crypto::ring::default_provider().install_default();
-        // PRD S5: TLS-layer failure on wss:// → exit 3; TCP/DNS/HTTP-upgrade
-        // failures → exit 2. tungstenite 0.30 + rustls performs the TLS
-        // handshake lazily, so a failed TLS handshake surfaces as Error::Io,
-        // indistinguishable from a refused TCP connect by variant alone —
-        // probe raw TCP reachability to tell them apart.
+        // PRD S5: TLS-layer failure on wss:// → exit 3; TCP/DNS/upgrade → 2.
         let (ws, _) = connect(url).map_err(|e| classify_connect_error(e, url))?;
         let mut client = WireClient {
             ws,
@@ -185,9 +195,7 @@ impl WireClient {
                 Message::Close(f) => {
                     let code = f.as_ref().map(|c| c.code.into()).unwrap_or(0);
                     let reason = f.map(|c| c.reason.to_string());
-                    // PRD S5 / GRILL Q4: close 1008 during auth = auth rejected
-                    // before auth.ok → exit 4 (the `auth.error` frame may be
-                    // skipped; the close IS the rejection).
+                    // PRD S5 / GRILL Q4: close 1008 during auth = rejection.
                     if code == 1008 {
                         let message = reason.clone().unwrap_or_default();
                         return Err(ClientError::Auth {
@@ -262,11 +270,85 @@ impl WireClient {
                 }
                 Message::Close(f) => {
                     let code = f.as_ref().map(|c| c.code.into()).unwrap_or(0);
-                    let reason = f.map(|c| c.reason.to_string());
-                    return Err(ClientError::Closed(code, reason));
+                    return Err(ClientError::Closed(code, f.map(|c| c.reason.to_string())));
                 }
                 _ => { /* ping/pong/binary ignored */ }
             }
+        }
+    }
+
+    // CID:client-006 - subscribe — send subscribe frame (PRD S7); error → 2.
+    pub fn subscribe(&mut self, topics: &[String]) -> Result<(), ClientError> {
+        let frame = json!({ "type": "subscribe", "topics": topics });
+        self.ws
+            .send(Message::Text(frame.to_string().into()))
+            .map_err(|e| ClientError::Wire(e.to_string()))?;
+
+        loop {
+            match self.read_raw_frame()? {
+                None => continue,
+                Some(v) => match v["type"].as_str() {
+                    Some("subscribe.ok") => return Ok(()),
+                    Some("subscribe.error") => {
+                        return Err(ClientError::Wire(format!(
+                            "subscribe.error: {} (topics: {:?})",
+                            v["code"].as_str().unwrap_or("WS_TOPIC_INVALID"),
+                            v["topics"]
+                        )))
+                    }
+                    Some("error") => {
+                        return Err(ClientError::Wire(format!(
+                            "{}: {}",
+                            v["code"].as_str().unwrap_or("WS_INTERNAL"),
+                            v["message"].as_str().unwrap_or("")
+                        )))
+                    }
+                    _ => { /* ignore unrelated frames while awaiting subscribe.ok */ }
+                },
+            }
+        }
+    }
+
+    // CID:client-007 - try_read_frame
+    // Purpose: non-blocking event read for watch — Ok(None) on timeout,
+    // Ok(Some(frame)) for event/stats, Err on close/protocol.
+    pub fn try_read_frame(&mut self) -> Result<Option<Value>, ClientError> {
+        // Short read timeout so the watch loop can poll the stop flag.
+        // MaybeTlsStream is a raw enum — set the timeout per variant.
+        match self.ws.get_mut() {
+            tungstenite::stream::MaybeTlsStream::Plain(s) => {
+                let _ = s.set_read_timeout(Some(Duration::from_millis(100)));
+            }
+            tungstenite::stream::MaybeTlsStream::Rustls(s) => {
+                let _ = s.sock.set_read_timeout(Some(Duration::from_millis(100)));
+            }
+            _ => {}
+        }
+        self.read_raw_frame()
+    }
+
+    /// Read one text frame; Ok(None) on benign read timeout (would-block).
+    fn read_raw_frame(&mut self) -> Result<Option<Value>, ClientError> {
+        match self.ws.read() {
+            Ok(Message::Text(t)) => serde_json::from_str(&t)
+                .map(Some)
+                .map_err(|e| ClientError::Wire(format!("bad frame: {e}"))),
+            Ok(Message::Close(f)) => {
+                let code = f.as_ref().map(|c| c.code.into()).unwrap_or(0);
+                Err(ClientError::Closed(code, f.map(|c| c.reason.to_string())))
+            }
+            Ok(_) => Ok(None), // ping/pong/binary ignored
+            Err(Error::Io(e))
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(ClientError::Wire(e.to_string())),
         }
     }
 }

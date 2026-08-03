@@ -67,10 +67,34 @@ fn main() {
                             json!({"type": "error", "code": "WS_INTERNAL", "message": "invoke without name"})
                         }
                     },
-                    Some("subscribe") => json!({
-                        "type": "subscribe.ok",
-                        "topics": v["topics"]
-                    }),
+                    Some("subscribe") => {
+                        // Phase 6 (PRD S7): confirm FIRST (the client gates
+                        // on subscribe.ok and discards frames before it),
+                        // then push a small event stream for `--watch` to
+                        // print; a zero-dropped stats frame closes the batch.
+                        let ack = json!({"type": "subscribe.ok", "topics": v["topics"]});
+                        let text = ack.to_string();
+                        eprintln!("-> {text}");
+                        ws.send(Message::Text(text.into())).unwrap();
+                        let topics = v["topics"].clone();
+                        for (id, kind) in [("ev-1", "created"), ("ev-2", "updated")] {
+                            let e = json!({
+                                "type": "event",
+                                "topic": topics[0],
+                                "id": id,
+                                "publishedAt": 1700000000000_u64,
+                                "payload": {"kind": kind}
+                            });
+                            let text = e.to_string();
+                            eprintln!("-> {text}");
+                            ws.send(Message::Text(text.into())).unwrap();
+                        }
+                        let stats = json!({"type": "stats", "dropped": 0});
+                        let text = stats.to_string();
+                        eprintln!("-> {text}");
+                        ws.send(Message::Text(text.into())).unwrap();
+                        continue;
+                    }
                     Some("unsubscribe") => json!({
                         "type": "unsubscribe.ok",
                         "topics": v["topics"]
