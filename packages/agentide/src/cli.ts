@@ -33,7 +33,7 @@ Usage:
   agentide init    [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]
   agentide status  [--data-dir <path>]
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
-  agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--data-dir <path>]
+  agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--origin <url> ...] [--origins <csv>] [--data-dir <path>]
   agentide capability {list|describe --name <name>} [--owner <string>] [--tier <read|write|act|destructive>] [--data-dir <path>]
   agentide plugin  {list} [--data-dir <path>]
   agentide --help
@@ -43,12 +43,12 @@ Run \`agentide <command> --help\` for command-specific options.
 
 interface ParsedArgs {
   positional: string[];
-  flags: Record<string, string | boolean>;
+  flags: Record<string, string | boolean | string[]>;
 }
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
   const positional: string[] = [];
-  const flags: Record<string, string | boolean> = {};
+  const flags: Record<string, string | boolean | string[]> = {};
   let i = 0;
   while (i < argv.length) {
     const tok = argv[i];
@@ -60,7 +60,14 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
         flags[key] = true;
         i += 1;
       } else {
-        flags[key] = next;
+        const existing = flags[key];
+        if (typeof existing === "string") {
+          flags[key] = [existing, next];
+        } else if (Array.isArray(existing)) {
+          existing.push(next);
+        } else {
+          flags[key] = next;
+        }
         i += 2;
       }
     } else {
@@ -71,9 +78,16 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   return { positional, flags };
 }
 
-function getFlag(flags: Record<string, string | boolean>, key: string, fallback: string): string {
+function getFlag(flags: Record<string, string | boolean | string[]>, key: string, fallback: string): string {
   const v = flags[key];
+  if (Array.isArray(v)) return v[v.length - 1];
   return typeof v === "string" ? v : fallback;
+}
+
+function getFlagAll(flags: Record<string, string | boolean | string[]>, key: string): string[] {
+  const v = flags[key];
+  if (Array.isArray(v)) return [...v];
+  return typeof v === "string" ? [v] : [];
 }
 
 function result(stdout: string, stderr = "", exitCode = 0): CliResult {
@@ -114,7 +128,7 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
   }
 }
 
-async function runInit(dataDir: string, flags: Record<string, string | boolean>, opts: CliOptions): Promise<CliResult> {
+async function runInit(dataDir: string, flags: Record<string, string | boolean | string[]>, opts: CliOptions): Promise<CliResult> {
   const tenantId = getFlag(flags, "default-tenant", "default");
   const tenantName = getFlag(flags, "default-tenant-name", tenantId);
   const platform = await createPlatform({
@@ -162,7 +176,7 @@ async function runStatus(dataDir: string, opts: CliOptions): Promise<CliResult> 
 async function runTenant(
   subArgs: readonly string[],
   dataDir: string,
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   opts: CliOptions,
 ): Promise<CliResult> {
   const sub = subArgs[0];
@@ -206,7 +220,7 @@ async function runTenant(
 async function runToken(
   subArgs: readonly string[],
   dataDir: string,
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   opts: CliOptions,
 ): Promise<CliResult> {
   const sub = subArgs[0];
@@ -216,6 +230,11 @@ async function runToken(
   const scopeStr = getFlag(flags, "scope", "*");
   if (!tenantId || !callerId) return result("", "token issue requires --tenant and --caller\n", 1);
   const scope = scopeStr.split(",").map((s) => s.trim()).filter(Boolean);
+  const origins = [
+    ...getFlagAll(flags, "origin"),
+    ...getFlag(flags, "origins", "").split(","),
+  ].map((s) => s.trim()).filter(Boolean);
+  const expectedOrigins = [...new Set(origins)];
   const platform = await createPlatform({
     fs: opts.fs,
     dataDir,
@@ -223,7 +242,12 @@ async function runToken(
     adapterWs: false,
   });
   try {
-    const { token } = await platform.gateway.issueToken({ tenantId, callerId, scope });
+    const { token } = await platform.gateway.issueToken({
+      tenantId,
+      callerId,
+      scope,
+      ...(expectedOrigins.length > 0 ? { expectedOrigins } : {}),
+    });
     return result(`${token}\n`);
   } finally {
     await platform.stop();
@@ -233,7 +257,7 @@ async function runToken(
 async function runCapability(
   subArgs: readonly string[],
   dataDir: string,
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   opts: CliOptions,
 ): Promise<CliResult> {
   const sub = subArgs[0];

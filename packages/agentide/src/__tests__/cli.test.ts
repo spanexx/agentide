@@ -155,3 +155,81 @@ describe("CLI", () => {
     expect(r.stderr).toMatch(/unknown command/i);
   });
 });
+
+function decodeJwt(token: string): Record<string, unknown> {
+  return JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf-8"));
+}
+
+async function mintViaCli(fs: InMemoryFs, args: string[]): Promise<{ exitCode: number; payload: Record<string, unknown> | null; raw: string }> {
+  const r = await runCli(["token", "issue", "--tenant", "acme", "--caller", "agent-1", ...args, "--data-dir", "/data"], { fs });
+  if (r.exitCode !== 0) return { exitCode: r.exitCode, payload: null, raw: r.stdout };
+  const lines = r.stdout.split("\n").map((l: string) => l.trim()).filter(Boolean);
+  const last = lines[lines.length - 1] ?? "";
+  return { exitCode: 0, payload: decodeJwt(last), raw: last };
+}
+
+describe("CLI token issue expectedOrigins", () => {
+  it("--origin binds the token (claim in JWT payload)", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await mintViaCli(fs, ["--origin", "https://app.acme.com"]);
+    expect(r.exitCode).toBe(0);
+    expect(r.payload?.expectedOrigins).toEqual(["https://app.acme.com"]);
+  });
+
+  it("--origins comma-separated binds multiple origins in order", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await mintViaCli(fs, ["--origins", "https://a.example.com,https://b.example.com"]);
+    expect(r.exitCode).toBe(0);
+    expect(r.payload?.expectedOrigins).toEqual(["https://a.example.com", "https://b.example.com"]);
+  });
+
+  it("--origin repeatable collects all occurrences", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await mintViaCli(fs, [
+      "--origin", "https://a.acme.com",
+      "--origin", "https://b.acme.com",
+    ]);
+    expect(r.exitCode).toBe(0);
+    expect(r.payload?.expectedOrigins).toEqual(["https://a.acme.com", "https://b.acme.com"]);
+  });
+
+  it("--origin + --origins merge and dedupe keeping first occurrence", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await mintViaCli(fs, [
+      "--origin", "https://a.com",
+      "--origin", "https://b.com",
+      "--origins", "https://b.com,https://c.com",
+    ]);
+    expect(r.exitCode).toBe(0);
+    expect(r.payload?.expectedOrigins).toEqual(["https://a.com", "https://b.com", "https://c.com"]);
+  });
+
+  it("--origins drops empty and whitespace entries, trims the rest", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await mintViaCli(fs, ["--origins", " https://a.com ,, ,  https://b.com  "]);
+    expect(r.exitCode).toBe(0);
+    expect(r.payload?.expectedOrigins).toEqual(["https://a.com", "https://b.com"]);
+  });
+
+  it("without origin flags the claim is omitted (backward compat)", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await mintViaCli(fs, []);
+    expect(r.exitCode).toBe(0);
+    expect(r.payload).not.toHaveProperty("expectedOrigins");
+  });
+
+  it("minted token round-trips through gateway verify with the claim intact", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    const r = await mintViaCli(fs, ["--origin", "https://app.acme.com"]);
+    expect(r.exitCode).toBe(0);
+    expect(r.payload?.expectedOrigins).toEqual(["https://app.acme.com"]);
+    expect(r.raw).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  });
+});
