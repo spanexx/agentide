@@ -26,9 +26,9 @@ edition 2021.
   Chained after `npm run build` in root precommit.
 
 **Verify:**
-- [ ] `scripts/precommit-rust.sh` runs clean from repo root AND skips gracefully without cargo.
-- [ ] `cargo build` produces `platform` binary; `--version` prints 0.1.0.
-- [ ] `cargo test` green (empty suite passes).
+- [x] `scripts/precommit-rust.sh` runs clean from repo root AND skips gracefully without cargo.
+- [x] `cargo build` produces `platform` binary; `--version` prints 0.1.0.
+- [x] `cargo test` green (empty suite passes).
 
 **Blocked by:** nothing
 
