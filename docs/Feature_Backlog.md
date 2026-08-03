@@ -73,7 +73,7 @@ Without 8a and 8b, the kernel works but only for the 25 platform caps — runtim
 
 | # | Topic slug | Scope | Depends on | Source doc |
 |---|---|---|---|---|
-| 13 | `dashboard-core` | Active sessions, installed plugins, registered capabilities, runtime health, logs, metrics — polls `platform-capabilities` | `platform-capabilities`, `browser-runtime` (for Browser Inspector) | Agentide → Section 14 |
+| 13 | `dashboard-core` | `dashboard.view.*` read caps (thin in-process wrappers over read-tier platform caps, type platform, owner `dashboard`, permission `platform.dashboard.read`, tier read, session-less) + web dashboard UI served by the dashboard package's own static server (`dashboardPort` 7200); all data over adapter-websocket (`invoke` + `subscribe`/`event`); browser-held read-only origin-bound token (mint per page load). **Charting DONE 2026-08-03** — map + tickets D1–D5 at [`docs/wayfinder/dashboard-core/`](wayfinder/dashboard-core/map.md); all decisions locked (D1 views, D2 cap shape, D4 token, D3 UI); drift D-50 (origin-claim mint side) is in-pack work. Execution starts after adapter-websocket ships | `adapter-websocket` (the only door — Q2/Q3 locks), `platform-capabilities` | Agentide → Section 14 |
 | 14 | `devtools-extension` | Chrome DevTools surface for platform activity | `dashboard-core` | Agentide → Section 14 → Extended Tooling |
 | 15 | `vscode-extension` | Capability autocomplete, manifest validation, runtime/session inspection in-editor | `dashboard-core`, `capability-registry` | Agentide → Section 14 → Extended Tooling |
 

@@ -1,11 +1,62 @@
 # Drift Log
-**Last updated:** 2026-08-02  **Open:** 0  **Resolved:** 40  **Critical/High:** 0
+**Last updated:** 2026-08-03  **Open:** 6  **Resolved:** 41  **Critical/High:** 2
 
 ## Open
+
+- **D-50** (High, 2026-08-03, reporter: dashboard-core D4 resolution) — Origin-bound browser tokens cannot be minted: the `expectedOrigins` claim is never issued.
+  - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — "every browser SDK token MUST carry a signed `expectedOrigins` claim; `auth.token.issue` CLI gains `--kind browser` + `--origin` / `--origins` flags" (`docs/features/sdk-browser/GRILL-sdk-browser.txt:223-230`); adapter-websocket W2 sub-Q 4 (closed 2026-08-03) locks enforcement — browser `Origin` present → claim REQUIRED, exact match, deny-by-default, mismatch → `auth.error "origin mismatch"` → close 1008.
+  - Code reality: `issueToken` mints NO `expectedOrigins` — claims are only `sub`/`scope`/`iat`/`exp` (`packages/gateway-core/src/factory.ts:161-170`); CLI `token issue` supports only `--tenant`/`--caller`/`--scope` (`packages/agentide/src/cli.ts:200-222`); the only origin enforcement code anywhere is the simulator (`packages/agentide/scripts/simulate-sdk-browser.mjs:193`); sdk-browser documents the claim but no server ever sees it.
+  - Why matters: with W2 Q4 enforcement locked (deny-by-default for browsers), NO browser client can authenticate until the mint side lands — a hard cross-pack blocker for `@platform/dashboard` v1 (its browser-held token, Q4 lock) and for any sdk-browser consumer.
+  - Owner: gateway-core (`IssueTokenRequest` + `issueToken`) + agentide CLI (`token issue --origin/--origins`); enforcement already locked in adapter-websocket W2 Q4 (adapter pack).
+  - To fix: code — additive optional `expectedOrigins?: string[]` on `IssueTokenRequest`, minted into the JWT claims when present; CLI `--origin`/`--origins` flags; scheduled in the `@platform/dashboard` feature-pipeline IMPL (D4 lock). Dashboard's internal `dashboard` caller token omits the claim (never crosses the wire).
+  - Related: D4 ticket (token-handling), adapter W2 Q4, sdk-browser T5 Q2.
+
+- **D-45** (High, 2026-08-03, reporter: dashboard-core D1 grilling) — `session.list` is a v1 stub returning `[]` always; the dashboard's Sessions view has no snapshot source, violating the D1 acceptance bar (snapshot + live, both required).
+  - Doc claim: `platform-capabilities read-tier caps are ready: session.list, plugin.list, ...` (`docs/features/dashboard-core/GRILL-dashboard-core.txt:14`); D1 acceptance bar: every in-v1 view needs a snapshot source AND a live-update story (locked 2026-08-03).
+  - Code reality: `session.list` handler returns `[]` unconditionally — v1 stub; v2 `listSessions()` announced (`packages/gateway-core/src/factory.ts:322-327`).
+  - Why matters: Sessions view would render an empty list forever; the events (session.created/suspended/resumed/destroyed) are live, but the initial snapshot is dead — half the acceptance bar fails.
+  - Owner: gateway-core (session-manager semantics) — fix before dashboard ships (execution waits on adapter-websocket, so this can land in the same window).
+  - To fix: code — implement real `session.list` (v2 `listSessions()` from the session-manager registry) before `@platform/dashboard` v1 executes; or surface to grill if the stub is intentional.
+  - Related: D1 ticket (view-scope), D-44 (adapter pull — session.list over WS).
+
+- **D-46** (Medium, 2026-08-03, reporter: dashboard-core D1 grilling) — `gateway.metrics` is a shipped read cap returning placeholder zeros, not metrics.
+  - Doc claim: `platform-capabilities read-tier caps are ready: ... gateway.metrics` (`docs/features/dashboard-core/GRILL-dashboard-core.txt:14-16`); v1 dashboard opens with `invoke{gateway.metrics}` (`GRILL-dashboard-core.txt:53`).
+  - Code reality: handler returns `{invocations:{ok:0,denied:0,error:0}, rateLimitDenials:0, authFailures:0}` — placeholder, all zeros (`packages/gateway-core/src/factory.ts:378-384`).
+  - Why matters: any consumer of `gateway.metrics` (dashboard Metrics view, future Grafana-style panel) gets fabricated data. Snapshot is dead — violates the D1 acceptance bar (snapshot + live).
+  - Owner: gateway-core.
+  - To fix: code — implement real invocation/denial/error counters in the `handleInvocation` exit path before the Metrics view ships (or rule the view out of scope).
+  - Related: D1 ticket (view-scope), D-45 (session.list stub — same class of gap).
+
+- **D-47** (Medium, 2026-08-03, reporter: dashboard-core D1 grilling) — No log-reading capability exists; the Logs view has no snapshot source.
+  - Doc claim: backlog BI[13] names `logs` as a v1 dashboard view (`docs/features/dashboard-core/GRILL-dashboard-core.txt:10-11`); §14 lists Logs as a core Dashboard feature (`docs/architecture/Agentide.md:841`).
+  - Code reality: no read cap — only `gateway.configuration` leaks the audit path (`packages/gateway-core/src/factory.ts:387-392`); no CLI `logs` command (`packages/agentide/src/cli.ts:96-109`); the only sources are the append-only JSON-lines `audit.log` (`packages/agentide/src/factory.ts:43`, `AuditWriter` audit.ts:28-45) and its live mirror `gateway.invocation` (`packages/gateway-core/src/handle-invocation.ts:351,376,405`).
+  - Why matters: Logs view would need to read the file directly (breaks the thin-wrapper lock) or aggregate the event mirror live (no snapshot of history before page load).
+  - Owner: gateway-core (+ CLI surface in agentide).
+  - To fix: code — add a log-read seam (cap + `logs` CLI command) before the Logs view ships, or rule the view out of scope.
+  - Related: D1 ticket (view-scope), D-46.
+
+- **D-48** (Medium, 2026-08-03, reporter: dashboard-core D1 grilling) — No error-listing capability exists; the Errors view has no snapshot source.
+  - Doc claim: §14 lists Errors as a core Dashboard feature (`docs/architecture/Agentide.md:842`); GRILL BI[13] read-tier list (`GRILL-dashboard-core.txt:14-16`).
+  - Code reality: no error-listing cap; errors surface only as event payloads — `gateway.invocation` status `error`/`denied` (`handle-invocation.ts:362-377, 389-405`), `event.handler_failed`, `plugin.handler.error`, `plugin.handler.loaded{ok:false}`, `sdk.invoke.failed`; 18 `GATEWAY_*` codes defined (`packages/errors/src/index.ts:36-55`).
+  - Why matters: Errors view could aggregate the live event mirror, but has no snapshot of errors that occurred before the page loaded — half the acceptance bar missing.
+  - Owner: gateway-core.
+  - To fix: code — add an error-listing seam (query over audit/event history) before the Errors view ships, or rule the view out of scope.
+  - Related: D1 ticket (view-scope), D-47 (same data class).
+
+- **D-49** (Medium, 2026-08-03, reporter: dashboard-core D1 grilling) — Browser Instances view has zero shipped backing: no cap, no events, no registry enumeration.
+  - Doc claim: §14 lists Browser Instances as a core Dashboard feature (`docs/architecture/Agentide.md:836`).
+  - Code reality: browser-runtime's 13 caps are all per-tab actions — `browser.query` is a DOM-selector query on ONE tab, not an instance listing (`packages/browser-runtime/src/handlers.ts:229-234`); sessions live in a private `Map` with no enumeration API (`packages/browser-runtime/src/index.ts:51-62`); browser-runtime publishes ZERO events (only subscribes to session.* lifecycle, `packages/browser-runtime/src/lifecycle.ts:39-54`); caps registered with `permissions: []` so any caller needs wildcard `["*"]` scope (`packages/plugin-manager/src/lifecycle-helpers.ts:80-100`).
+  - Why matters: the view needs a new read cap + lifecycle events (or sdk.connection.* heuristics) — a real browser-runtime change, not a thin wrapper.
+  - Owner: browser-runtime.
+  - To fix: code — add instance enumeration cap + lifecycle events before the view ships, or rule the view out of scope.
+  - Related: D1 ticket (view-scope); BI[12] browser-runtime (shipped).
 
 ---
 
 ## Resolved
+
+- **D-44** (Resolved 2026-08-03, websocket-adapter W1 sub-Q 1 re-open) — v1 WS adapter was locked as push-only (`future.md` recorded pull as a future demand). Re-opened this session with a concrete reason: `dashboard-core` BI[13] is a v1 consumer that needs `capability.list` / `plugin.list` / `session.list` / `system.health` / `gateway.metrics` over a single socket. Pull is now v1; WS adapter adds a `invoke*` message family to the existing `{type: ...}` envelope (W1 sub-Q 4 unchanged — JSON-RPC mirror rejected). Universal, not scoped (user wording "no i dont want scopped"). Cross-ticket ripple: W4 (wire schema) adds 5 `invoke*` variants + correlationId; W6 (backpressure) covers per-connection outbound queueing for both `event` and `invoke.partial`; W5 (fan-out) routes per-call partial-progress topics. Downstream docs updated: `docs/wayfinder/websocket-adapter/future.md` (rewritten — pull is no longer future, only kernel-level streaming seam + `invoke.batch` + subprotocol versioning + MCP-shape compat remain), `docs/wayfinder/websocket-adapter/map.md` (decision log: W1 sub-Q 1 REOPEN entry + W1 closed revision), `docs/CONTEXT.md` (Decision Log: W1 sub-Q 1 REOPEN + W1 closed revision). `dashboard-core/GRILL-dashboard-core.txt` Q2 (data-plane exit) now has a defined answer candidate: expose aggregated views via WS adapter's `invoke` messages. `Feature_Backlog.md` BI[13] is unaffected (the row's "polls platform-capabilities" stays accurate; the WS adapter becomes the transport between the dashboard data plane and the platform's read-tier caps, not a separate read tier).
+  - Verified by: code re-read of `packages/event-bus/src/index.ts:242-246` (queueing already covered for `event`; `invoke.partial` rides the same outbound queue); review of all four updated docs files; sub-ticket propagation (W2 sub-Q 1 in-progress, WS adapter envelope handling pulls the new shape).
 
 - **D-40** (Resolved 2026-08-02, sdk-browser follow-up fix) — sdk-browser's `sdk.capability.register` wire frame is name-only and fails registry validation, so the SDK's gateway-side registration can never succeed; server closes the connection ("register-failed"). Fixed by mirroring the sdk-node frame: `sendRegister` now sends `{ type, name, description, version, permissions, tier }` — description = cap name (the DOM has no description model), version/tier from the CapRegistry view (defaults "1.0.0"/"act"), permissions "" (server splits to []) (`packages/sdk-browser/src/index.ts` sendRegister). Gateway validation (`packages/capability-registry/src/validate.ts`) now accepts the frame; the register-failed close path is no longer reachable from sdk-browser.
   - Verified by: `vitest run packages/sdk-browser` (register-frame assertions updated to the full shape) + end-to-end backend-runtime register tests + full monorepo run (635/635).

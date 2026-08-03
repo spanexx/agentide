@@ -1,0 +1,342 @@
+dashboard-core - Grill Notes
+
+Status: Phase 0 grilling in progress (wayfinder charting — destination naming)
+Date: 2026-08-03
+Source: docs/Feature_Backlog.md BI[13]; docs/architecture/Agentide.md Section 14; docs/features/platform-capabilities/PRD-TRD
+
+What this feature is about
+
+- BI[13] Tier 5 Visibility: "Active sessions, installed plugins, registered
+  capabilities, runtime health, logs, metrics — polls platform-capabilities".
+- Agentide Section 14: Dashboard is a first-class product, the "Task Manager" for
+  the platform. Self-hosted install = Gateway, Session Manager, Plugin Manager,
+  Dashboard (Section 15).
+- platform-capabilities read-tier caps are ready: session.list, plugin.list,
+  capability.list, system.health, gateway.metrics. `dashboard.*` caps deferred to
+  BI[13]. AC-4: operator mints read-only token (dashboard-bot, platform.*.read).
+- This map decides WHAT ships in v1 and in what shape; feature-pipeline (GRILL ->
+  PRD-TRD -> IMPL) executes the locked destination later.
+
+Questions and answers locked so far
+
+1. Q (2026-08-03, destination naming) — "**dashboard-core the backend data plane
+   only** for now but create a future.md that does this part 'web dashboard UI'"
+
+Answer:
+- v1 ships ONLY the backend data plane: the server-side component that polls
+  platform-capabilities read-tier caps, aggregates the views (sessions, plugins,
+  capabilities, health, metrics), and exposes them.
+- The web dashboard UI (browser page, visual rendering, interactions) is NOT in
+  v1. It is deferred to future.md in this map's directory.
+- The data plane still needs an exit so the future UI has something to consume —
+  shape of that exit is the next locked question.
+
+Why:
+- User scoping decision (verbatim). Dashboard is a first-class product in
+  Section 14, but the visibility DATA can ship before any pixels; the UI layer
+  is the replaceable skin, the data plane is the stable core (PHILOSOPHY.md
+  replaceability test).
+- Precedent: websocket-adapter map runs the same split (kernel now, surface
+  later) and keeps a future.md in the map dir.
+
+No remaining open questions
+
+(Not yet — grilling continues.)
+
+2. Q (2026-08-03, data-plane exit) — "Where does the data plane expose its
+   aggregated views (sessions, plugins, capabilities, health, metrics)?"
+
+Answer (2026-08-03, this session):
+- **The data plane exposes its views on the WS adapter** — the WebSocket
+  adapter's `invoke` message family (per W1 sub-Q 1 REOPEN, locked this
+  session). One socket, both views-at-open (`invoke{capability.list}`,
+  `invoke{plugin.list}`, `invoke{session.list}`, `invoke{system.health}`,
+  `invoke{gateway.metrics}` with `mode: "call"`) and live updates
+  (`subscribe{topics:["session.*","plugin.*","capability.*","system.*"]}` +
+  `event` delivery).
+- **v1 contract (locked):** every WS adapter v1 client can use `invoke`. Pull
+  is universal — no scoped opt-in, no separate "dashboard-only" door. The
+  data plane becomes the natural consumer because: (a) it's already
+  aggregating read-tier caps, (b) it needs live updates which is exactly
+  what the WS adapter's `subscribe`+`event` provides, (c) it doesn't need
+  the LLM-facing JSON-RPC shape that MCP provides.
+- **Implementation pattern (data plane side):** views ARE thin
+  server-side handlers that internally call `Gateway.handleInvocation()`
+  with `session` set to the dashboard's session, namespaced as
+  `dashboard.view.<viewName>` so the audit log captures view access
+  distinctly. The data plane's IMPL ticket (when charted) will lock: every
+  `dashboard.view.*` cap is `"tier": "act"` + `"permissions": ["read"]`
+  (operator mints a read-only token per the dashboard-bot precedent in
+  the BI[13] row + `platform-capabilities` read-tier caps).
+- **No separate "read-only HTTP backdoor" needed.** The whole question
+  this session surfaced ("if WS is push+pull, do we need a read-only HTTP
+  backdoor for the dashboard?") — answer: **no.** The `invoke` family
+  *is* the canonical read channel for non-LLM clients; the data plane's
+  only external surface is the WS adapter; the WS adapter is the only
+  door the dashboard needs.
+
+Why:
+- Concrete v1 consumer for the WS adapter's pull (the "pull demanded"
+  reason for the W1 re-open).
+- The data plane doesn't need a separate shape — it just routes
+  `dashboard.view.*` invocations to its aggregator.
+- Audit-trail uniform: every dashboard view read goes through
+  `handleInvocation` → audit log → event-bus `gateway.invocation` mirror
+  (per CONTEXT.md Audit Log specification). No shadow audit path.
+- Replaces any future "read-only HTTP backdoor" design with the same door
+  everyone else uses.
+
+Linked tickets:
+- WS adapter: `docs/wayfinder/websocket-adapter/tickets/adapter-scope-vs-mcp.md` (W1 sub-Q 1 REOPEN)
+- WS adapter: `docs/wayfinder/websocket-adapter/future.md` (rewritten — pull is v1)
+- Drift: `docs/drift.md` D-44
+- Context: `docs/CONTEXT.md` Decisions Log W1 sub-Q 1 REOPEN
+
+Status: locked. Next: dashboard-core backend data plane moves from
+"platform-capabilities polling" to "platform-capabilities invocation via
+WS adapter, single socket". The data plane's IMPL ticket (TBD) inherits
+this lock.
+
+3. Q (2026-08-03, sequencing) — "is it wise to wait for the websocket
+   adapter to ship?"
+
+Answer:
+- Execution: YES, wait. The adapter is the only door (Q2 lock) — before it
+  ships, the dashboard has zero exits and zero consumers. Shipping the data
+  plane alone would ship five wrapper caps nothing calls (a phantom
+  milestone).
+- Planning: NO, don't wait. Chart the dashboard map in parallel with the
+  adapter's remaining grilling (W3 subscription model, W4 wire schema, W6
+  backpressure) — those are decisions, not code. The dashboard build + its
+  post-impl sim start only after the adapter ships.
+- The wait is short and half-paid: W1 REOPEN was demand-driven by the
+  dashboard, so the adapter's contract is already dashboard-shaped.
+
+Why:
+- No backdoor exists (Q2) — "waiting" is not optional, it is the shape of
+  the work.
+- Adapter W3/W4/W6 locks feed dashboard D2/D3 as inputs; charting in
+  parallel converts the wait into decision time.
+- Source: user grill session 2026-08-03; adapter map `docs/wayfinder/
+  websocket-adapter/map.md`.
+
+4. Q (2026-08-03, scope revision) — "is it better to just incorporate the
+   ui in this v1 since there is less work to do?"
+
+Answer:
+- YES — the web dashboard UI moves INTO v1. This REVISES Q1 (which deferred
+  the UI to future.md). Q1's data-plane-only split is superseded.
+- One feature-pipeline run instead of two: each run costs a GRILL + PRD-TRD
+  + IMPL + two sims + drift review. Two runs = two of everything plus
+  reconciliation. The data plane alone is thin to the point of hollow — no
+  HTTP API (Q2), no aggregation layer, no stored state — just five wrapper
+  caps. The substance of the pack is the UI + the views.
+- Costs accepted (all three):
+  (a) Browser-held token in v1 (was future). Mitigations are shipped:
+      read-only `dashboard-bot`, scope `platform.*.read`, origin-bound JWT
+      (sdk-browser `expectedOrigins`), localhost binding.
+  (b) The dashboard package must serve its own static UI page — HTTP GET
+      for page + assets only, NO data API (data stays on the socket).
+  (c) Ship date = adapter ship date — the build and post-impl sim need a
+      real adapter to connect to.
+
+Why:
+- Section 14: the Dashboard is a first-class product, not an admin pipe —
+  the user-visible product IS the UI.
+- PHILOSOPHY.md replaceability test: the UI is the replaceable skin; the
+  `dashboard.view.*` caps are the stable core; one run ships both coherently.
+- Source: user grill session 2026-08-03 (verbatim question above); `docs/
+  wayfinder/dashboard-core/map.md` Q4 entry.
+
+Status: locked. Next: chart the dashboard-core map (done 2026-08-03 —
+map at `docs/wayfinder/dashboard-core/map.md`, tickets D1–D5).
+
+---
+
+## Q5 (2026-08-03, D1 ticket — acceptance bar)
+
+5. Q (2026-08-03, D1 view-scope grill) — "what is the acceptance bar for a
+   view to be in v1?"
+
+Answer:
+- **Snapshot + live, both required.** Every in-v1 view must have (a) a snapshot
+  source (fetch current state on load) AND (b) a live-update story (events on
+  the socket). Views missing either half are deferred to future.md.
+- Sessions snapshot gap is real: `session.list` is a v1 stub returning `[]`
+  (factory.ts:322-327). Logged as **drift D-45 (High)** — must fix before
+  dashboard ships: implement real `session.list` (v2 `listSessions()`).
+
+Why:
+- A dead screen isn't a Task Manager — stale panels until manual refresh
+  would be a bug, not a feature.
+- D5 verdict: only Plugins, Capabilities, Health pass both halves cleanly
+  today; Sessions has live events but a stub snapshot.
+
+Status: locked.
+
+---
+
+## Q6 (2026-08-03, D1 ticket — view list)
+
+6. Q (2026-08-03, D1 view-scope grill) — "which of the 8 §14 views ship in v1
+   under the acceptance bar?"
+
+Answer:
+- **In v1 (4):** Active Sessions, Installed Plugins, Registered Capabilities,
+  Runtime Health.
+- **Deferred to future.md (4):** Metrics, Logs, Errors, Browser Instances.
+- Acceptance bar (Q5 lock) applied via the D5 verdict matrix: in-v1 views need
+  snapshot + live; the four deferred each miss at least one half and each needs
+  a backend seam, not a thin wrapper.
+
+Why:
+- Day-2 developer needs "what's running / installed / registered / is the box
+  alive" — four truthful panels. Empty-or-zero panels (placeholder metrics,
+  no-op logs) would make the dashboard look broken.
+- Deferred views need real work: Metrics = real counters (D-46), Logs = read
+  seam (D-47), Errors = listing seam (D-48), Browser Instances = enumeration
+  cap + events (D-49). All four logged as drift; they graduate when a concrete
+  consumer exists AND the drift is fixed.
+
+Status: locked.
+
+---
+
+## Q7 (2026-08-03, D2 ticket — cap shape; autonomous lock under delegation)
+
+7. Q (2026-08-03, D2 grill) — "What exactly is a `dashboard.view.*` capability —
+   name, owner, tier/permission, handler contract, session handling, error
+   behavior — and how does the dashboard package register it?"
+
+Answer (locked 2026-08-03; user delegated decision authority, mandate =
+PHILOSOPHY.md + locks + code reality):
+- **Namespace:** `dashboard.view.<view>`; four caps: `.sessions`, `.plugins`,
+  `.capabilities`, `.health`. Settles D-44's open naming question (TRD's
+  `dashboard.*` placeholder superseded).
+- **Record shape (REVISES Q2's literal `tier: "act"` + `permissions: ["read"]`
+  — unshippable):** type `platform`, version `1.0.0`, owner `dashboard`,
+  permissions `["platform.dashboard.read"]`, tier `read`. Q2's shorthand fails
+  authz: `"read"` is rank-null (authz.ts:44-55), never satisfied by
+  `platform.*.read`; the platform convention (caps.ts:26-63) is
+  `platform.<domain>.<read|write>`.
+- **Wrapper contract:** thin passthrough per view; handler re-invokes
+  `Gateway.handleInvocation()` with an internal token (minted once at start via
+  operator `gateway.issueToken`, caller `dashboard`, scope `platform.*.read`)
+  — required because handleInvocation verifies a JWT on every call
+  (handle-invocation.ts:130,141-145). Double-audit intended (view trail with
+  `dashboard-bot` + backing trail with `dashboard`).
+- **Session: NONE (REVISES Q2's "dashboard's session").** All four backing caps
+  are session-less (handle-invocation.ts:46-63); a dashboard session is
+  impossible (session.create is a write cap; token is read-only) and useless.
+  Kernel change: the four view names join `SESSION_LESS_CAPABILITIES`
+  (exact-name, additive).
+- **Audit:** distinct view-access trail confirmed (audit records carry
+  capability.name + owner).
+- **Errors:** `GATEWAY_*` codes passthrough unchanged (18 codes,
+  errors/src/index.ts:36-55).
+- **Registration:** dashboard package exports `DASHBOARD_CAPS` +
+  `createDashboardHandlers(gateway)`; `@platform/agentide` factory wires when
+  `config.dashboardPort` set (mirror `backendRuntimePort`). Kernel seam
+  (generic): `createGateway` config gains optional `extraOwnerHandlers`
+  merged into dispatch; kernel stays dashboard-agnostic (replaceability).
+
+Why:
+- Interfaces are forever (view surface stable; backing caps may change, D-45);
+  tiny boring kernel (additive seams only); dependencies point inward
+  (composition root knows dashboard, kernel doesn't); complexity at the edge
+  (no aggregation, no stored state); reversible (exact-name set + optional
+  config seam).
+- The Q2 shorthand was recorded pre-implementation; the shipped authz model is
+  the answer key for the cap contract (per wayfinder rule: code is source of
+  truth for shipped work).
+
+Status: locked. (Ticket D2 closed; CONTEXT.md entry added.)
+
+---
+
+## Q8 (2026-08-03, D4 ticket — token handling; autonomous lock under delegation)
+
+8. Q (2026-08-03, D4 grill) — "How does the web dashboard UI obtain and hold
+   its gateway token, and how is the token kept safe given it lives in the
+   browser?"
+
+Answer (locked 2026-08-03; user delegated decision authority):
+- **Mint:** per page load, in-process, server-side — the dashboard package
+  calls the operator API `gateway.issueToken({tenantId, callerId:
+  "dashboard-bot", scope: ["platform.*.read"], expectedOrigins:
+  ["http://localhost:7200","http://127.0.0.1:7200"]})` at every `GET /` and
+  injects the token into the page. No localStorage paste; memory only. CLI
+  mint stays the fallback/CI path.
+- **Origin binding:** `expectedOrigins` claim reused (T5 Q2 permanent lock;
+  adapter W2 Q4 enforces: browser Origin present → claim REQUIRED, exact match,
+  mismatch → `auth.error "origin mismatch"` → close 1008). **Missing half —
+  the mint side:** gateway `issueToken` mints NO expectedOrigins today
+  (factory.ts:161-170) and the CLI has no `--origin` flags (cli.ts:200-222) —
+  so NO browser client can auth until it lands. Logged as **drift D-50 (High)**;
+  in-pack work: `IssueTokenRequest.expectedOrigins?: string[]` (additive) +
+  CLI `--origin`/`--origins`.
+- **Scope:** `platform.*.read` sufficient (covers `platform.dashboard.read` via
+  authz namespace wildcard + all four backing caps).
+- **Lifetime/refresh:** default 1h (factory.ts:53); refresh = reload = fresh
+  mint. Adapter's mid-connection re-`auth` (W2 Q3) exists but NOT used in v1
+  (delay complexity).
+- **Localhost:** server binds 127.0.0.1; expectedOrigins array carries BOTH
+  `localhost` and `127.0.0.1` forms (W2 Q4 multi-origin support).
+- **Leak surface:** read-only `platform.*.read`, ≤1h, origin-bound, memory-only,
+  self-hosted local — accepted residual risk, documented in the PRD (Security
+  Is Architecture).
+
+Why:
+- Security is architecture (binding enforced at the door; token
+  self-describing); complexity at the edge (dumb browser, mint per load);
+  reversible (additive field; per-load mint swappable for operator-mint config
+  without UI contract change); interfaces are forever (no existing caller
+  changes).
+- Ticket context's claims ("--kind/--origin flags exist", "backend-runtime
+  enforces") were verified FALSE against code and corrected here — code is the
+  source of truth.
+
+Status: locked. (Ticket D4 closed; drift D-50 logged; CONTEXT.md entry added.)
+
+---
+
+## Q9 (2026-08-03, D3 ticket — UI shape; autonomous lock under delegation)
+
+9. Q (2026-08-03, D3 grill) — "What does the web dashboard UI look like and how
+   is it served — stack, page layout, static serving, and the socket lifecycle
+   that keeps it live?"
+
+Answer (locked 2026-08-03; user delegated decision authority):
+- **Stack:** plain HTML/CSS/JS single page; no framework, no build step
+  (repo convention; delay complexity).
+- **Static server:** own server in the dashboard package; `dashboardPort`
+  default **7200** via `@platform/agentide` factory (mirror
+  `DEFAULT_ADAPTER_MCP_PORT` 7100); binds 127.0.0.1; routes `GET /` (index.html
+  with minted token injected) + `GET /assets/*`. No data API (Q2 lock). Guard:
+  adapter-websocket must not take 7200 (its port locks at W4).
+- **Layout:** header (connection status pill, tenant, token hint) + 4 panels
+  (Sessions, Plugins, Capabilities, Health), CSS grid.
+- **Client + open sequence:** page speaks the ADAPTER wire (`auth`/`auth.ok`/
+  `auth.error`, `invoke`/`invoke.result`/`invoke.error`, `subscribe`/`event` —
+  W2 Q1/W4), NOT sdk-browser's `sdk.auth` wire (different transport: the
+  dashboard is an adapter client). Small vanilla-JS WS client in served
+  assets. Sequence: connect → auth → 4 invokes (mode:"call") → render
+  snapshots → subscribe `["session.*","plugin.*","capability.*"]` → live
+  render. `system.*` NOT subscribed (no producers; D5) — Health instead polls
+  `gateway.status` every **30s** (D1 assigned the interval to D3).
+- **Lifecycle:** sdk-browser patterns as behavior precedent: backoff 1→30s
+  ±20% jitter; pagehide deliberate disconnect; hidden→pause reconnect; 1008/
+  auth.error terminal (no reconnect — "origin mismatch" banner).
+- **States:** per-panel empty text; gateway-down banner + stale markers;
+  token-expired banner on token-related errors ("reload the page").
+- **Errors:** `invoke.error` code+message verbatim per panel (`GATEWAY_*`
+  passthrough, D2).
+
+Why:
+- Nothing is special / delay complexity (page + socket, no framework);
+  dependencies point inward (package depends on adapter wire; kernel never
+  knows the dashboard); reversible (interval/port/layout are data constants);
+  tiny boring kernel (only D2/D4 additive seams touch it).
+
+Status: locked. (Ticket D3 closed — the map is DONE. Delivery: feature-pipeline;
+execution waits for adapter-websocket per Q3.)
