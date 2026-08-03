@@ -106,3 +106,9 @@ Plan mint-side expectedOrigins (origin-bound tokens) in agentide. Research-only:
 Continue (post-compaction): execute-pack closeout — post-impl sim for Phase 6 watch (simulate.sh), sub-agent review acceptance, drift D-59/60/61, reconcile (archive simulate-pre.html), commit 3aebf00, handoff doc.
 
 ---
+
+## 2026-08-03 16:09:38 | source: feature-pipeline:cli-adapter
+
+Finish up: verify feature-pipeline deliverable checklist for cli-adapter (CONTEXT.md term check, backlog update if possible, final clean state).
+
+---
