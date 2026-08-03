@@ -6,6 +6,7 @@ export * from "./types.js";
 export * from "./errors.js";
 export * from "./audit.js";
 export * from "./auth.js";
+export * from "./origin.js";
 export * from "./rate-limit.js";
 export * from "./tenant-store.js";
 export * from "./authz.js";

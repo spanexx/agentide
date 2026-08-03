@@ -114,6 +114,7 @@ async function bootWithMcp(opts: { adapterMcp?: boolean } = {}): Promise<Platfor
     backendRuntimePort: 0,
     ...(opts.adapterMcp !== undefined ? { adapterMcp: opts.adapterMcp } : {}),
     adapterMcpPort: 0,
+    adapterWs: false,
   });
   // Register a business cap so tools/list has something non-platform to surface.
   platform.capabilityRegistry.register("backend-sdk-customer-app", {

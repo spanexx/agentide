@@ -37,6 +37,19 @@ import {
 // — all payloads are objects (shallow-frozen at publish) so this
 // carries no type escape hatch.
 type AnyEventHandler = EventHandler<object>;
+type InternalPublisher = <TPayload extends object>(name: string, payload: TPayload) => Promise<void>;
+
+const internalPublishers = new WeakMap<EventBus, InternalPublisher>();
+
+export function publishInternalEvent<TPayload extends object>(
+  eventBus: EventBus,
+  name: string,
+  payload: TPayload,
+): Promise<void> {
+  const publisher = internalPublishers.get(eventBus);
+  if (!publisher) throw new Error("Event Bus does not expose internal publishing");
+  return publisher(name, payload);
+}
 
 export {
   type EventHandler,
@@ -47,7 +60,7 @@ export {
   RESERVED_INTERNAL_PREFIX,
 } from "./types.js";
 
-export { matches } from "./match.js";
+export { matches, validatePattern } from "./match.js";
 
 // CID:index-001 - createEventBus
 // Purpose: factory + closure scope that owns the subscription list, the
@@ -102,7 +115,7 @@ export function createEventBus(): EventBus {
   // Uses: validateEventName (match.ts), shallowFreeze (private), matches
   //   (match.ts), dispatchToSnapshot (index-004).
   // Used by: emitHandlerFailed (index-003); never called by external code.
-  const dispatchInternal = async <TPayload>(
+  const dispatchInternal = async <TPayload extends object>(
     name: string,
     payload: TPayload,
   ): Promise<void> => {
@@ -234,7 +247,9 @@ export function createEventBus(): EventBus {
     await Promise.allSettled(startedAsyncs);
   }
 
-  return { publish, subscribe };
+  const bus: EventBus = { publish, subscribe };
+  internalPublishers.set(bus, dispatchInternal);
+  return bus;
 }
 
 // --- private helpers ---

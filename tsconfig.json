@@ -39,6 +39,9 @@
       "path": "packages/adapter-mcp"
     },
     {
+      "path": "packages/adapter-websocket"
+    },
+    {
       "path": "packages/sdk-node"
     },
     {

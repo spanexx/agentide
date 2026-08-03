@@ -94,6 +94,21 @@ export interface CreatePlatformConfig {
    *   when `adapterMcp: false`.
    */
   readonly adapterMcpHost?: string;
+
+  /**
+   * CID:platform-types-009 - adapterWs
+   * websocket-adapter (BI[24]): when true (default), createPlatform() auto-creates
+   *   and starts a WebSocket adapter that exposes the registered capability catalog
+   *   over a flat `{type, ...}` envelope (16 frame types per the PRD-TRD). The
+   *   adapter speaks the same JWT-auth handshake as the MCP adapter, enforces the
+   *   origin-binding claim (browser clients), and offers both `invoke` (universal
+   *   pull) and `subscribe`/`event` (verbatim event-bus fan-out) on the same
+   *   socket. The CLI sets this to `false` for the same short-lived-process reason
+   *   it opts out of MCP (port-binding race).
+   */
+  readonly adapterWs?: boolean;
+  readonly wsPort?: number;
+  readonly adapterWsHost?: string;
 }
 
 // CID:platform-types-002 - Platform
@@ -125,5 +140,6 @@ export interface Platform {
    * Used by: integration tests, custom boot scripts.
    */
   readonly mcpAdapter?: import("@platform/adapter-mcp").McpAdapter;
+  readonly wsAdapter?: import("@platform/adapter-websocket").WebSocketAdapter;
   stop(): Promise<void>;
 }

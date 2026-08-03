@@ -1,0 +1,148 @@
+@platform/adapter-websocket — Grill Notes
+
+Status: LOCKED (2026-08-03) — all wayfinder tickets W1–W6 (+ W5 research)
+resolved, no open questions. GRILL gate passed; pipeline entered Phase 0.5
+(pre-impl simulation at `simulate-pre.html`, design-time).
+Date: 2026-08-03
+Source: Wayfinder map `docs/wayfinder/websocket-adapter/map.md` + closed
+tickets under `docs/wayfinder/websocket-adapter/tickets/` (W1–W6 + W5).
+
+What this feature is about
+
+- The Agentide platform's WebSocket adapter: a long-lived socket on which a
+  subscribed client can invoke platform capabilities (pull, mirroring
+  `tools/call` for MCP) and the platform can push events sourced from
+  `event-bus`. The push half is what MCP cannot do.
+- MCP stays the pull door (`adapter-mcp`, `tools/call`); this adapter is the
+  push sibling — same kernel (`Gateway.handleInvocation()`), different
+  transport. Two doors, two products: MCP = JSON-RPC, WS = flat `{type,...}`
+  envelope.
+- v1 = push + pull + adapter-level streaming + top-level subscribe messages +
+  WS-native envelope. The wire contract is fully locked (16 frame types).
+
+What this feature does NOT do
+
+- Does not speak JSON-RPC on the socket (that is MCP's shape).
+- Does not own a curated topic vocabulary — subscriptions are verbatim
+  event-bus topics; `event.*` is reserved (rejected + filtered at fan-out).
+- Does not scope subscriptions to sessions in v1 (tenant boundary = process
+  boundary; the dashboard needs tenant-wide views).
+- Does not include a REST push channel (SSE / long-poll), subprotocol
+  versioning, capability-invocation batching, or multi-tab per-client
+  semantics (all out of scope, see map "Not yet specified").
+
+Scope clarifications
+
+- Kernel surface reused (no work needed): `Gateway.handleInvocation()`,
+  `Adapter` interface (`gateway-core/src/types.ts:168`), `event-bus`
+  subscriptions (`Subscription` handles), `validatePattern` for topic
+  grammar, `checkAuthz` for permission checks.
+- Sister packages as reference: `adapter-mcp` (Phase layout model),
+  `backend-runtime` (Node `ws` server precedent), `sdk-node` / `sdk-browser`
+  (auth-handshake pattern, inverted direction).
+- Assumed already shipped: gateway-core, capability-registry, event-bus,
+  session-manager, plugin-manager, platform-capabilities, permission-tiering,
+  sdk-node, backend-runtime, gateway-plugin-dispatch, adapter-mcp.
+- Known follow-ups tracked elsewhere: D-50 drift (mint-side `expectedOrigins`
+  claim missing — scheduled in dashboard feature-pipeline); W2 sub-Q 4
+  wildcard reconciliation vs sdk-browser T5 Q2 (FLAGGED FOR USER REVIEW).
+
+Questions and answers locked so far
+
+Full verbatim question/answer/why/source records live in the wayfinder
+tickets; this file consolidates the locked decisions.
+
+1. (W1 sub-Q 1 + REOPEN) Is the WS adapter push-only in v1, and what shape
+   does pull take? LOCKED: pull is v1, WS-native envelope —
+   `{type:"invoke", correlationId, name, input?, sessionId?, mode}`
+   ("call" | "stream", default "call") → `invoke.result` | `invoke.error` |
+   `invoke.partial` → `invoke.end`. Universal for every v1 client.
+2. (W1 sub-Q 2) Does the adapter stream capability-handler progress? LOCKED:
+   yes, adapter-level for `mode:"stream"` clients; kernel stays single-shot;
+   MCP stays single-shot.
+3. (W1 sub-Q 3) How do subscriptions work? LOCKED: top-level messages on the
+   socket — `{type:"subscribe", topics:[...]}` / `{type:"unsubscribe",
+   topics:[...]}` — dynamic over the connection lifetime.
+4. (W1 sub-Q 4) Does the WS envelope mirror MCP/JSON-RPC? LOCKED: no — flat
+   `{type, ...}` discriminator, 16 types total (4 client→server: auth,
+   subscribe, unsubscribe, invoke; 12 server→client: auth.ok, auth.error,
+   subscribe.ok, subscribe.error, unsubscribe.ok, event, invoke.result,
+   invoke.error, invoke.partial, invoke.end, stats, error).
+5. (W2 sub-Q 1) Auth transport? LOCKED: JWT-in-first-message-after-onopen →
+   `auth.ok {connectionId, claims}` | `auth.error {code, message}` + 1008.
+   JWT payload inherits MCP contract (`sub {tenantId, callerId}`, `scope`,
+   `expectedOrigins` for browsers, `expiresAt`). Rules out
+   `Sec-WebSocket-Protocol` and `?token=` (leak surface).
+6. (W2 sub-Q 2) Pre-auth behavior? LOCKED: state machine `open → pre-auth →
+   authenticated | auth-error-closed`; only `auth` processed; non-auth
+   frames silently dropped ("drop, don't punish"); hard 30s timeout → 1008
+   (config knob). `auth` also allowed in authenticated state (refresh).
+7. (W2 sub-Q 3) Token refresh? LOCKED: supported — same wire shape; atomic
+   claim swap; carries connection / subscriptions / in-flight invokes /
+   outbound queue / connectionId; does NOT abort in-flight invokes; failure
+   → 1008 (no fallback); audit emits `connection.rotated`.
+8. (W2 sub-Q 4) Origin binding? LOCKED (REVISED 2026-08-03, flagged for user
+   review): per-token `expectedOrigins` claim; upgrade `Origin` captured at
+   upgrade time, checked at auth processing; REQUIRED for browser tokens
+   (deny-by-default); Node (no Origin) bypass; mismatch → `auth.error
+   {code:"origin mismatch"}` + 1008. REVISED grammar: exact match OR
+   single-label `*.` wildcard, right-anchored (RFC 6125 §6.4.3) — `*.`
+   replaces exactly ONE label. See auth-handshake.md REVISED note.
+9. (W3 sub-Q 2) Topic vocabulary? LOCKED: verbatim event-bus topics
+   (`session.*`, `capability.*`, `gateway.invocation`, `sdk.connection.*`,
+   ...); no curated second vocabulary; `event.*` reserved (rejected at
+   subscribe `WS_INVALID_TOPIC` + filtered at fan-out).
+10. (W3 sub-Q 3) Prefix wildcards? LOCKED: event-bus grammar verbatim — `*`
+    final segment only, bare `*` allowed; malformed → `WS_INVALID_TOPIC`;
+    authorization per-PATTERN at subscribe time, derived permission
+    `platform.<firstSegment>.read` (bare `*` → `platform.*.read`,
+    operator-grade), via `checkAuthz`.
+11. (W3 sub-Q 4) Session scoping? LOCKED: none in v1 — tenant boundary =
+    process boundary (auth frame has no sessionId claim; session store not
+    tenant-keyed; dashboard needs tenant-wide view).
+12. (W3 sub-Q 5) Subscription lifecycle? LOCKED: `subscribe` idempotent
+    (dedupe, `subscribe.ok` anyway); `unsubscribe` of never-subscribed →
+    `unsubscribe.ok`, NO error; socket close prunes all subs
+    (snapshot-then-unsubscribe) + clears outbound queue; refresh does NOT
+    re-authorize/prune existing subs (point-in-time authz); no count cap v1.
+13. (W6 sub-Q 1) Backpressure threshold? LOCKED: 1 MiB per connection,
+    configurable (`maxBufferedBytes`, default 1_048_576).
+14. (W6 sub-Q 2) On threshold breach? LOCKED: DROP, not close — FIFO from the
+    per-connection outbound queue; never blocks the bus; dropped events are
+    recoverable with one resync `invoke` (W1 REOPEN pull is v1).
+15. (W6 sub-Q 3) Drop strategy? LOCKED: FIFO (drop oldest, keep newest) —
+    lifecycle events are facts; live dashboards need the newest state.
+16. (W6 sub-Q 4) Recovery signal? LOCKED: periodic `{type:"stats", dropped:N}`
+    control frame, rate-limited ~1/s (`statsIntervalMs` default 1000),
+    cumulative monotonic per-connection counter.
+17. (W6 sub-Q 5) Scope? LOCKED: whole-connection in v1 (one queue, one
+    threshold, one counter); per-topic isolation is a v2 refinement
+    (future.md).
+18. (W4 sub-Q 2) Required keys per type? LOCKED: `subscribe`/`unsubscribe`
+    topics non-empty + validatePattern + dedupe; `invoke` = {correlationId,
+    name, input?, sessionId?, mode?}; `event` = {topic, id, publishedAt,
+    payload} (bus PlatformEvent identity — client dedup across resync);
+    `stats` = {dropped}; `error` = {code, message}; `invoke.*` echo
+    correlationId verbatim.
+19. (W4 sub-Q 3) Error codes? LOCKED: WS-native string codes — protocol
+    `WS_*` (`WS_INVALID_TOPIC`, `WS_FORBIDDEN`, `WS_INVALID_FRAME`,
+    `WS_INTERNAL`, `WS_FRAME_TOO_LARGE`); auth lowercase phrases (token
+    expired / token invalid / token missing / origin mismatch / tenant
+    suspended); invoke = gateway/capability code passthrough. Close codes:
+    1008 auth, 1011 heartbeat, 1009 frame too large.
+20. (W4 sub-Q 4) Heartbeat? LOCKED: protocol-level only, server-initiated,
+    30s ping / 10s pong timeout → close 1011 (T3 Q4 mirror). NO app-level
+    pong/ping frame in v1.
+21. (W4 sub-Q 5) Message size cap? LOCKED: 1 MiB default, configurable
+    (`maxFrameBytes`); inbound enforced at protocol level via `ws`
+    `maxPayload` → close 1009; outbound over-cap → `{type:"error",
+    code:"WS_FRAME_TOO_LARGE"}` then close 1009.
+22. (W4 sub-Q 6) Versioning? LOCKED: no `version` field in v1; URL-path
+    versioning when a breaking v2 ships (`/ws` → `/ws/v2`).
+23. (W5 research) Fan-out shape? LOCKED: per-(connection × topic)
+    `bus.subscribe()`; per-connection outbound queue REQUIRED (bus dispatch
+    awaits `Promise.allSettled`); unsubscribe idempotent and safe
+    mid-dispatch; `validatePattern` reused; proposed layout
+    `packages/adapter-websocket/src/{server,registry,fanout,errors}.ts`.
+    `connection.rotated` → internal bus event `event.connection.rotated`,
+    NOT relayed (reserved `event.*` rule).

@@ -117,6 +117,7 @@ export interface TenantRecord {
 export interface TokenClaims {
   readonly sub: { readonly tenantId: string; readonly callerId: string };
   readonly scope: readonly string[];
+  readonly expectedOrigins?: readonly string[];
   readonly iat: number;
   readonly exp: number;
 }

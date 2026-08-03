@@ -31,6 +31,7 @@ describe("createPlatform", () => {
       // BI[9] — keep the hermetic createPlatform suite port-free; the MCP
       // wiring itself is exercised in mcp-adapter.test.ts.
       adapterMcp: false,
+      adapterWs: false,
     });
     expect(platform.gateway).toBeDefined();
     expect(platform.eventBus).toBeDefined();
@@ -51,6 +52,7 @@ describe("createPlatform", () => {
       dataDir: "/data",
       defaultTenant: { id: "acme", name: "Acme" },
       adapterMcp: false,
+      adapterWs: false,
     });
     const { token } = await platform.gateway.issueToken({
       tenantId: "acme",
@@ -67,6 +69,7 @@ describe("createPlatform", () => {
       dataDir: "/data",
       defaultTenant: { id: "default", name: "Default" },
       adapterMcp: false,
+      adapterWs: false,
     });
     await p1.stop();
     const p2 = await createPlatform({
@@ -74,6 +77,7 @@ describe("createPlatform", () => {
       dataDir: "/data",
       defaultTenant: { id: "default", name: "Default" },
       adapterMcp: false,
+      adapterWs: false,
     });
     // same on-disk state means the secret file is byte-identical
     const sec1 = await p1.gateway["status"]; // not testing internals — just verifying p2 wired up
@@ -89,6 +93,7 @@ describe("createPlatform", () => {
       dataDir: "/data",
       defaultTenant: { id: "default", name: "Default" },
       adapterMcp: false,
+      adapterWs: false,
     });
     await platform.stop();
     await platform.stop(); // must not throw

@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>websocket-adapter simulation — pre-impl (design-time)</title>
+
+<style>
+  :root {
+    --bg: #0f1419; --bg-elevated: #1a1f2e; --card: #232938; --border: #2d3344;
+    --fg: #e6e6e6; --muted: #8b95a7; --accent: #6ee7b7; --accent-dim: #34d399;
+    --warn: #fbbf24; --error: #f87171; --info: #60a5fa;
+    --term-bg: #000; --term-fg: #e6e6e6; --term-prompt: #6ee7b7;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 13px; }
+  body { display: flex; flex-direction: column; }
+  header { padding: 10px 16px; background: var(--bg-elevated); border-bottom: 1px solid var(--border);
+    display: flex; gap: 12px; align-items: center; }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+  header .badge { background: var(--card); border: 1px solid var(--border); padding: 2px 8px;
+    border-radius: 4px; color: var(--muted); font-size: 10px; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; display: flex; flex-direction: column; min-height: 0; }
+  .panel h2 { margin: 0 0 8px 0; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em; }
+  .section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .lc { display: flex; align-items: center; gap: 2px; padding: 8px 2px; }
+  .lc-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .lc-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--card);
+    border: 2px solid var(--border); transition: all 0.3s ease; }
+  .lc-dot.a { background: var(--accent); border-color: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .lc-dot.d { background: var(--accent-dim); border-color: var(--accent-dim); }
+  .lc-line { flex: 1; height: 2px; background: var(--border); }
+  .lc-line.a { background: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .lc-line.d { background: var(--accent-dim); }
+  .lc-label { font-size: 9px; color: var(--muted); text-transform: uppercase; }
+  .lc-step.a .lc-label, .lc-step.d .lc-label { color: var(--accent); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .kv { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0;
+    border-bottom: 1px dashed var(--border); }
+  .kv b { color: var(--fg); font-family: ui-monospace, monospace; font-weight: 500; font-size: 10px; }
+  .kv span { color: var(--muted); }
+  .h2-count { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0 6px; font-size: 9px; color: var(--accent); margin-left: 6px; vertical-align: 1px; }
+  #sub-row { display: flex; flex-direction: column; gap: 3px; }
+  .sub { display: grid; grid-template-columns: auto auto minmax(0,1fr); gap: 6px; align-items: baseline;
+    background: var(--card); border: 1px solid var(--border); border-radius: 3px; padding: 3px 8px; }
+  .sub-pat { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600; }
+  .sub-arrow { color: var(--muted); font-size: 10px; }
+  .sub-perm { color: var(--muted); font-family: ui-monospace, monospace; font-size: 9.5px;
+    text-align: right; white-space: nowrap; }
+  .sub-empty { border: 1px dashed var(--border); border-radius: 3px; padding: 7px 8px; color: var(--muted);
+    font-size: 10.5px; text-align: center; }
+  .sub-empty code { color: var(--accent); }
+  .sub-hint { font-size: 9px; color: var(--muted); }
+  .evt-legend { display: flex; gap: 8px; flex-wrap: wrap; font-size: 9px; color: var(--muted);
+    padding-bottom: 4px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .evt-legend .lg::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    margin-right: 3px; vertical-align: 1px; }
+  .lg.b-bus::before { background: var(--info); }
+  .lg.b-relay::before { background: var(--accent); }
+  .lg.b-filter::before { background: var(--muted); }
+  .lg.b-reserve::before { background: var(--warn); }
+  .lg.b-nosock::before { background: var(--muted); opacity: .6; }
+  #evt-log { flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 4px 6px; min-height: 0; display: flex; flex-direction: column; gap: 1px; }
+  .evt-row { display: grid; grid-template-columns: 58px minmax(0,1fr) auto; gap: 6px; align-items: baseline;
+    padding: 1px 4px; border-radius: 2px; }
+  .evt-row:hover { background: var(--card); }
+  .evt-badge { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 0 4px; border-radius: 2px; text-align: center; }
+  .b-bus { color: var(--info); background: rgba(96,165,250,0.14); }
+  .b-relay { color: var(--accent); background: rgba(110,231,183,0.14); }
+  .b-filter { color: var(--muted); background: rgba(139,149,167,0.14); }
+  .b-reserve { color: var(--warn); background: rgba(251,191,36,0.14); }
+  .b-nosock { color: var(--muted); background: rgba(139,149,167,0.10); }
+  .b-rotated { color: var(--warn); background: rgba(251,191,36,0.14); }
+  .evt-topic { font-family: ui-monospace, monospace; font-size: 10px; color: var(--fg);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .evt-detail { font-size: 9.5px; color: var(--muted); font-family: ui-monospace, monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+  #term-box { flex: 1; display: flex; flex-direction: column; background: var(--term-bg);
+    border-radius: 3px; margin: 6px; padding: 8px; min-height: 0; overflow: hidden; }
+  #term-log { flex: 1; overflow-y: auto; color: var(--term-fg);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-all; }
+  #term-log .ok { color: var(--accent); } #term-log .warn { color: var(--warn); }
+  #term-log .err { color: var(--error); } #term-log .info { color: #60a5fa; }
+  #term-log .muted { color: var(--muted); } #term-log .cs { color: #93c5fd; }
+  #term-input-row { display: flex; align-items: center; padding-top: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+  #term-prompt { color: var(--term-prompt); margin-right: 4px; }
+  #term-input { flex: 1; background: transparent; border: none; color: var(--term-fg);
+    font-family: inherit; font-size: inherit; outline: none; caret-color: var(--accent); }
+  .help { padding: 6px 12px; background: var(--bg-elevated); border-top: 1px solid var(--border);
+    display: flex; gap: 10px; font-size: 10px; color: var(--muted); align-items: center; flex-wrap: wrap; }
+  .help code { background: var(--card); padding: 1px 5px; border-radius: 2px; color: var(--accent); }
+  .help button { margin-left: auto; padding: 5px 12px; background: var(--accent); color: var(--bg);
+    border: none; border-radius: 3px; font-weight: 600; cursor: pointer; font-size: 10px; }
+  .help button:hover { opacity: 0.85; }
+  .help button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .footnote { padding: 6px 12px 8px; font-size: 9.5px; color: var(--muted); background: var(--bg-elevated);
+    border-top: 1px solid var(--border); line-height: 1.5; }
+  .footnote b { color: var(--warn); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>adapter-websocket</h1>
+  <span class="badge">PRE-IMPL — DESIGN-TIME (locked wire contract W1–W6)</span>
+</header>
+
+<main>
+  <div class="panel">
+    <div class="section">
+      <h2>Connection lifecycle</h2>
+      <div class="lc" id="lc">
+        <div class="lc-step" data-step="open"><div class="lc-dot"></div><div class="lc-label">open</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="preauth"><div class="lc-dot"></div><div class="lc-label">pre-auth</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="auth"><div class="lc-dot"></div><div class="lc-label">auth'd</div></div>
+        <div class="lc-line"></div>
+        <div class="lc-step" data-step="closed"><div class="lc-dot"></div><div class="lc-label">closed</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Connection</h2>
+      <div class="kv"><span>origin</span><b id="kv-origin">—</b></div>
+      <div class="kv"><span>connectionId</span><b id="kv-connid">—</b></div>
+      <div class="kv"><span>token / scope</span><b id="kv-token">—</b></div>
+      <div class="kv"><span>buffered</span><b id="kv-buffered">0 B / 1 MiB</b></div>
+      <div class="kv"><span>dropped (cumulative)</span><b id="kv-dropped">0</b></div>
+      <div class="kv"><span>drain rate</span><b id="kv-rate">1 MiB/s (fast)</b></div>
+    </div>
+
+    <div class="section">
+      <h2>Subscriptions <span class="h2-count" id="sub-count">0</span></h2>
+      <div id="sub-row"><div class="sub-empty">none — subscribe <code>session.*</code> etc.</div></div>
+      <div class="sub-hint">pattern → derived permission, checked at subscribe time (per-pattern authz)</div>
+    </div>
+
+    <div class="section" style="flex:1; min-height:0;">
+      <h2>Bus side (publish → fan-out)</h2>
+      <div class="evt-legend">
+        <span class="lg b-bus">published</span><span class="lg b-relay">relayed</span>
+        <span class="lg b-filter">no match</span><span class="lg b-reserve">reserved</span>
+        <span class="lg b-nosock">no socket</span>
+      </div>
+      <div id="evt-log"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="padding:0;">
+    <h2 style="padding:12px 12px 0 12px; margin:0;">Terminal — you are the WS client</h2>
+    <div id="term-box">
+      <div id="term-log"></div>
+      <div id="term-input-row">
+        <span id="term-prompt">client@sim ~ $&nbsp;</span>
+        <input id="term-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="help">
+  <span><code>connect [origin|node]</code> · <code>auth &lt;token&gt;</code> · <code>send &lt;json&gt;</code> · <code>subscribe &lt;a,b&gt;</code> · <code>invoke &lt;name&gt; [json] [--stream]</code> · <code>publish &lt;topic&gt; [bytes]</code> · <code>refresh &lt;token&gt;</code> · <code>slow|fast</code> · <code>size &lt;bytes&gt;</code> · <code>stats</code> · <code>timeout</code> · <code>disconnect</code> · <code>reset</code> · <code>help</code></span>
+  <button id="demo-btn">▶ Run full demo</button>
+</div>
+<div class="footnote">
+  <b>Design-time sim.</b> No real code — the engine mirrors the locked contract (map.md W1–W6). Tokens are claim
+  objects standing in for JWTs: <code>token.browser</code> (scope <code>platform.*.read</code>, <code>platform.plugins.write</code>,
+  expectedOrigins <code>https://app.acme.com</code>, <code>https://*.dev.acme.com</code>) · <code>token.node</code> (no
+  expectedOrigins — Node client) · <code>token.narrow</code> (<code>platform.session.read</code> only) · <code>token.evil</code>
+  (<code>https://evil.example.com</code>) · <code>token.expired</code> · <code>token.garbage</code>. Design assumptions to confirm
+  in PRD-TRD: <code>subscribe.ok</code>/<code>unsubscribe.ok</code> echo requested topics; subscribe batch is all-or-nothing
+  (first rejected topic → <code>subscribe.error</code>, nothing applied); <code>stats</code> frame emitted ~1s after first drop.
+</div>
+
+<script>
+'use strict';
+// ─── Locked constants (W1–W6) ─────────────────────────────────────────
+const MAX_BUFFERED = 1_048_576;          // W6 sub-Q 1: 1 MiB per connection
+const MAX_FRAME    = 1_048_576;          // W4 sub-Q 5: 1 MiB maxFrameBytes
+const STATS_MS     = 1000;               // W6 sub-Q 4: ~1/s stats frame
+const PREAUTH_MS   = 30_000;             // W2 sub-Q 2: 30s hard timeout
+
+const TOKENS = {
+  'token.browser': { sub:{tenantId:'t1', callerId:'dashboard-bot'},
+    scope:['platform.*.read','platform.plugins.write'],
+    expectedOrigins:['https://app.acme.com','https://*.dev.acme.com'],
+    expiresAt: Date.now()+3600e3 },
+  'token.node': { sub:{tenantId:'t1', callerId:'ops-bot'},
+    scope:['platform.*.read'], expiresAt: Date.now()+3600e3 },
+  'token.narrow': { sub:{tenantId:'t1', callerId:'audit-bot'},
+    scope:['platform.session.read'], expectedOrigins:['https://app.acme.com'],
+    expiresAt: Date.now()+3600e3 },
+  'token.evil': { sub:{tenantId:'t1', callerId:'attacker'},
+    scope:['platform.*.read'], expectedOrigins:['https://evil.example.com'],
+    expiresAt: Date.now()+3600e3 },
+  'token.expired': { sub:{tenantId:'t1', callerId:'dashboard-bot'},
+    scope:['platform.*.read'], expectedOrigins:['https://app.acme.com'],
+    expiresAt: Date.now()-1000 },
+  'token.garbage': 'not-a-jwt',
+};
+
+// Capability handlers behind `invoke` (pull, W1 REOPEN) — code passthrough
+const CAPS = {
+  'capability.list': () => ({ capabilities: ['capability.list','plugin.list','session.list',
+    'system.health','gateway.metrics','session.invalid','stream.demo','… (25 total)'], total: 25 }),
+  'plugin.list':     () => ({ plugins: ['plugin.dashboard','plugin.audit'], total: 2 }),
+  'session.list':    () => ({ sessions: [{id:'s1',state:'active'},{id:'s2',state:'suspended'}], total: 2 }),
+  'system.health':   () => ({ status: 'ok', uptimeS: 48213 }),
+  'gateway.metrics': () => ({ requests: 42, events: 1337 }),   // D-46: shipped placeholder
+  'session.invalid': () => { const e = new Error('no session s-999'); e.code = 'SESSION_NOT_FOUND'; throw e; },
+  'stream.demo':     () => null, // handled specially for mode stream
+};
+
+// ─── Adapter state (one connection) ───────────────────────────────────
+const conn = {
+  state: 'closed',            // closed | pre-auth | authenticated
+  origin: null,               // upgrade-time Origin; null = Node client
+  connectionId: null,
+  claims: null,               // current token claims (atomic swap on refresh)
+  tokenName: null,
+  subs: [],                   // subscribed patterns
+  queue: [],                  // outbound frames (FIFO)
+  buffered: 0,
+  dropped: 0,
+  drainRate: 1_048_576,       // fast = 1 MiB/s; slow = 100 KiB/s
+  statsTimer: null,
+  nextPad: 0,                 // `size <bytes>` — pad next send (inbound cap demo)
+};
+let connSeq = 0, evtSeq = 0, corrSeq = 0;
+
+// ─── Locked grammar helpers ───────────────────────────────────────────
+// W3: verbatim event-bus grammar — `*` final segment only, bare `*` ok
+function validatePattern(p) {
+  if (p === '*') return true;
+  const segs = p.split('.');
+  if (segs.some(s => s === '')) return false;                    // empty segment
+  const wi = segs.indexOf('*');
+  if (wi === -1) return true;                                    // plain topic
+  return wi === segs.length - 1 && !segs.slice(0, -1).some(s => s.includes('*'));
+}
+function matchPattern(p, topic) {
+  if (p === '*') return true;
+  if (p === topic) return true;
+  if (p.endsWith('.*')) {
+    const base = p.slice(0, -1);
+    return topic.startsWith(base) && !topic.slice(base.length).includes('.');
+  }
+  return false;
+}
+// W2 sub-Q 4 (REVISED): exact OR single-label `*.` wildcard, right-anchored
+// (RFC 6125 §6.4.3) — `*.` replaces exactly ONE label.
+function originMatches(origin, expected) {
+  if (origin === expected) return true;
+  const wi = expected.indexOf('*.');
+  if (wi !== -1) {
+    const head = expected.slice(0, wi);          // 'https://'
+    const tail = expected.slice(wi + 1);         // '.dev.acme.com'
+    if (!origin.startsWith(head) || !origin.endsWith(tail)) return false;
+    const mid = origin.slice(head.length, origin.length - tail.length);
+    return mid.length > 0 && !mid.includes('.'); // exactly one label
+  }
+  return false;
+}
+// W3 sub-Q 3: derived per-pattern permission `platform.<first>.read`
+function derivePermission(pattern) { return 'platform.' + pattern.split('.')[0] + '.read'; }
+function hasPerm(scope, perm) {
+  if (scope.includes('*')) return true;
+  if (scope.includes(perm)) return true;
+  if (scope.includes('platform.*.read') && perm.startsWith('platform.') && perm.endsWith('.read')) return true;
+  return false;
+}
+
+// ─── Wire log / UI ────────────────────────────────────────────────────
+const termLog = document.getElementById('term-log');
+const termInput = document.getElementById('term-input');
+const evtLog = document.getElementById('evt-log');
+const lcEl = document.getElementById('lc');
+const demoBtn = document.getElementById('demo-btn');
+
+function tlog(cls, text) {
+  const d = document.createElement('div');
+  d.className = cls; d.textContent = text;
+  termLog.appendChild(d); termLog.scrollTop = termLog.scrollHeight;
+}
+function wireToServer(frameText) { tlog('cs', 'C→S ' + frameText); }
+function wireToClient(frame) { tlog('ok', 'S→C ' + JSON.stringify(frame)); }
+function sys(msg) { tlog('muted', 'SYS ' + msg); }
+function sysWarn(msg) { tlog('warn', 'SYS ' + msg); }
+function sysErr(msg) { tlog('err', 'SYS ' + msg); }
+const EVT_BADGES = { bus: 'published', relay: 'relayed', filter: 'no match',
+  reserve: 'reserved', nosock: 'no socket', rotated: 'rotated' };
+function evt(kind, topic, detail) {
+  const row = document.createElement('div');
+  row.className = 'evt-row';
+  const b = document.createElement('span');
+  b.className = 'evt-badge b-' + kind; b.textContent = EVT_BADGES[kind];
+  const t = document.createElement('span');
+  t.className = 'evt-topic'; t.textContent = topic;
+  const d = document.createElement('span');
+  d.className = 'evt-detail'; d.textContent = detail || '';
+  row.append(b, t, d);
+  evtLog.appendChild(row); evtLog.scrollTop = evtLog.scrollHeight;
+}
+
+function render() {
+  const steps = ['open','preauth','auth','closed'];
+  const active = conn.state === 'pre-auth' ? ['open','preauth']
+    : conn.state === 'authenticated' ? ['open','preauth','auth']
+    : conn.state === 'closed' ? ['closed'] : [];
+  [...lcEl.querySelectorAll('.lc-step')].forEach(s => {
+    const on = active.includes(s.dataset.step);
+    s.querySelector('.lc-dot').className = 'lc-dot' + (on ? ' d' : '');
+    s.classList.toggle('a', on);
+  });
+  [...lcEl.querySelectorAll('.lc-line')].forEach(l => {
+    l.className = 'lc-line' + (conn.state === 'authenticated' ? ' d' : '');
+  });
+  document.getElementById('kv-origin').textContent = conn.origin || 'none (Node)';
+  document.getElementById('kv-connid').textContent = conn.connectionId || '—';
+  document.getElementById('kv-token').textContent =
+    conn.tokenName ? conn.tokenName + ' · ' + conn.claims.scope.join(',') : '—';
+  document.getElementById('kv-buffered').textContent =
+    conn.buffered.toLocaleString() + ' B / 1,048,576 B';
+  document.getElementById('kv-dropped').textContent = String(conn.dropped);
+  document.getElementById('kv-rate').textContent =
+    conn.drainRate >= MAX_BUFFERED ? '1 MiB/s (fast)' : '100 KiB/s (slow)';
+  const subRow = document.getElementById('sub-row');
+  document.getElementById('sub-count').textContent = String(conn.subs.length);
+  if (conn.subs.length === 0) {
+    subRow.innerHTML = '<div class="sub-empty">none — subscribe <code>session.*</code> etc.</div>';
+  } else {
+    subRow.innerHTML = conn.subs.map(s =>
+      '<div class="sub"><span class="sub-pat">' + s + '</span>' +
+      '<span class="sub-arrow">→</span>' +
+      '<span class="sub-perm">' + derivePermission(s) + '</span></div>').join('');
+  }
+}
+
+// ─── Adapter behaviors ────────────────────────────────────────────────
+function openSocket(originArg) {
+  conn.state = 'pre-auth';
+  conn.origin = (originArg && originArg !== 'node') ? originArg : null;
+  conn.connectionId = null; conn.claims = null; conn.tokenName = null;
+  conn.subs = []; conn.queue = []; conn.buffered = 0; conn.dropped = 0;
+  sys('socket open (ws://…/ws). origin=' + (conn.origin || 'absent — Node client'));
+  sys('state → pre-auth. Only {type:"auth"} processed; others silently dropped (drop, don\u2019t punish). 30s timeout.');
+  render();
+}
+
+function closeSocket(code, reason) {
+  conn.state = 'closed';
+  conn.queue = []; conn.buffered = 0;
+  if (conn.statsTimer) { clearTimeout(conn.statsTimer); conn.statsTimer = null; }
+  sysWarn('close ' + code + ' (' + reason + ')');
+  if (conn.subs.length) sys('pruned ' + conn.subs.length + ' subscription(s), cleared outbound queue');
+  conn.subs = [];
+  render();
+}
+
+function processAuth(frame) {
+  const wasAuth = conn.state === 'authenticated';
+  const token = TOKENS[frame.token];
+  const fail = (code) => {
+    wireToClient({ type: 'auth.error', code, message: code });
+    closeSocket(1008, code);
+    return;
+  };
+  if (frame.token == null) return fail('token missing');
+  if (token == null) return fail('token invalid');
+  if (token.expiresAt < Date.now()) return fail('token expired');
+  if (conn.origin) {
+    // browser Origin present → claim REQUIRED, deny-by-default
+    const allowed = Array.isArray(token.expectedOrigins) ? token.expectedOrigins : [];
+    if (allowed.length === 0 || !allowed.some(e => originMatches(conn.origin, e))) {
+      return fail('origin mismatch');
+    }
+  }
+  // success — initial auth or mid-connection refresh (atomic claim swap)
+  conn.claims = token; conn.tokenName = frame.token;
+  conn.state = 'authenticated';
+  if (!conn.connectionId) conn.connectionId = 'conn-' + (++connSeq);
+  wireToClient({ type: 'auth.ok', connectionId: conn.connectionId, claims: token });
+  if (!wasAuth) {
+    sys('authenticated as ' + token.sub.callerId + ' (' + token.sub.tenantId + ')');
+    sys('heartbeat: protocol-level ping 30s / pong timeout 10s → close 1011 (T3 Q4 mirror, no app-level pong)');
+  } else {
+    sys('token refreshed → claims replaced in place. Carried: subscriptions (' + conn.subs.length + '), in-flight invokes, outbound queue. Scope now: ' + token.scope.join(', '));
+    evt('rotated', 'connection.rotated', 'internal bus — not relayed (event.* reserved)');
+  }
+  render();
+}
+
+function handleSubscribe(frame) {
+  const topics = frame.topics;
+  if (!Array.isArray(topics) || topics.length === 0) {
+    wireToClient({ type: 'subscribe.error', code: 'WS_INVALID_FRAME', message: 'topics must be a non-empty array' });
+    return;
+  }
+  // all-or-nothing batch (design assumption — confirm in PRD-TRD)
+  for (const t of topics) {
+    if (!validatePattern(t) || t.startsWith('event.')) {
+      wireToClient({ type: 'subscribe.error', code: 'WS_INVALID_TOPIC', message: t.startsWith('event.') ? 'reserved namespace event.*' : 'invalid pattern: ' + t });
+      return;
+    }
+    if (!hasPerm(conn.claims.scope, derivePermission(t))) {
+      wireToClient({ type: 'subscribe.error', code: 'WS_FORBIDDEN', message: 'permission ' + derivePermission(t) + ' required' });
+      return;
+    }
+  }
+  const added = topics.filter(t => !conn.subs.includes(t));
+  conn.subs.push(...added);
+  wireToClient({ type: 'subscribe.ok', topics });
+  if (added.length < topics.length) sysWarn('dedup: ' + (topics.length - added.length) + ' already subscribed');
+  render();
+}
+
+function handleUnsubscribe(frame) {
+  const topics = frame.topics;
+  if (!Array.isArray(topics) || topics.length === 0) {
+    wireToClient({ type: 'unsubscribe.error', code: 'WS_INVALID_FRAME', message: 'topics must be a non-empty array' });
+    return;
+  }
+  for (const t of topics) if (!validatePattern(t)) {
+    wireToClient({ type: 'unsubscribe.error', code: 'WS_INVALID_TOPIC', message: 'invalid pattern: ' + t });
+    return;
+  }
+  const removed = topics.filter(t => conn.subs.includes(t));
+  conn.subs = conn.subs.filter(t => !topics.includes(t));
+  // never-subscribed → still ok (drop, don't punish)
+  wireToClient({ type: 'unsubscribe.ok', topics });
+  if (removed.length < topics.length) sys('unsubscribed topics not subscribed (' + (topics.length - removed.length) + ') → still unsubscribe.ok, no error');
+  render();
+}
+
+function handleInvoke(frame) {
+  if (typeof frame.correlationId !== 'string' || typeof frame.name !== 'string') {
+    wireToClient({ type: 'invoke.error', code: 'WS_INVALID_FRAME', message: 'correlationId and name required' });
+    return;
+  }
+  const mode = frame.mode || 'call';
+  if (mode !== 'call' && mode !== 'stream') {
+    wireToClient({ type: 'invoke.error', correlationId: frame.correlationId, code: 'WS_INVALID_FRAME', message: 'mode must be call|stream' });
+    return;
+  }
+  if (frame.name === 'stream.demo' && mode === 'stream') {
+    // adapter-level streaming: kernel stays single-shot, adapter packages progress
+    const chunks = ['chunk-1','chunk-2','chunk-3'];
+    chunks.forEach((c, i) => {
+      setTimeout(() => wireToClient({ type: 'invoke.partial', correlationId: frame.correlationId, output: { chunk: c, index: i + 1, total: chunks.length } }), 300 * (i + 1));
+    });
+    setTimeout(() => wireToClient({ type: 'invoke.end', correlationId: frame.correlationId }), 300 * chunks.length + 150);
+    return;
+  }
+  const fn = CAPS[frame.name];
+  if (!fn) {
+    wireToClient({ type: 'invoke.error', correlationId: frame.correlationId, code: 'NOT_FOUND', message: 'unknown capability ' + frame.name });
+    return;
+  }
+  try {
+    const output = fn(frame.input);
+    wireToClient({ type: 'invoke.result', correlationId: frame.correlationId, output });
+  } catch (e) {
+    // gateway/capability code passthrough — no third vocabulary
+    wireToClient({ type: 'invoke.error', correlationId: frame.correlationId, code: e.code || 'INTERNAL', message: e.message });
+  }
+}
+
+function enqueue(frame) {
+  const bytes = JSON.stringify(frame).length;
+  conn.queue.push({ frame, bytes });
+  conn.buffered += bytes;
+  while (conn.buffered > MAX_BUFFERED && conn.queue.length > 0) {
+    const old = conn.queue.shift();
+    conn.buffered -= old.bytes;
+    conn.dropped++;
+    sysWarn('DROPPED (FIFO, oldest first) outbound frame [' + old.frame.topic + ' ' + old.bytes + 'B] — buffered ' + conn.buffered.toLocaleString() + 'B of 1 MiB');
+    render();
+  }
+  if (conn.dropped > 0 && !conn.statsTimer) {
+    conn.statsTimer = setTimeout(() => {
+      conn.statsTimer = null;
+      wireToClient({ type: 'stats', dropped: conn.dropped });   // cumulative, ~1/s
+      sys('recovery signal sent: client sees dropped=' + conn.dropped + ' → re-pull snapshots via invoke');
+    }, STATS_MS);
+  }
+  render();
+}
+
+// drain loop — simulates the client actually reading frames
+setInterval(() => {
+  if (conn.state !== 'authenticated' || conn.queue.length === 0) return;
+  let budget = conn.drainRate / 10;
+  while (budget > 0 && conn.queue.length > 0) {
+    const head = conn.queue[0];
+    if (head.bytes > budget) { conn.buffered -= budget; head.bytes -= budget; budget = 0; }
+    else { conn.queue.shift(); conn.buffered -= head.bytes; budget -= head.bytes; }
+  }
+  render();
+}, 100);
+
+function publishToBus(topic, bytes) {
+  if (conn.state !== 'authenticated') {
+    sys('publish ' + topic + ': no authenticated socket — event stays on bus');
+    evt('nosock', topic, 'no authenticated socket');
+    return;
+  }
+  const payload = bytes ? { blob: 'x'.repeat(bytes), note: 'sim payload ' + bytes + 'B' } : { source: 'sim', seq: ++evtSeq };
+  const frame = { type: 'event', topic, id: 'evt-' + (++evtSeq), publishedAt: new Date().toISOString(), payload };
+  const size = JSON.stringify(frame).length;
+  evt('bus', topic, 'frame ' + size.toLocaleString() + 'B');
+  const matches = conn.subs.filter(s => matchPattern(s, topic));
+  if (topic.startsWith('event.')) {
+    sysWarn('FILTERED at fan-out: ' + topic + ' is reserved event.* — not relayed (defense-in-depth for bare-* matches)');
+    evt('reserve', topic, 'event.* reserved — defense-in-depth');
+    return;
+  }
+  if (matches.length === 0) { sys('publish ' + topic + ': no matching subscription (subs: ' + (conn.subs.join(',') || 'none') + ')'); evt('filter', topic, 'no matching sub'); return; }
+  if (size > MAX_FRAME) {
+    // outbound over-cap → error frame then close 1009
+    sysErr('outbound frame ' + size.toLocaleString() + 'B > maxFrameBytes 1 MiB → error frame then close 1009');
+    wireToClient({ type: 'error', code: 'WS_FRAME_TOO_LARGE', message: 'outbound frame exceeds 1 MiB cap' });
+    closeSocket(1009, 'frame too large');
+    return;
+  }
+  evt('relay', topic, matches.length + ' sub' + (matches.length > 1 ? 's' : '') + ': ' + matches.join(','));
+  enqueue(frame);
+}
+
+// ─── Command dispatch ─────────────────────────────────────────────────
+function rawSend(raw) {
+  if (conn.state === 'closed') { sysErr('not connected — use `connect [origin|node]` first'); return; }
+  let padded = raw;
+  if (conn.nextPad > 0) {
+    const pad = conn.nextPad - raw.length;
+    if (pad > 0) padded = raw + ' '.repeat(pad);
+    sys('inbound frame padded to ' + padded.length + 'B (size demo)');
+    conn.nextPad = 0;
+  }
+  if (padded.length > MAX_FRAME) {
+    wireToServer('[' + padded.length.toLocaleString() + 'B]');
+    sysErr('inbound frame ' + padded.length.toLocaleString() + 'B > maxPayload 1 MiB → close 1009 (protocol level, ws maxPayload)');
+    closeSocket(1009, 'frame too large');
+    return;
+  }
+  let frame;
+  try { frame = JSON.parse(padded); } catch { frame = null; }
+  wireToServer(padded.trim());
+  if (!frame || typeof frame !== 'object') {
+    if (conn.state === 'pre-auth') { sys('non-auth frame dropped silently (pre-auth, drop don\u2019t punish)'); return; }
+    wireToClient({ type: 'error', code: 'WS_INVALID_FRAME', message: 'malformed JSON' });
+    return;
+  }
+  if (frame.type === 'auth') { processAuth(frame); return; }
+  if (conn.state === 'pre-auth') { sys('non-auth frame {' + frame.type + '} dropped silently (pre-auth)'); return; }
+  switch (frame.type) {
+    case 'subscribe': handleSubscribe(frame); break;
+    case 'unsubscribe': handleUnsubscribe(frame); break;
+    case 'invoke': handleInvoke(frame); break;
+    default:
+      wireToClient({ type: 'error', code: 'WS_INVALID_FRAME', message: 'unknown type: ' + frame.type });
+  }
+}
+
+function runCommand(line) {
+  const t = line.trim().split(/\s+/);
+  const cmd = t[0];
+  switch (cmd) {
+    case 'help':
+      tlog('muted', 'commands: connect [origin|node] · auth <token> · send <json> · subscribe <a,b> · unsubscribe <a,b> · invoke <name> [json] [--stream] · publish <topic> [bytes] · refresh <token> · slow | fast · size <bytes> · stats · timeout · disconnect · reset · help');
+      break;
+    case 'connect': openSocket(t[1]); break;
+    case 'send': rawSend(t.slice(1).join(' ')); break;
+    case 'auth': rawSend(JSON.stringify({ type: 'auth', token: t[1] })); break;
+    case 'subscribe': rawSend(JSON.stringify({ type: 'subscribe', topics: (t[1] || '').split(',').filter(Boolean) })); break;
+    case 'unsubscribe': rawSend(JSON.stringify({ type: 'unsubscribe', topics: (t[1] || '').split(',').filter(Boolean) })); break;
+    case 'invoke': {
+      const name = t[1];
+      const rest = t.slice(2).join(' ');
+      const stream = rest.includes('--stream');
+      let input;
+      const jsonPart = rest.replace('--stream', '').trim();
+      if (jsonPart) { try { input = JSON.parse(jsonPart); } catch { tlog('err', 'bad input json'); return; } }
+      rawSend(JSON.stringify({ type: 'invoke', correlationId: 'c-' + (++corrSeq), name, input, mode: stream ? 'stream' : 'call' }));
+      break;
+    }
+    case 'refresh': rawSend(JSON.stringify({ type: 'auth', token: t[1] })); break;
+    case 'publish': publishToBus(t[1], t[2] ? parseInt(t[2], 10) : 0); break;
+    case 'slow': conn.drainRate = 100_000; sys('client drain → 100 KiB/s (slow consumer)'); render(); break;
+    case 'fast': conn.drainRate = MAX_BUFFERED; sys('client drain → 1 MiB/s'); render(); break;
+    case 'size': conn.nextPad = parseInt(t[1], 10) || 0; sys('next inbound frame padded to ' + conn.nextPad + 'B'); break;
+    case 'stats':
+      sys('buffered=' + conn.buffered.toLocaleString() + 'B / 1 MiB · queue=' + conn.queue.length + ' frames · dropped=' + conn.dropped + ' (cumulative) · subs=' + (conn.subs.join(',') || 'none'));
+      break;
+    case 'timeout':
+      if (conn.state === 'pre-auth') { sysErr('30s pre-auth timeout elapsed → close 1008'); closeSocket(1008, 'auth timeout'); }
+      else sys('not in pre-auth state');
+      break;
+    case 'disconnect':
+      if (conn.state === 'closed') { sys('already closed'); break; }
+      sys('client closed socket');
+      closeSocket(1000, 'client closed');
+      break;
+    case 'reset':
+      conn.state = 'closed'; conn.origin = null; conn.connectionId = null; conn.claims = null;
+      conn.tokenName = null; conn.subs = []; conn.queue = []; conn.buffered = 0; conn.dropped = 0; conn.nextPad = 0;
+      termLog.innerHTML = ''; evtLog.innerHTML = '';
+      sys('sim reset — connection closed, logs cleared');
+      render();
+      break;
+    default:
+      tlog('warn', 'unknown command: ' + cmd + ' — type `help`');
+  }
+}
+
+// ─── Demo script (full narrative) ─────────────────────────────────────
+const DEMO = [
+  ['connect https://app.acme.com', 500],
+  ['send {"type":"subscribe","topics":["session.*"]}', 400],      // pre-auth: silent drop
+  ['auth token.browser', 600],                                    // auth.ok
+  ['subscribe session.*,capability.*', 400],
+  ['subscribe event.*', 400],                                     // reserved → WS_INVALID_TOPIC
+  ['publish session.created', 400],                               // relayed
+  ['publish event.connection.rotated', 400],                      // filtered
+  ['invoke capability.list', 400],                                // pull → result
+  ['invoke stream.demo --stream', 1600],                          // partials + end
+  ['invoke session.invalid', 400],                                // passthrough error code
+  ['refresh token.narrow', 500],                                  // atomic swap, subs carried
+  ['subscribe plugin.*', 400],                                    // narrowed scope → WS_FORBIDDEN
+  ['publish session.closed', 400],                                // still relayed (subs carried)
+  ['slow', 300],
+  ['publish session.updated 400000', 200],
+  ['publish session.updated 400000', 200],
+  ['publish session.updated 400000', 1200],                       // queue > 1 MiB → FIFO drops → stats
+  ['fast', 300],
+  ['stats', 400],
+  ['invoke capability.list', 600],                                // resync heals gaps
+  ['disconnect', 500],
+  // ── origin binding ──
+  ['connect https://acme.com', 400],
+  ['auth token.browser', 600],                                    // zero-label → origin mismatch + 1008
+  ['connect node', 400],
+  ['auth token.node', 600],                                       // Node bypass → auth.ok
+  ['disconnect', 400],
+  ['connect https://app.acme.com', 400],
+  ['auth token.node', 600],                                       // browser origin + token w/o claim → deny-by-default
+  ['connect https://sub.dev.acme.com', 400],
+  ['auth token.browser', 600],                                    // wildcard *.dev.acme.com → auth.ok
+  ['disconnect', 300],
+  // ── frame cap ──
+  ['connect https://app.acme.com', 400],
+  ['auth token.browser', 600],
+  ['size 2000000', 200],
+  ['send {"type":"subscribe","topics":["a"]}', 600],              // inbound > 1 MiB → close 1009
+];
+
+async function runDemo() {
+  demoBtn.disabled = true;
+  for (const [cmd, wait] of DEMO) {
+    termInput.value = cmd;
+    runCommand(cmd);
+    await new Promise(r => setTimeout(r, wait));
+  }
+  termInput.value = '';
+  demoBtn.disabled = false;
+  sys('demo complete — try the commands yourself (`help` for the list)');
+}
+
+// ─── Wiring ───────────────────────────────────────────────────────────
+termInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const line = termInput.value;
+    if (line.trim()) { tlog('info', '> ' + line); runCommand(line); }
+    termInput.value = '';
+  }
+});
+demoBtn.addEventListener('click', runDemo);
+
+// Playwright hook
+window.engine = {
+  runCommand,
+  getState: () => ({
+    state: conn.state,
+    origin: conn.origin,
+    connectionId: conn.connectionId,
+    subs: [...conn.subs],
+    dropped: conn.dropped,
+    buffered: conn.buffered,
+    queue: conn.queue.length,
+    scope: conn.claims ? conn.claims.scope : null,
+  }),
+};
+
+sys('sim ready. Wire contract v1 (16 frame types) locked — drive the client. Type `help`, or ▶ Run full demo.');
+sys('tokens: token.browser · token.node · token.narrow · token.evil · token.expired · token.garbage');
+render();
+</script>
+</body>
+</html>

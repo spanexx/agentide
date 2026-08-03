@@ -12,6 +12,8 @@
     { "path": "../session-manager" },
     { "path": "../plugin-manager" },
     { "path": "../gateway-core" },
+    { "path": "../adapter-mcp" },
+    { "path": "../adapter-websocket" },
     { "path": "../backend-runtime" }
   ]
 }

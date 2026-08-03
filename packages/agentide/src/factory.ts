@@ -31,12 +31,15 @@ import { createPluginManager } from "@platform/plugin-manager";
 import { createGateway } from "@platform/gateway-core";
 import { createBackendRuntime, type BackendRuntime } from "@platform/backend-runtime";
 import { createMcpAdapter, type McpAdapter } from "@platform/adapter-mcp";
+import { createWebSocketAdapter, type WebSocketAdapter } from "@platform/adapter-websocket";
 import type { Platform, CreatePlatformConfig } from "./types.js";
 
 const DEFAULT_RATE_LIMIT = { capacity: 100, tokensPerSecond: 50 };
 const DEFAULT_HANDLER_TIMEOUT_MS = 30_000;
 const DEFAULT_ADAPTER_MCP_PORT = 7100;
 const DEFAULT_ADAPTER_MCP_HOST = "127.0.0.1";
+const DEFAULT_ADAPTER_WS_PORT = 7300;
+const DEFAULT_ADAPTER_WS_HOST = "127.0.0.1";
 
 export async function createPlatform(config: CreatePlatformConfig): Promise<Platform> {
   const tenantsPath = config.tenantsPath ?? `${config.dataDir}/tenants.json`;
@@ -145,6 +148,19 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     await mcpAdapter.start();
   }
 
+  let wsAdapter: WebSocketAdapter | undefined;
+  if (config.adapterWs !== false) {
+    const storedSecret = (await config.fs.readFile(secretPath)).replace(/\n$/, "");
+    const tokenSecret = new Uint8Array(Buffer.from(storedSecret, "base64"));
+    wsAdapter = createWebSocketAdapter(gateway, eventBus, {
+      host: config.adapterWsHost ?? DEFAULT_ADAPTER_WS_HOST,
+      port: config.wsPort ?? DEFAULT_ADAPTER_WS_PORT,
+      tokenSecret,
+      clock: config.clock,
+    });
+    await wsAdapter.start();
+  }
+
   let stopped = false;
   const stop = async (): Promise<void> => {
     if (stopped) return;
@@ -152,6 +168,9 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     // Stop the MCP adapter FIRST (closes the HTTP port; in-flight JSON-RPC
     // requests get a clean "port closed" rather than waiting for the
     // runtime to drain).
+    if (wsAdapter !== undefined) {
+      await wsAdapter.stop();
+    }
     if (mcpAdapter !== undefined) {
       await mcpAdapter.stop();
     }
@@ -171,6 +190,7 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     gateway,
     backendRuntime,
     mcpAdapter,
+    wsAdapter,
     stop,
   };
 }

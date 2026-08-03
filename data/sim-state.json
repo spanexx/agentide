@@ -3739,6 +3739,128 @@
       "status": "passed",
       "detail": "scenario 10: close(1000,\"deliberate\") sent; no reconnect ✓",
       "channel": "sdk-browser"
+    },
+    {
+      "ts": "2026-08-03T11:51:09.263Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T11:51:36.159Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T11:51:59.045Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T11:52:24.376Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T11:52:34.532Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T11:52:45.261Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T11:52:58.333Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T11:53:03.233Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T11:53:08.242Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T11:58:26.067Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T12:08:53.957Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "fixtures": 3
+      },
+      "channel": "mcp"
+    },
+    {
+      "ts": "2026-08-03T12:28:00.542Z",
+      "caller": "sim-script",
+      "capability": "websocket-adapter-post-impl-sim",
+      "status": "ok",
+      "detail": {
+        "passed": 31,
+        "failed": 0,
+        "fixtures": 3
+      },
+      "channel": "mcp"
     }
   ]
 }

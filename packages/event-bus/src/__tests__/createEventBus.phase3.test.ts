@@ -86,6 +86,8 @@ describe("createEventBus — Phase 3 immutability + readonly contract", () => {
       "RESERVED_INTERNAL_PREFIX",
       "createEventBus",
       "matches",
+      "publishInternalEvent",
+      "validatePattern",
     ]);
   });
 });

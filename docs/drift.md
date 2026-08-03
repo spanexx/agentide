@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-03  **Open:** 6  **Resolved:** 41  **Critical/High:** 2
+**Last updated:** 2026-08-03  **Open:** 7  **Resolved:** 34  **Critical/High:** 2
 
 ## Open
 
@@ -10,6 +10,15 @@
   - Owner: gateway-core (`IssueTokenRequest` + `issueToken`) + agentide CLI (`token issue --origin/--origins`); enforcement already locked in adapter-websocket W2 Q4 (adapter pack).
   - To fix: code — additive optional `expectedOrigins?: string[]` on `IssueTokenRequest`, minted into the JWT claims when present; CLI `--origin`/`--origins` flags; scheduled in the `@platform/dashboard` feature-pipeline IMPL (D4 lock). Dashboard's internal `dashboard` caller token omits the claim (never crosses the wire).
   - Related: D4 ticket (token-handling), adapter W2 Q4, sdk-browser T5 Q2.
+
+- **D-52** (Low, 2026-08-03, reporter: feature-pipeline-review) — silent test swap in `packages/gateway-core/src/__tests__/auth.test.ts`.
+  - Doc claim: tests in this file exercise every branch of `verifyToken` / `issueToken` (locked behavior).
+  - Code reality: the `it("defaults to no leeway (zero backward-compatible behavior)")` test was temporarily replaced by the `expectedOrigins` round-trip test during the websocket-adapter work. The leeway-default behavior had no coverage for one commit.
+  - Why matters: silent test removal in a shipped package is a drift candidate — even when the missing test is restored, the next reader cannot tell whether the gap was intentional.
+  - Owner: gateway-core (test coverage discipline).
+  - To fix: re-add the leeway-default test and avoid replacing shipped tests without an explicit drift entry.
+  - Related: gateway-core Q9 leeway option.
+  - Verified by: both tests now present at `packages/gateway-core/src/__tests__/auth.test.ts:106-120`.
 
 - **D-45** (High, 2026-08-03, reporter: dashboard-core D1 grilling) — `session.list` is a v1 stub returning `[]` always; the dashboard's Sessions view has no snapshot source, violating the D1 acceptance bar (snapshot + live, both required).
   - Doc claim: `platform-capabilities read-tier caps are ready: session.list, plugin.list, ...` (`docs/features/dashboard-core/GRILL-dashboard-core.txt:14`); D1 acceptance bar: every in-v1 view needs a snapshot source AND a live-update story (locked 2026-08-03).
@@ -54,6 +63,15 @@
 ---
 
 ## Resolved
+
+- **D-51** (Resolved 2026-08-03, websocket-adapter implementation) — Event Bus `validatePattern` was not exported at its package root; consumer needed a public seam for the locked subscription grammar.
+  - Doc claim: adapter-websocket PRD-TRD and IMPL require `validatePattern` reuse from `@platform/event-bus` for subscription grammar (`docs/features/websocket-adapter/PRD-TRD-websocket-adapter.md:242-243`, `docs/features/websocket-adapter/IMPL-websocket-adapter.md:70-78`).
+  - Code reality: `validatePattern` existed only in the private module and the Event Bus root exports `matches` but not `validatePattern` (`packages/event-bus/src/match.ts:49-81`, `packages/event-bus/src/index.ts:41-50`).
+  - Why matters: implementing the locked subscription seam either duplicates grammar or reaches through a non-public path, weakening one source of truth.
+  - Owner: event-bus + adapter-websocket.
+  - To fix: add `validatePattern` to the Event Bus public export, then use that public seam in the adapter.
+  - Related: W3/W5 subscription decisions.
+  - Verified by: `validatePattern` exported at `packages/event-bus/src/index.ts:63` and consumed by `packages/adapter-websocket/src/fanout.ts:3`. Sanity test at `packages/adapter-websocket/src/__tests__/types.test.ts:57-61`. The shipped implementation also added `publishInternalEvent` (same export list) for `event.connection.rotated` audit emission.
 
 - **D-44** (Resolved 2026-08-03, websocket-adapter W1 sub-Q 1 re-open) — v1 WS adapter was locked as push-only (`future.md` recorded pull as a future demand). Re-opened this session with a concrete reason: `dashboard-core` BI[13] is a v1 consumer that needs `capability.list` / `plugin.list` / `session.list` / `system.health` / `gateway.metrics` over a single socket. Pull is now v1; WS adapter adds a `invoke*` message family to the existing `{type: ...}` envelope (W1 sub-Q 4 unchanged — JSON-RPC mirror rejected). Universal, not scoped (user wording "no i dont want scopped"). Cross-ticket ripple: W4 (wire schema) adds 5 `invoke*` variants + correlationId; W6 (backpressure) covers per-connection outbound queueing for both `event` and `invoke.partial`; W5 (fan-out) routes per-call partial-progress topics. Downstream docs updated: `docs/wayfinder/websocket-adapter/future.md` (rewritten — pull is no longer future, only kernel-level streaming seam + `invoke.batch` + subprotocol versioning + MCP-shape compat remain), `docs/wayfinder/websocket-adapter/map.md` (decision log: W1 sub-Q 1 REOPEN entry + W1 closed revision), `docs/CONTEXT.md` (Decision Log: W1 sub-Q 1 REOPEN + W1 closed revision). `dashboard-core/GRILL-dashboard-core.txt` Q2 (data-plane exit) now has a defined answer candidate: expose aggregated views via WS adapter's `invoke` messages. `Feature_Backlog.md` BI[13] is unaffected (the row's "polls platform-capabilities" stays accurate; the WS adapter becomes the transport between the dashboard data plane and the platform's read-tier caps, not a separate read tier).
   - Verified by: code re-read of `packages/event-bus/src/index.ts:242-246` (queueing already covered for `event`; `invoke.partial` rides the same outbound queue); review of all four updated docs files; sub-ticket propagation (W2 sub-Q 1 in-progress, WS adapter envelope handling pulls the new shape).

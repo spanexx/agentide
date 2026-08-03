@@ -103,6 +103,15 @@ describe("issueToken + verifyToken (HS256)", () => {
     expect(verifyToken(token, clock, SECRET, { leewayMs: 1000 }).ok).toBe(false);
   });
 
+  it("round-trips optional expectedOrigins claims", () => {
+    const clock = new FakeClock();
+    const expectedOrigins = ["https://app.acme.com", "https://*.dev.acme.com"];
+    const token = issueToken(claims({ expectedOrigins }), SECRET, clock);
+    const result = verifyToken(token, clock, SECRET);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.claims.expectedOrigins).toEqual(expectedOrigins);
+  });
+
   it("defaults to no leeway (zero backward-compatible behavior)", () => {
     const clock = new FakeClock();
     const token = issueToken(claims({ exp: 1_700_000_003_600 }), SECRET, clock);

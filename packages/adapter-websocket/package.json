@@ -1,0 +1,38 @@
+{
+  "name": "@platform/adapter-websocket",
+  "version": "0.0.0",
+  "private": true,
+  "description": "WebSocket adapter — exposes registered capabilities over a flat JSON envelope (16 frame types); JWT auth with origin binding, per-pattern subscription fan-out over the event bus, invoke call/stream translation, and drop-oldest backpressure with stats recovery.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc --build --pretty",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "typecheck": "tsc --build --pretty"
+  },
+  "dependencies": {
+    "@platform/errors": "workspace:*",
+    "@platform/event-bus": "workspace:*",
+    "@platform/gateway-core": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "eslint": "^10.8.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0"
+  }
+}

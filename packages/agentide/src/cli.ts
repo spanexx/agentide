@@ -125,6 +125,7 @@ async function runInit(dataDir: string, flags: Record<string, string | boolean>,
     // binding 7100 here would waste a port and risk EADDRINUSE races across
     // rapid back-to-back commands.
     adapterMcp: false,
+    adapterWs: false,
   });
   const { token } = await platform.gateway.issueToken({
     tenantId,
@@ -146,6 +147,7 @@ async function runStatus(dataDir: string, opts: CliOptions): Promise<CliResult> 
     fs: opts.fs,
     dataDir,
     adapterMcp: false,
+    adapterWs: false,
   });
   const status = await platform.gateway.status();
   await platform.stop();
@@ -168,6 +170,7 @@ async function runTenant(
     fs: opts.fs,
     dataDir,
     adapterMcp: false,
+    adapterWs: false,
   });
   try {
     if (sub === "create") {
@@ -217,6 +220,7 @@ async function runToken(
     fs: opts.fs,
     dataDir,
     adapterMcp: false,
+    adapterWs: false,
   });
   try {
     const { token } = await platform.gateway.issueToken({ tenantId, callerId, scope });
@@ -237,6 +241,7 @@ async function runCapability(
     fs: opts.fs,
     dataDir,
     adapterMcp: false,
+    adapterWs: false,
   });
   try {
     if (sub === "list") {
@@ -284,6 +289,7 @@ async function runPlugin(subArgs: readonly string[], dataDir: string, opts: CliO
     fs: opts.fs,
     dataDir,
     adapterMcp: false,
+    adapterWs: false,
   });
   try {
     if (sub === "list") {

@@ -12,3 +12,4 @@ export type { CliOptions, CliResult } from "./cli-types.js";
 // Expose the McpAdapter/McpAdapterConfig types so consumers wiring their
 // own platform can refer to the same shape the meta-package auto-registers.
 export type { McpAdapter, McpAdapterConfig } from "@platform/adapter-mcp";
+export type { WebSocketAdapter, WebSocketAdapterConfig } from "@platform/adapter-websocket";

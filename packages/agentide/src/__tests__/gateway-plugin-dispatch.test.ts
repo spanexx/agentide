@@ -82,6 +82,7 @@ async function boot(): Promise<{ platform: Platform; fs: InMemoryFs }> {
     // BI[9] — keep this suite hermetic; the MCP wiring itself is
     // exercised in mcp-adapter.test.ts.
     adapterMcp: false,
+    adapterWs: false,
   });
   platforms.push(platform);
   return { platform, fs };

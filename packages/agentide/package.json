@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@platform/adapter-mcp": "workspace:*",
+    "@platform/adapter-websocket": "workspace:*",
     "@platform/backend-runtime": "workspace:*",
     "@platform/capability-registry": "workspace:*",
     "@platform/event-bus": "workspace:*",

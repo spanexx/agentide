@@ -62,6 +62,7 @@ describe("createPlatform + BackendRuntime integration", () => {
         // BI[9] — keep the backend-runtime suite hermetic; the MCP wiring
         // is exercised in mcp-adapter.test.ts.
         adapterMcp: false,
+        adapterWs: false,
       }),
     );
 
@@ -166,6 +167,7 @@ describe("createPlatform + BackendRuntime integration", () => {
         defaultTenant: { id: "default", name: "Default" },
         backendRuntimePort: 0,
         adapterMcp: false,
+        adapterWs: false,
       }),
     );
     const addr = platform.backendRuntime?.address();

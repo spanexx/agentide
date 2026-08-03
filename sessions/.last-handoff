@@ -1,45 +1,123 @@
-# Wayfinder map COMPLETE — sdk-browser way clear (T7 closed)
+# websocket-adapter: IMPL approved, Phase 1 shipped (8/8 green) — Phases 2-9 next
 
 ## What happened this session
 
-Wayfinder work-through on the sdk-browser map. Claimed + resolved **T7 (sdk-browser and browser-runtime boundary doc, `wayfinder:task`)** — the last open ticket. Map is now **7/7 closed; way is clear**.
+Feature-pipeline run for the WebSocket adapter pack (wayfinder map W1-W6 locked,
+`docs/wayfinder/websocket-adapter/map.md` — ALL tickets closed).
 
-Patch applied (5 required changes + 1 same-boundary fix):
-1. `docs/architecture/Agentide.md` §6 Frontend SDK — removed `browser.*` responsibilities/examples; now: register application caps (DOM-annotation), UI state (defined per T1: live dev-controlled catalog of page's annotated caps, MutationObserver-synced, NOT a separate store), browser communication (WebSocket, same wire as sdk-node), dispatch invocations as DOM CustomEvents. Examples = `customer.read`/`order.submit`.
-2. §6 "Boundary at a glance" sentence added (SDK inside app registers app caps; browser.* via browser-runtime #12).
-3. §7 Browser Runtime: "Status: built." → "**Status: not yet built (backlog #12).**" Backend Runtime stays built.
-4. `Runtime_Capabilities.md` Browser Runtime namespace → "(future — see browser-runtime #12)" header; worked tier-table untouched.
-5. Extra: §3 "Applications expose" example de-blurred (browser.navigate/click removed, pointer added).
+- **GRILL ✅** `docs/features/websocket-adapter/GRILL-websocket-adapter.txt` (23 Q&As)
+- **Pre-impl sim ✅** `docs/features/websocket-adapter/simulate-pre.html` (24/24 Playwright, user-reviewed, restyled)
+- **PRD-TRD ✅ Approved** `docs/features/websocket-adapter/PRD-TRD-websocket-adapter.md`
+  (port **7300** confirmed 2026-08-03; 14 scenarios; ConnectionRecord design)
+- **IMPL ✅ Approved** `docs/features/websocket-adapter/IMPL-websocket-adapter.md` —
+  user said "approved" → implementation started
+- **opensrc gate done**: ws 8.21.1 source fetched (`opensrc path ws --cwd agentide` →
+  `~/.opensrc/repos/github.com/websockets/ws/8.21.1`); findings recorded in IMPL
+  Dependency Analysis section
 
-No drift entry — patch corrects stale doc text to already-settled intent.
+## Implementation state (Phase 1 COMPLETE — verified green)
 
-## Files changed (agentide/, uncommitted)
+New package `packages/adapter-websocket/` created (all uncommitted):
+- `package.json` — name `@platform/adapter-websocket`, deps: `ws ^8.18.0` +
+  workspace `errors`/`event-bus`/`gateway-core`; devDeps mirror backend-runtime
+- `tsconfig.json` — extends root base, references errors/event-bus/gateway-core
+- `src/types.ts` — `DEFAULT_CONFIG` (host 127.0.0.1, port 7300, 1 MiB × 2,
+  stats 1000ms, pre-auth 30s, heartbeat 30s/10s), `WebSocketAdapterConfig`,
+  `ConnectionRecord` (state machine, subs Map, queue, timers), all 16 wire
+  frame types (ClientFrame/ServerFrame), `AUTH_ERROR_CODES` (5 lowercase
+  phrases), `WebSocketAdapter` interface
+- `src/errors.ts` — `WS_ERROR_CODES` (5 codes: WS_INVALID_TOPIC, WS_FORBIDDEN,
+  WS_INVALID_FRAME, WS_INTERNAL, WS_FRAME_TOO_LARGE)
+- `src/__tests__/types.test.ts` — 8 tests, **ALL PASS**
+- Root `tsconfig.json` — added `packages/adapter-websocket` reference
+- `pnpm-lock.yaml` modified (workspace install — up to date)
 
-- `docs/architecture/Agentide.md` (§3, §6, §7)
-- `docs/architecture/Runtime_Capabilities.md` (Browser Runtime header)
-- `docs/wayfinder/sdk-browser/tickets/sdk-browser-and-browser-runtime-boundary.md` (closed + Resolution)
-- `docs/wayfinder/sdk-browser/map.md` (7/7, frontier gone, Decisions-so-far T7, "Way is clear")
-- `docs/CONTEXT.md` (Decisions Log T7 entry)
-- `prompt-log.md`
+**Phase 1 gate: PASSED** — `cd agentide && pnpm exec vitest run packages/adapter-websocket` → 1 file, 8 tests.
 
-## Next session — DELIVERY
+## ⚠️ CRITICAL — vitest root quirk
 
-**Way is clear. Route: `delivery: feature-pipeline` → GRILL for sdk-browser** (map destination: `@platform/sdk-browser` shipped v1 in `packages/sdk-browser/`). Tag recorded on T4 + T7 resolutions + map.
+`pnpm test -w @platform/adapter-websocket` (and any `pnpm test` run from INSIDE
+the package dir) prints **"No test files found"** — the root `vitest.config.ts`
+include (`packages/*/src/**/*.test.ts`) is relative to the agentide root, but
+vitest infers root from cwd. **The repo convention: run vitest from the agentide
+ROOT**: `pnpm exec vitest run packages/adapter-websocket`, or root `pnpm test`
+(all packages, `--passWithNoTests`). Same applies to backend-runtime — do NOT
+"fix" package test scripts.
 
-- Run `feature-pipeline` skill: grill-with-docs (GRILL) → PRD-TRD → IMPL → implement → post-impl sim → drift check → ship.
-- GRILL inputs ready: 7 closed wayfinder tickets (`docs/wayfinder/sdk-browser/tickets/`), GRILL record `docs/features/sdk-browser/GRILL-sdk-browser.txt`, prototype `prototypes/sdk-browser-dev-experience/` (Shape A ESM, onStateChange, Playwright 4/4), sdk-node PRD-TRD as shape to mirror (`docs/features/sdk-node/PRD-TRD-sdk-node.md`).
-- Key v1 locks: ESM-only, `createSdk({gateway,appId,token,observeRoot?,defaultTier?,defaultVersion?})`, DOM-annotation + MutationObserver, CustomEvent fan-out dispatch, `onStateChange` 4-state, globalThis.WebSocket only, expectedOrigins JWT claim (backend-runtime reads it), jsdom vitest per-file docblock, one runtime dep (`@platform/event-bus`), no framework helpers.
-- Remaining fog (NOT ticketed, do not ticket): Service Worker persistence (likely out of scope v1), cap deprecation flow (cross sdk-node v4.2), window/tab boundedness (open question).
+## Phase 2-9 roadmap (from IMPL, TDD red-green per phase)
 
-## Repo state (agentide/, HEAD 09d0025 = origin/main)
+1. **P2 `src/auth.ts`** — verifyToken (gateway-core), `originMatches`
+   (**split at `*.` via indexOf — NEVER `.slice(1)`; the sim's slice bug ate the
+   'h' of `https://`**; exact OR single-label right-anchored wildcard), pre-auth
+   state machine (30s → close 1008; non-auth frames silently dropped),
+   refresh = atomic claim swap carrying subs/in-flight/queue/connectionId,
+   emits `event.connection.rotated` (internal, NOT relayed), no re-auth/prune
+2. **P3 `src/registry.ts`** — ConnectionRegistry add/remove/get/snapshot/prune
+3. **P4 `src/fanout.ts`** — per (conn × pattern) `eventBus.subscribe` with
+   unsubscribe handle stored on record; **relay NEVER awaits socket.send**
+   (bus dispatches with Promise.allSettled); `event.*` filtered (defense-in-
+   depth — bus already blocks external publishes via RESERVED_INTERNAL_PREFIX);
+   per-pattern authz at subscribe: `checkAuthz(scope, ["platform.<first>.read"])`
+   (bare `*` → `platform.*.read`); batch all-or-nothing; dedupe idempotent;
+   unsubscribe of never-subscribed → ok
+4. **P5 `src/invoke.ts`** — invoke frame → `gateway.handleInvocation`; error
+   PASSTHROUGH (no third vocabulary; e.g. GATEWAY_SESSION_NOT_FOUND passes
+   verbatim on invoke.error); correlationId echo verbatim; stream mode wraps
+   single-shot kernel call → `invoke.partial`×N + `invoke.end`; partials ride
+   the same queue
+5. **P6 `src/queue.ts`** — FIFO byte-budget queue, drop-OLDEST keep-newest while
+   over `maxBufferedBytes`, cumulative `dropped`, stats frame ~1s after first
+   drop (arm/disarm one-shot), drain via socket.send
+6. **P7 `src/server.ts`** — `createWebSocketAdapter(gateway, eventBus, cfg)`;
+   `ws.WebSocketServer` with **`maxPayload: maxFrameBytes` EXPLICITLY** (ws
+   default is 100 MiB!); upgrade `req.headers.origin` captured on
+   `connection(ws, req)`; heartbeat `socket.ping()` + `on('pong')` → close
+   1011 (autoPong default true); outbound over-cap → error frame + 1009;
+   `stop()` snapshot/unsubscribe/close/clear timers; `src/index.ts` re-exports
+7. **P8 agentide wiring** — factory `adapterWs !== false` default ON, `wsPort`
+   default 7300, start after gateway+backend-runtime, stop reverse, expose
+   `platform.wsAdapter`, reuse bootstrapped secret; `types.ts` + `cli.ts`
+   (opts out) + `index.ts` re-exports + `__tests__/websocket-adapter.test.ts`
+8. **P9 post-impl sim** — `packages/agentide/scripts/simulate-websocket-adapter.mjs`
+   (DIFFERENT script from simulate-pre.html; drive real adapter; PRD
+   scenarios 1-14)
 
-- Uncommitted M: `data/sim-state.json`, `docs/Feature_Backlog.html`, `docs/Feature_Backlog.md` (mcp-adapter backlog sync), `prompt-log.md`, `sessions/.handoff-log.md`, `sessions/.last-handoff`, + wayfinder batch (CONTEXT.md, Agentide.md, Runtime_Capabilities.md, 2 tickets, map).
-- Nothing committed this session. User said "say the word → commit via git-flow" (prior session); still pending user go-ahead.
-- 3 stashes — do NOT pop without user permission.
-- `scripts/backlog/` (repo root, outside git) — mcp-adapter.js rewritten to shipped.
+Then: `feature-pipeline-review` sub-agent, drift check (`drift read`), `update-backlog`,
+git-flow commits (docs + code separately — root repo vs agentide repo).
 
-## Skills for next session
+## Locked contract in one screen (full detail: map.md / PRD-TRD / GRILL)
 
-- `feature-pipeline` + `grill-with-docs` + `domain-modeling` (delivery)
-- `git-flow` (commit backlog/wayfinder doc batch when user says save)
-- `caveman` + `log-prompt` + `situation-awareness` (mandatory per AGENTS.md)
+- Flat JSON-text envelope, **16 frame types**, no JSON-RPC, no version field v1
+- Auth: JWT first message after open; `auth.ok {connectionId, claims}` |
+  `auth.error {code, message}` + close **1008**; pre-auth timeout 30s;
+  refresh = `auth` anytime, atomic, no re-auth, no prune
+- Origin: per-token `expectedOrigins` claim (D-50 — mint side NOT built;
+  adapter is ENFORCER only, browser clients stay denied until dashboard lands);
+  Node (no Origin) bypass; mismatch → "origin mismatch" + 1008
+- Subs: verbatim bus topics, `*` final segment only (validatePattern reuse),
+  per-pattern authz `platform.<first>.read`, `event.*` reserved, no session
+  scoping, no count cap, prune on close
+- Pull: universal `invoke` (mode call|stream), `invoke.*` echo correlationId
+- Backpressure: 1 MiB/conn, drop-oldest FIFO, `stats {dropped}` ~1/s cumulative
+- Close codes: 1008 auth / 1011 heartbeat / 1009 frame too large
+
+## Git state (agentide repo, HEAD 4b173b2 main)
+
+- Modified: docs/CONTEXT.md, docs/architecture/Agentide.md (sdk-browser T7
+  fixes), docs/gateway-core (deleted — pre-existing), docs/wayfinder/browser-
+  runtime/map.md, pnpm-lock.yaml, tsconfig.json
+- Untracked: docs/features/websocket-adapter/ (GRILL/sim/PRD-TRD/IMPL — ALL
+  uncommitted), docs/wayfinder/websocket-adapter/, packages/adapter-websocket/
+- NO commit requested yet; git-flow comes after shipping (per skill)
+- Parallel: cli-adapter pack in flight (PRD approved, IMPL draft, 7 crates
+  opensrc'd — separate branch of work, don't touch)
+- HTTP server on :7947 may still run (agentide/docs) — safe to kill
+- Browser page on simulate-pre.html (not shared) — stale, ignore
+
+## For the next session
+
+Skills: situation-awareness → tdd (red-green per phase) → typecheck → git-flow
+(after ship) → feature-pipeline-review → update-backlog → drift read before any
+doc edit. Caveman mode + log-prompt + plain-english-first per AGENTS.md.
+Use `pnpm exec vitest run packages/adapter-websocket` from agentide root.
+D-50 NOT this pack's scope. Do not touch cli-adapter branch of work.
