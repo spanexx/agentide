@@ -16,6 +16,8 @@
  *   S2  Auth success (auth.ok + claims + connectionCount=1)
  *   S3  Pre-auth timeout closes 1008
  *   S4  Origin binding (browser mismatch closes 1008; Node bypass works; wildcard allowed)
+ *   S4b Mint-side origin binding (CLI-minted token: matching origin auth.ok;
+ *       mismatched origin auth.error + 1008 — the real gateway mint path)
  *   S5  Mid-connection refresh (success preserves subs + emits event.connection.rotated;
  *       refresh-failure closes 1008)
  *   S6  Subscribe (valid + invalid grammar + forbidden atomic batch)
@@ -33,11 +35,11 @@
  * 1 MiB on a fast local socket; the script then logs the observed count).
  */
 
-import { createPlatform } from "@platform/agentide";
+import { createPlatform, runCli } from "@platform/agentide";
 import { createHmac } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import WebSocket from "ws";
-import { loadState, recordAudit, tokenFixtures } from "./sim-state.mjs";
+import { loadState, mutateState, recordAudit, tokenFixtures } from "./sim-state.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -220,6 +222,54 @@ async function main() {
       } finally { closeSocket(socket); }
     }
     await sleep(5);
+
+    // S4b: mint-side origin binding — token issued through the REAL CLI mint path
+    {
+      const cliFs = makeInMemoryFs();               // same fs instance → same secret
+      const cli = await bootPlatform({ fs: cliFs, wsPort: 0 });
+      try {
+        const cliResult = await runCli(
+          ["token", "issue", "--tenant", "default", "--caller", "sim-cli",
+           "--origin", "https://app.acme.com", "--data-dir", "/data"],
+          { fs: cliFs },
+        );
+        const token = cliResult.stdout.trim().split("\n").filter(Boolean).pop() ?? "";
+        assert("S4b CLI mint exits 0", cliResult.exitCode === 0);
+        assert("S4b minted token parses as JWT",
+          /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token));
+        const decoded = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf-8"));
+        assert("S4b claim expectedOrigins present",
+          JSON.stringify(decoded.expectedOrigins) === JSON.stringify(["https://app.acme.com"]),
+          `claim=${JSON.stringify(decoded.expectedOrigins)}`);
+        mutateState((s) => {
+          (s.tokens ??= []).push({
+            id: "origin-bound-sim-cli",
+            tenant: "default",
+            caller: "sim-cli",
+            scope: ["platform.*.read"],
+            expectedOrigins: ["https://app.acme.com"],
+            issued: new Date().toISOString(),
+          });
+        });
+        // matching origin → auth.ok
+        const ok = await openSocket(cli.wsAdapter.address().port, "https://app.acme.com");
+        try {
+          send(ok, { type: "auth", token });
+          const frame = await nextMessage(ok);
+          assert("S4b matching origin connects", frame.type === "auth.ok");
+        } finally { closeSocket(ok); }
+        await sleep(5);
+        // mismatched origin → auth.error origin mismatch + 1008
+        const bad = await openSocket(cli.wsAdapter.address().port, "https://evil.example.com");
+        try {
+          send(bad, { type: "auth", token });
+          const frame = await nextMessage(bad);
+          assert("S4b mismatched origin reports 'origin mismatch'", frame.code === "origin mismatch", `code=${frame.code}`);
+          const code = await nextCloseCode(bad);
+          assert("S4b mismatched origin closes 1008", code === 1008, `close=${code}`);
+        } finally { closeSocket(bad); }
+      } finally { await cli.stop(); }
+    }
 
     // S5: refresh success preserves subscriptions and emits rotation event
     {
@@ -415,6 +465,7 @@ async function main() {
       capability: "websocket-adapter-post-impl-sim",
       status: failed === 0 ? "ok" : "fail",
       detail: { passed, failed, fixtures: tokenFixtures().length },
+      channel: "websocket-adapter",
     });
   } finally {
     try { await platform.stop(); } catch {}

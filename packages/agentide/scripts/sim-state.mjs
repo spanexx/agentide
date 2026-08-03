@@ -10,6 +10,11 @@
  *   subscriptions, events, plugins, capabilities, sessions, audit
  * Extension keys established by other sims:
  *   tokens, active_token, audit_log (permission-tiering simulate-pre.ts)
+ * Token fixtures may carry an optional `expectedOrigins` array (mint-side
+ * origin binding, expected-origins sim); readers must tolerate its absence.
+ *
+ * `recordAudit` accepts a `channel` param (default "mcp" for backward
+ * compat) so each sim tags its records with its own channel (D-53 fix).
  *
  * The mcp-adapter sim READS `tokens` (caller/scope fixtures) and WRITES
  * `audit_log` (invocation outcomes) + `events` (real gateway.invocation
@@ -69,8 +74,9 @@ export function mutateState(mutator) {
 
 // Record one invocation outcome in the shared audit trail. Schema matches
 // permission-tiering simulate-pre.ts audit_log entries (ts/caller/capability/
-// status) with a `channel` tag so readers can attribute the record.
-export function recordAudit({ caller, capability, status, detail }) {
+// status) with a `channel` tag so readers can attribute the record. Callers
+// pass their own channel; "mcp" stays the default for backward compat (D-53).
+export function recordAudit({ caller, capability, status, detail, channel = "mcp" }) {
   return mutateState((s) => {
     (s.audit_log ??= []).push({
       ts: new Date().toISOString(),
@@ -78,7 +84,7 @@ export function recordAudit({ caller, capability, status, detail }) {
       capability,
       status,
       ...(detail !== undefined ? { detail } : {}),
-      channel: "mcp",
+      channel,
     });
   });
 }
