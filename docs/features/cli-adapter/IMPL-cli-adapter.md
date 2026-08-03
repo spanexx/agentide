@@ -65,9 +65,12 @@ edition 2021.
 - `src/errors.rs` — `ExitCode` enum 0–5 + layer mapping.
 
 **Verify:**
-- [ ] Unit tests (mock socket or local echo server): auth.ok path, auth.error → exit 4,
-      invoke.result → 0, invoke.error passthrough → 1, close 1009/1011 → 2.
-- [ ] `cargo clippy -- -D warnings` clean.
+- [x] Integration tests (scripted MockServer over real TCP+WS): auth.ok path,
+      auth.error → exit 4, invoke.result → 0, invoke.error passthrough → 1,
+      close 1009 → 2, `error` frame → 2, connect refused → 2, close during
+      auth → 2, no-upgrade → 2, wss TLS handshake failure → exit 3 (rustls
+      ring provider pinned + `install_default`).
+- [x] `cargo clippy -- -D warnings` clean.
 
 **Blocked by:** Phase 2
 
