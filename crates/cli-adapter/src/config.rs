@@ -1,23 +1,20 @@
 //! Config resolution — flag > env > TOML > TTY prompt (PRD S1, S6).
-//!
-//! Items are wired into the binary in Phase 5 (dispatch); `dead_code` allow
-//! removed then.
 
 /*
  * Code Map: config precedence + token hygiene
  * - resolve: flag > env > TOML > TTY, path: expansion, perms warning
+ * - resolve_real: same, wired to OS env / stdin TTY / stderr (Phase 5)
  * - default_config_path: <OS config dir>/platform/config.toml
  *
  * CID Index:
  * CID:config-001 -> resolve
  * CID:config-002 -> default_config_path
+ * CID:config-003 -> resolve_real
  *
  * Quick lookup: rg -n "CID:config-" crates/cli-adapter/src/config.rs
  */
 
-#![allow(dead_code)]
-
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -69,6 +66,26 @@ const ENV_TOKEN: &str = "PLATFORM_TOKEN";
 /// Default config file: `<OS config dir>/platform/config.toml`.
 pub fn default_config_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("platform").join("config.toml"))
+}
+
+// CID:config-003 - resolve_real
+// Purpose: binary wiring — OS env vars, stdin TTY probe, real prompts,
+// perms warning to stderr. Tests keep using the seam version `resolve`.
+pub fn resolve_real(cli: &CliOverrides) -> Result<Config, ConfigError> {
+    let env_get = |k: &str| std::env::var(k).ok();
+    let tty = std::io::stdin().is_terminal();
+    let mut warn = |m: &str| eprintln!("warning: {m}");
+    let mut pl = real_prompt_line;
+    let mut ps = real_prompt_secret;
+    resolve(
+        cli,
+        default_config_path(),
+        env_get,
+        tty,
+        &mut warn,
+        &mut pl,
+        &mut ps,
+    )
 }
 
 /// Resolve configuration with precedence flag > env > TOML > TTY prompt.

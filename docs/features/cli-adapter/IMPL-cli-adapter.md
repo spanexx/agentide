@@ -86,7 +86,8 @@ edition 2021.
       id/status/created, plugins id/version/status), status/health key:value,
       invoke pretty vs compact, `--json` (force non-TTY) path, missing fields
       render dash, string cells unquoted.
-- [ ] Manual: `platform capabilities | cat` renders compact (piped).
+- [x] Manual: `platform capabilities | cat` renders compact (piped); TTY renders
+      table (name/version/tier), status/health key:value, invoke pretty JSON.
 
 **Blocked by:** Phase 3 (output consumed in client)
 
@@ -99,9 +100,14 @@ edition 2021.
   unknown subcommand / missing subcommand → usage error exit 2.
 
 **Verify:**
-- [ ] Unit tests: alias mapping table, flag parsing, `--args` passed through verbatim
-      (the shell strips quotes; no client-side stripping — a literal leading/trailing
-      quote pair in the payload is DATA, never stripped), unknown subcommand → exit 2.
+- [x] Unit tests: alias mapping table, flag parsing (any order, value flags do not
+      swallow the next flag), `--args` passed through verbatim (serde_json parse,
+      no client-side quote stripping — a literal quote pair is DATA, never stripped;
+      unparseable → None), view selection (alias tables, status/health kv, invoke JSON).
+- [x] Manual smoke against scripted mock (`examples/mock_wire.rs`): capabilities table
+      on TTY + compact piped, sessions `--json` compact, status/health key:value,
+      `invoke` with `--args` round-trips input verbatim, deny → `error: CODE — msg`
+      exit 1, unknown subcommand → usage exit 2, connect refused → exit 2.
 
 **Blocked by:** Phase 4
 
