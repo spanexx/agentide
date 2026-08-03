@@ -82,7 +82,10 @@ edition 2021.
   JSON; piped stdout or `--json` → compact JSON. `std::io::IsTerminal` on stdout.
 
 **Verify:**
-- [ ] Unit tests: each table shape, pretty vs compact, `--json` override.
+- [x] Unit tests: each table shape (capabilities name/version/tier, sessions
+      id/status/created, plugins id/version/status), status/health key:value,
+      invoke pretty vs compact, `--json` (force non-TTY) path, missing fields
+      render dash, string cells unquoted.
 - [ ] Manual: `platform capabilities | cat` renders compact (piped).
 
 **Blocked by:** Phase 3 (output consumed in client)
