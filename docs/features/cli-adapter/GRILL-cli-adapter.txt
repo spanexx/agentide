@@ -1,0 +1,228 @@
+cli-adapter — Grill Notes
+
+Status: Phase 0 grilling complete (wayfinder charting — destination locked;
+Q1 + Q2 closed; Q3/Q4/Q5 locked autonomously under user delegation).
+Date: 2026-08-03.
+Source: scripts/backlog/cli-adapter.js BI[23]; docs/architecture/Agentide.md
+Section 8; docs/architecture/Platform_Capabilities.md Section "CLI";
+docs/architecture/Terminology.md (Adapter); docs/architecture/Goals.md
+("Protocol-level: Adapters"); docs/wayfinder/websocket-adapter/ (the only door).
+
+What this feature is about
+
+- BI[23] Tier 3 entry points: "CLI for terminal interactions," `depts: [5]`
+  (gateway-core only), priority p2, status not-started. Source: Agentide § 8.
+- Agentide § 8 lists CLI Adapter under Adapters, paired with MCP / REST /
+  WebSocket. Adapters contain no business logic (Terminology.md:357-364).
+- Platform_Capabilities.md § CLI (line 595-609) lists `plugin.install`,
+  `plugin.list`, `gateway.status` — admin tooling; "not a customer-facing
+  CLI command" in hosted deployments.
+- The existing `agentide` operator CLI in `packages/agentide/src/cli.ts`
+  (init|status|tenant|token|capability|plugin) is in-process: spins up the
+  platform locally per invocation. Bootstrap tool, not a client. Out of scope.
+- Dashboard Q2/Q3 locks: websocket adapter is the only door. Websocket-adapter
+  map (charted in parallel, all tickets closed) explicitly names CLI as a
+  supported client (adapters/tickets/adapter-scope-vs-mcp.md:176). CLI auth
+  is origin-binding-blind (no Origin header).
+
+Questions and answers locked so far
+
+---
+
+## Q1 (2026-08-03, Q1 ticket — destination, transport, language, write scope;
+autonomous lock under user delegation)
+
+Q. Where does the cli-adapter sit in the platform's adapter hierarchy, and what
+   four sub-decisions follow (transport, language, write scope, backlog deps)?
+A. Four sub-decisions locked:
+   1. Transport = remote client over the websocket adapter. The websocket
+      adapter is the only door (locked dashboard Q2/Q3 and websocket-adapter
+      map W1–W6). A remote CLI connects inbound, sends `auth` then `invoke`
+      (and optionally `subscribe` for `--watch`). Reuses the same wire
+      envelope the dashboard will use — no new protocol, no backdoor. The
+      existing `agentide` operator CLI (in-process bootstrap) stays separate:
+      different role, different surface.
+   2. Language = Rust. Static binary, single file, no Node runtime — right
+      tool for a terminal client. Aligns with PHILOSOPHY "Everything is
+      Replaceable" + "Interfaces Are Forever": the wire contract is the
+      interface, the language is replaceable. Kernel stays TS/boring;
+      adapter is pure protocol translator at the edge. Sets precedent for
+      BI[22] `platform-sdk-rust` (same wire, share a serde crate later — out
+      of v1).
+   3. Write scope = reads AND writes in v1. The CLI is the admin's tool per
+      both doc sources (§ 8 developer + Platform_Capabilities.md admin). The
+      capability layer already authz-gates writes — no client-side guard
+      rail needed. Platform_Capabilities.md's `plugin.install` example IS a
+      write — supporting only reads would cut the spec's own example.
+   4. Backlog `depts` = `[5, 24]` (gateway-core + websocket-adapter).
+      websocket-adapter is the only door; cli-adapter cannot ship without
+      it. Updated in `scripts/backlog/cli-adapter.js:6`.
+Why: the websocket adapter's own chart names "any client (CLI, Node service,
+     browser app) can use invoke over the same socket" — the CLI rides that
+     intent, not a new door. Rust is the right edge tool (philosophy-aligned,
+     static binary). The CLI is the admin's tool — its doc examples already
+     include writes (`plugin.install`); read-only would mismatch the spec.
+     Backlog deps had to update because the WS adapter is a hard prerequisite
+     for any remote client.
+Source: user locks (autonomous); verified against code (`agentide/src/cli.ts`
+     operator surface; `gateway-core/src/types.ts:168` Adapter interface);
+     PHILOSOPHY.md lines 30-46 ("Everything is Replaceable", "Interfaces
+     Are Forever"); docs/wayfinder/websocket-adapter/tickets/adapter-scope-vs-
+     mcp.md:176 (CLI anticipated); docs/wayfinder/websocket-adapter/tickets/
+     auth-handshake.md:351 (CLI origin-binding-blind).
+Status: locked. (Q1 ticket closed; map "Decisions so far" entry posted;
+     CONTEXT.md Decisions Log entry; `scripts/backlog/cli-adapter.js`
+     `depts` updated.)
+
+---
+
+## Q2 (2026-08-03, Q2 ticket — command surface; autonomous lock under
+user delegation)
+
+Q. What commands does the Rust CLI expose in v1?
+A. One generic `invoke` + ergonomic aliases for the common admin calls.
+   Underlying shape:
+     `platform invoke <capability> [--args '<json>'] [--session <id>]`
+   Maps 1:1 to the locked wire `{type:"invoke", name: <capability>, input,
+   sessionId?, mode:"call"}` — wire key is `name` per adapter W4. Reaches
+   every capability — current and future — with no CLI code changes.
+   v1 aliases (locked):
+     | Alias | Maps to | Why |
+     |-------|---------|-----|
+     | `platform capabilities` | `capability.list` | § 8 example |
+     | `platform sessions` | `session.list` | § 8 example |
+     | `platform plugins` | `plugin.list` | § 8 example |
+     | `platform status` | `gateway.status` | Platform_Capabilities.md § CLI |
+     | `platform health` | `system.health` | § 14 Runtime Health view |
+   Aliases accept the same `--session`, `--args`, `--json`, `--watch` flags.
+   Out of v1 aliases (deferred): `platform browser` (no obvious single-arg
+   default), `platform install <plugin-id>` (write, needs careful UX).
+Why: the platform's interaction model is "everything accessed through
+     capabilities." A generic `invoke` is the true adapter shape — no
+     business logic, just protocol translation. Aliases keep § 8's spirit
+     (memorable words) without freezing a list. v1 aliases cover all the
+     docs' examples + one addition (`health`).
+Source: user lock; verified against docs (Agentide § 8 list;
+     Platform_Capabilities.md § CLI list); websocket-adapter map (wire
+     envelope + invoke shape).
+Status: locked. (Q2 ticket closed; map "Decisions so far" entry posted.)
+
+---
+
+## Q3 (2026-08-03, Q3 ticket — connection/config UX; autonomous lock under
+user delegation)
+
+Q. How does the user tell the Rust CLI where the gateway is and which token
+   to use?
+A. Precedence: `--url`/`--token` flags > `PLATFORM_GATEWAY_URL` /
+   `PLATFORM_TOKEN` env > TOML config file > interactive prompt (TTY only).
+   Config: `<OS-config-dir>/platform/config.toml` (via `dirs` crate —
+   `~/.config` Linux, `~/Library/Application Support` macOS, `%APPDATA%`
+   Windows); v1 schema is `gateway_url` + `token` ONLY; unknown keys ignored
+   (forward-compatible with future `[profiles]`). Token: literal JWT OR
+   `path:/...` indirection in ANY source (flag, env, config field) — the
+   resolver reads the file, trims, uses contents as bearer. Config perms
+   looser than 0600 → ONE stderr warning (suggest chmod 600), don't fail.
+   Prompt: only when stdin is a TTY AND nothing above is set; token prompt
+   is echo-free (`rpassword`); non-TTY + missing = exit 2 with a docs
+   pointer, never a hang. CLI surface: `platform [--url <ws://host:port/ws>]
+   [--token <jwt|path:/...>] [--config <path>] <subcommand>`. NO hardcoded
+   default URL in v1 — the adapter's port isn't locked yet (adapter
+   feature-pipeline in flight); hardcoding would race that decision and
+   bake a wrong default into an interface-forever binary.
+Why: standard precedence keeps CI friendly and per-invocation overrides
+     cheap; TOML is Rust-native (serde round-trips, comments allowed);
+     `path:` indirection keeps the literal out of argv/process listings
+     while staying optional (self-hosted admin's choice); no default URL
+     avoids a cross-map race with the in-flight adapter port decision
+     (delay-complexity + no-conflict rule); prompt-with-echo-free + TTY-only
+     matches the platform's security-by-default stance without lockout.
+Source: user delegation; verified against W2 sub-Q 4 (Node-bypass — CLI
+     sends no Origin), W4 envelope, `dirs` crate convention, existing
+     `agentide` operator CLI (token consumption, not minting),
+     PHILOSOPHY.md (delay-complexity, interfaces-forever).
+Status: locked. (Q3 ticket closed; map Decisions-so-far entry; CONTEXT.md
+     Decisions Log entry.)
+
+---
+
+## Q4 (2026-08-03, Q4 ticket — output, exit codes, `--watch`; autonomous lock
+under user delegation)
+
+Q. How does the binary print results, what exit code does the process return
+   on each outcome, and how does a user subscribe to live events?
+A. Output — TTY-aware defaults: aliases (`capabilities`/`sessions`/`plugins`/
+   `status`/`health`) print human tables when stdout is a TTY; generic
+   `invoke` prints pretty JSON; piped/non-TTY stdout = compact JSON
+   everywhere; `--json` forces compact JSON even in a TTY. Exit codes 0–5:
+   0 = `invoke.result`; 1 = any `invoke.error` (GATEWAY_* code passthrough
+   verbatim); 2 = pre-flight/connection (config missing, token unparseable,
+   connect refused, close 1009/1011, `subscribe.error`, `error` frame);
+   3 = TLS/upgrade failure; 4 = `auth.error` before `auth.ok` (close 1008,
+   covers all W2 auth codes except `origin mismatch` — CLI never sends
+   Origin); 5 = interrupted (Ctrl-C/SIGTERM). `--watch` on the 5 aliases
+   only: one connection — snapshot `invoke` (mode:"call") → subscribe on
+   the default topic → stream `event` frames as NDJSON (envelope verbatim)
+   until Ctrl-C (exit 5). Default topics: `sessions`→`session.*`,
+   `plugins`→`plugin.*`, `capabilities`→`capability.*`, `status`/`health`→
+   `gateway.*` (NOT `system.*` — no producers, D3 lock); `--topic <pattern>`
+   overrides. `stats.dropped > 0` → one stderr warning. NO watch reconnect
+   in v1 (drop = exit 2). `--stream` (mode:"stream") OUT of v1.
+Why: TTY-aware output is the kubectl pattern — humans get tables, scripts
+     get JSON, one `--json` escape hatch; exit 0–5 is deliberately flat
+     (the GATEWAY_* code already travels in the JSON output — a per-code
+     exit vocabulary is delay-complexity; interfaces-forever: 0–5 is
+     stable); watch-on-aliases keeps the wire as locked (invoke + subscribe
+     same socket, W1/W3); `system.*` avoided per D3 (no producers); no
+     reconnect = short-lived admin tool, not a long-lived UI (dashboard
+     owns that pattern).
+Source: user delegation; verified against W4 (invoke.error passthrough,
+     close codes 1008/1009/1011, `stats` frame), W3 (subscribe/event
+     shapes), D3 (system.* has no producers; gateway.* topics exist),
+     `packages/errors/src/index.ts:36-55` (18 GATEWAY_* codes),
+     PHILOSOPHY.md (delay-complexity, nothing-is-special).
+Status: locked. (Q4 ticket closed; map Decisions-so-far entry; CONTEXT.md
+     Decisions Log entry.)
+
+---
+
+## Q5 (2026-08-03, Q5 ticket — repo integration; autonomous lock under
+user delegation)
+
+Q. Where does the Rust crate live in this pnpm/TS monorepo, and how do the
+   repo's checks (precommit, CI) cover it?
+A. Crate at `agentide/crates/cli-adapter/` — a NEW top-level `crates/` dir
+   beside `packages/` (pnpm workspace only scans `packages/*`, so no
+   mis-detection; cargo workspace ready for future `platform-sdk-rust`
+   BI[22]). Cargo package `cli-adapter`, `[[bin]] name = "platform"`.
+   New `scripts/precommit-rust.sh`: cargo missing → warn + exit 0 (TS-only
+   devs unaffected); else `cargo fmt --check && cargo clippy --all-targets
+   -- -D warnings && cargo test` in the crate dir. Chained into `precommit`
+   AFTER `npm run build`. NO CI workflow in v1 (repo has none for the TS
+   side either; GitHub Actions + Rust toolchain + artifacts land with the
+   distribution decision in future.md). `cargo build --release` NOT in
+   precommit (slow; artifact is a release-time concern).
+Why: `crates/` top-level keeps TS and Rust cleanly separated and pnpm-safe;
+     precommit-rust skips gracefully without the toolchain (don't break
+     TS-only contributors) but fails hard on real check failures; no CI
+     workflow matches repo status quo — precommit is the gate.
+Source: user delegation; verified against `agentide/package.json:11`
+     (precommit chain), `pnpm-workspace.yaml` (packages/* glob), GRILL
+     notes ("outside the npm workspaces" intent — example path superseded),
+     Q1 lock (binary name `platform`).
+Status: locked. (Q5 ticket closed; map Decisions-so-far entry.)
+
+---
+
+## Notes for the implementation session
+
+- `delivery: feature-pipeline` (full pack, per map's **Destination** section).
+- CLI lives in a Rust crate at `crates/cli-adapter/` — OUTSIDE the npm
+  workspaces (Q5 lock; supersedes the earlier `packages/cli-adapter/`
+  placeholder). Pre-commit extends with `precommit-rust.sh` (`cargo fmt
+  --check` / `cargo clippy` / `cargo test`).
+- Reuses the websocket-adapter wire verbatim — no re-grilling on adapter
+  questions. If a wire question reopens, update both maps and log drift.
+- Backlog `depts` updated `[5] → [5, 24]` in this charting pass; Q1–Q5 all
+  locked 2026-08-03. Feature Backlog.md row 23 added with the locked
+  destination summary.
