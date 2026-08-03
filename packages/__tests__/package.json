@@ -1,0 +1,28 @@
+{
+  "name": "@platform/__tests__",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cross-language integration tests for Agentide — vitest suite that drives the real `platform` binary against the real `@platform/adapter-websocket` + `@platform/gateway-core` factory. Exists outside `packages/*/src/**` so it does not pollute any single package's source tree.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit --pretty"
+  },
+  "dependencies": {
+    "@platform/adapter-websocket": "workspace:*",
+    "@platform/event-bus": "workspace:*",
+    "@platform/gateway-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "eslint": "^10.8.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "ws": "^8.18.0"
+  }
+}

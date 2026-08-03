@@ -24,6 +24,43 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.1.5(@types/node@22.20.1)(yaml@2.9.0))
 
+  packages/__tests__:
+    dependencies:
+      '@platform/adapter-websocket':
+        specifier: workspace:*
+        version: link:../adapter-websocket
+      '@platform/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@platform/gateway-core':
+        specifier: workspace:*
+        version: link:../gateway-core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      '@types/ws':
+        specifier: ^8.5.13
+        version: 8.18.1
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^8.65.0
+        version: 8.65.0(@typescript-eslint/parser@8.65.0(eslint@10.8.0)(typescript@5.9.3))(eslint@10.8.0)(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^8.65.0
+        version: 8.65.0(eslint@10.8.0)(typescript@5.9.3)
+      eslint:
+        specifier: ^10.8.0
+        version: 10.8.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.1.5(@types/node@22.20.1)(yaml@2.9.0))
+      ws:
+        specifier: ^8.18.0
+        version: 8.21.1
+
   packages/adapter-mcp:
     dependencies:
       '@modelcontextprotocol/sdk':

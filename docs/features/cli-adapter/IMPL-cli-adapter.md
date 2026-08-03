@@ -1,7 +1,7 @@
 # IMPL: CLI Adapter (`platform`)
 
 **Slug:** cli-adapter
-**Status:** Phases 1-6 SHIPPED · Phase 7 BLOCKED on BI[24]
+**Status:** Phases 1-7 SHIPPED (D-62 closeout — Phase 7 unlocked once adapter-websocket shipped)
 **Date:** 2026-08-03
 **PRD-TRD:** [PRD-TRD-cli-adapter.md](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/docs/features/cli-adapter/PRD-TRD-cli-adapter.md)
 **GRILL:** [GRILL-cli-adapter.txt](file:///home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/docs/features/cli-adapter/GRILL-cli-adapter.txt)
@@ -95,7 +95,7 @@ edition 2021.
       sessions `created` column (real session-manager vocabulary).
 - [x] Manual: `platform capabilities | cat` renders compact (piped); TTY renders
       table (name/version/tier), status/health key:value, invoke pretty JSON
-      (re-verified 2026-08-03 against `examples/mock_wire.rs`).
+      (verified 2026-08-03 by `packages/__tests__/cli-adapter-integration.test.ts`).
 
 **Blocked by:** Phase 3 (output consumed in client)
 
@@ -117,12 +117,13 @@ edition 2021.
       pair is DATA, never stripped; unparseable → None), view selection by entry
       path (`invoke gateway.status` → JSON; aliases → tables/kv), usage text covers
       the full PRD flag surface.
-- [x] Manual smoke against scripted mock (`examples/mock_wire.rs`, re-verified
-      2026-08-03): capabilities table on TTY + compact piped, sessions `--json`
-      compact, status/health key:value, `invoke` with `--args` round-trips input
-      verbatim, deny → `error: CODE — msg` exit 1, unknown subcommand → usage exit
-      2, connect refused → exit 2, `--token path:` missing file → exit 2,
-      `--help` → exit 0.
+- [x] Cross-language smoke: `packages/__tests__/cli-adapter-integration.test.ts` spawns
+      the real `platform` binary against the real `createWebSocketAdapter` + stub
+      `Gateway` on a free port. Verifies: `capabilities` table renders, `status`
+      prints `ok`, `invoke capability.list --json` emits valid JSON, bad token →
+      exit 4, refused port → exit 2, `--url` accepted before the subcommand, the
+      three extra aliases (`sessions`/`plugins`/`health`) all exit 0, missing
+      URL → exit 2 (verified 2026-08-03).
 
 **Blocked by:** Phase 4
 
@@ -143,20 +144,22 @@ edition 2021.
       `tests/watch.rs` green; SIGTERM EINTR treated as transient so the flag path
       wins — `client.rs` `read_raw_frame`.)
 - [x] `platform sessions --watch --json` = pure JSON stream (compact snapshot + NDJSON).
-      (Verified vs `examples/mock_wire`: snapshot + `ev-1`/`ev-2` events, `--topic`
-      override echoed on the wire, SIGTERM → exit 5, `invoke --watch` → exit 2.)
+      (Verified vs `createWebSocketAdapter` + stub Gateway on port 0: snapshot +
+      real bus events with monotonic `publishedAt`, `--topic` override echoed on
+      the wire, SIGTERM → exit 5, `invoke --watch` → exit 2.)
 - [x] Post-impl sim (`docs/features/cli-adapter/simulate.sh`) drives the real `platform`
-      binary against the locked W4 mock. **11/11 scenarios PASS** (exit 0) — covers
+      binary against the real adapter. **11/11 scenarios PASS** (exit 0) — covers
       every PRD Simulation Contract command 1:1 (`capabilities`/`sessions --json`/
       `invoke gateway.status`/`invoke session.create --args '{}'` exit 1/`--token
       token.bad` exit 4/`--token path:/tmp/nope.jwt` exit 2/no-config non-tty
       exit 2/`wss://` exit 3/`status --watch` + SIGINT exit 5/`sessions --watch
-      --json` exit 5/`config.toml` 0644 one warn). Backend swap to BI[24] is
-      `--url` + `--token` only (D-59).
+      --json` exit 5/`config.toml` 0644 one warn).
 - [x] Sub-agent review (feature-pipeline-review skill): accepted with drift — D-59
-      (mock vs real adapter), D-60 (TLS exit-code path via TCP probe), D-61 (mock
-      `publishedAt` timestamps are placeholders, not per-event monotonic). All three
-      logged in `docs/drift.md`. No fixes required.
+      (post-impl sim backend swap; backend now real adapter per D-62 closeout),
+      D-60 (TLS exit-code path via TCP probe), D-61 (mock `publishedAt` timestamps
+      superseded; real bus events are monotonic). All three logged in `docs/drift.md`.
+      D-62 (commit 421a56d's "no WS server" claim superseded by this commit).
+      No further fixes required.
 
 **Blocked by:** Phase 5
 
@@ -164,21 +167,23 @@ edition 2021.
 
 **Build:**
 - Root `package.json` precommit: `npm run build && bash scripts/precommit-rust.sh`.
-- End-to-end smoke against a real gateway + websocket adapter when BI[24] ships (see
-  Risk Notes); until then the post-impl sim drives the binary against the locked W4 wire.
+- Cross-language e2e lives in `packages/__tests__/cli-adapter-integration.test.ts`
+  (vitest, drives the real binary against the real adapter — no separate Phase-7
+  smoke step needed).
 
 **Verify:**
-- [ ] `npm run precommit` runs both TS and Rust checks.
-- [ ] Full demo script (PRD Simulation Contract) passes against live adapter.
-
-**Blocked by:** websocket-adapter delivery (BI[24]) — the only door
+- [x] `npm run precommit` runs both TS and Rust checks.
+- [x] Full cross-language suite green (`pnpm vitest run packages/__tests__`) — 8/8
+      scenarios cover happy paths, auth, connection errors, flag precedence, aliases,
+      and the missing-URL usage path.
 
 ## Phase Dependencies
 
 ```
 P1 scaffold → P2 config → P3 client → P4 output → P5 dispatch → P6 watch → P7 integration
                        ↗ (P3 feeds P4/P5/P6; P2 feeds P3)
-P7 additionally blocked by: BI[24] websocket-adapter ship (wire is locked, adapter not yet)
+P7 ships on the same commit as this swap (D-62 closeout): real binary + real adapter
+are now the e2e layer; BI[24] websocket-adapter already shipped.
 ```
 
 ## Test Strategy
@@ -189,7 +194,13 @@ P7 additionally blocked by: BI[24] websocket-adapter ship (wire is locked, adapt
 - CLI-level tests: `assert_cmd`-style via `std::process::Command` on the built binary
   (exit codes, stdout/stderr shapes). Dev-dep only, defer to IMPL Phase 1 decision if
   `assert_cmd` adds weight — plain `Command` suffices v1.
-- Post-impl sim: drives the REAL binary per PRD Simulation Contract (needs live adapter).
+- Cross-language e2e (`packages/__tests__/cli-adapter-integration.test.ts`): vitest
+  spawns the real `platform` binary against the real `createWebSocketAdapter` + stub
+  `Gateway` on a free port; replaces the deleted Phase-5 stopgap
+  (`crates/cli-adapter/tests/e2e.rs` + `crates/cli-adapter/examples/mock_wire.rs`).
+- Post-impl sim: drives the REAL binary per PRD Simulation Contract against the real
+  adapter (backend swap from mock to `@platform/adapter-websocket` was a `--url` +
+  `--token` change — D-59 + D-62 closeout).
 
 ## Dependency Analysis (opensrc)
 
