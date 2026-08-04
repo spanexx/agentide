@@ -30,10 +30,10 @@ echo "[prepare-publish] dependencies emptied for bundled CLI."
 echo "[prepare-publish] Installing dev deps..."
 pnpm install --prod=false --ignore-scripts 2>&1 | tail -3 || true
 
-# 3. Build the bundle if missing or stale.
-if [ ! -f dist/bin.bundled.cjs ] || [ src/bin.ts -nt dist/bin.bundled.cjs ]; then
-  echo "[prepare-publish] Building bundle..."
-  pnpm run bundle
-fi
+# 3. Build the bundle — ALWAYS. The mtime check on src/bin.ts alone misses
+# changes in cli.ts/start.ts/lifecycle.ts etc., which silently ships a stale
+# bundle (the 0.0.3-in-0.0.5 bug). Rebuild unconditionally on publish.
+echo "[prepare-publish] Building bundle..."
+pnpm run bundle
 
 echo "[prepare-publish] Ready to publish."
