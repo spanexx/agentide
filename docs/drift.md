@@ -1,9 +1,9 @@
 # Drift Log
-**Last updated:** 2026-08-03  **Open:** 10  **Resolved:** 43  **Critical/High:** 2
+**Last updated:** 2026-08-03  **Open:** 9  **Resolved:** 44  **Critical/High:** 2
 
 ## Open
 
-- **D-65** (Low, 2026-08-03, reporter: agentide-cli-consumer drift review) — PRD-TRD-agentide-cli-consumer.md Scenario 4 ("invoke with arguments") locks the wire frame as `{type:"invoke", correlationId, name, input?, sessionId?, mode:"call"}` where `input?` is marked optional. The CLI's WS client (packages/adapter-websocket/src/client.ts, line ~252) omits `input` entirely when no `--args` is supplied, rather than sending `input: {}`. The drift reviewer flagged this as a gap; on re-read of the spec the omission is permitted by `input?` (optional). No code change. Doc clarification: S4 lock should be explicit that "input omitted from the wire" is equivalent to "input: {}" at the gateway. To fix: update PRD-TRD Scenario 4 with a sentence clarifying optional-input semantics.
+- **D-65** (Low, 2026-08-03, reporter: agentide-cli-consumer drift review) — PRD-TRD-agentide-cli-consumer.md Scenario 4 wire frame lock (`input?` optional) was ambiguous about whether the CLI should omit the field entirely or send `input: {}`. The CLI omits when empty (DRIFT: client.ts); the gateway treats omission and explicit-empty equivalently. Resolved by adding an explicit sentence to Scenario 4: "*`input?` and `sessionId?` are optional — the CLI omits a field from the wire entirely when not supplied (rather than sending `null` or `{}`); the gateway treats both 'field omitted' and 'field: undefined' as the same value (defaults applied at dispatch).*" Doc-only fix in `docs/features/agentide-cli-consumer/PRD-TRD-agentide-cli-consumer.md` Scenario 4. No code change.
 
 - **D-50** (High, 2026-08-03, reporter: dashboard-core D4 resolution) — Origin-bound browser tokens cannot be minted: the `expectedOrigins` claim is never issued.
   - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — "every browser SDK token MUST carry a signed `expectedOrigins` claim; `auth.token.issue` CLI gains `--kind browser` + `--origin` / `--origins` flags" (`docs/features/sdk-browser/GRILL-sdk-browser.txt:223-230`); adapter-websocket W2 sub-Q 4 (closed 2026-08-03) locks enforcement — browser `Origin` present → claim REQUIRED, exact match, deny-by-default, mismatch → `auth.error "origin mismatch"` → close 1008.
@@ -84,6 +84,8 @@
 ---
 
 ## Resolved
+
+- **D-65** (Low, 2026-08-03, reporter: agentide-cli-consumer drift review) — PRD-TRD-agentide-cli-consumer.md Scenario 4 wire frame lock (`input?` optional) was ambiguous about whether the CLI should omit the field entirely or send `input: {}`. The CLI omits when empty (DRIFT: client.ts); the gateway treats omission and explicit-empty equivalently. Resolved by adding an explicit sentence to Scenario 4: "*`input?` and `sessionId?` are optional — the CLI omits a field from the wire entirely when not supplied (rather than sending `null` or `{}`); the gateway treats both 'field omitted' and 'field: undefined' as the same value (defaults applied at dispatch).*" Doc-only fix in `docs/features/agentide-cli-consumer/PRD-TRD-agentide-cli-consumer.md` Scenario 4. No code change.
 
 - **D-66** (Low, 2026-08-03, reporter: agentide-cli-consumer drift review) — Invoke frames from `createWsClient` omitted the `mode` field, while PRD S4 Scenario 4 locks `mode:"call"|"stream"` in the wire frame. Server normalized the missing field to `call`, so v1 behavior was unchanged, but the wire contract drifted from the spec. Fix: `packages/adapter-websocket/src/client.ts` now emits `mode: "call"` explicitly on every invoke frame. Confirmed by 168/168 passing tests on `@platform/agentide` + `@platform/adapter-websocket` after the fix.
 - **D-67** (Low, 2026-08-03, reporter: agentide-cli-consumer drift review) — Unknown top-level command exited 1 (`cli.ts:153` and the catch-all `cli.ts:157`) instead of the S5 lock's "usage → 2". Fix: changed both to `exitCode: 2` to match S5. Live-verified: `agentide nonsense-command` now exits 2 with the help text on stderr.

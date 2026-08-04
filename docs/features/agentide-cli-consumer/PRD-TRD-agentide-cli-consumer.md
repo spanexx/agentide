@@ -62,6 +62,8 @@ aliases are additive — no alias is removed without a preceding deprecation not
 - `invoke.result` → output (exit 0)
 - `invoke.error` → `error: <code> — <message>` with the gateway's code passed through verbatim (no third vocabulary), exit 1
 
+`input?` and `sessionId?` are optional — the CLI omits a field from the wire entirely when not supplied (rather than sending `null` or `{}`); the gateway treats both "field omitted" and "field: undefined" as the same value (defaults applied at dispatch).
+
 `--mode stream` is reserved for v2 (kernel-level streaming); v1 only supports `call`. passing `--mode stream` is a no-op flag in v1 (warning printed, behavior is `call`).
 
 ### Scenario 5: Exit codes
