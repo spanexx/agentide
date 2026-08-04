@@ -1,5 +1,5 @@
-import type { EventBus } from "@platform/event-bus";
-import type { CapabilityTier } from "@platform/capability-registry";
+import type { EventBus } from "@spanexx/event-bus";
+import type { CapabilityTier } from "@spanexx/capability-registry";
 export type PluginType = "runtime" | "service" | "developer";
 /**
  * One entry in a plugin manifest's `capabilities` list.

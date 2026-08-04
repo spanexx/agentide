@@ -11,16 +11,16 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { createEventBus, type EventBus } from "@platform/event-bus";
-import { createCapabilityRegistry, type CapabilityRegistry } from "@platform/capability-registry";
-import { createSessionManager, type SessionManager } from "@platform/session-manager";
+import { createEventBus, type EventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry, type CapabilityRegistry } from "@spanexx/capability-registry";
+import { createSessionManager, type SessionManager } from "@spanexx/session-manager";
 import {
   ERROR_CODES as PM_ERROR_CODES,
   PluginManagerError,
   type InstallRecord,
   type PluginManager,
   type YamlValue,
-} from "@platform/plugin-manager";
+} from "@spanexx/plugin-manager";
 import {
   ERROR_CODES,
   GatewayError,

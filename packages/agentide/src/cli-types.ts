@@ -3,7 +3,7 @@
 // discovery/issues: the second argument to runCli is optional — when omitted, we use the node FS seam built into createPlatform().
 // Uses: types
 // Used by: tests + cli-002 -> runCli
-import type { FileSystem } from "@platform/gateway-core";
+import type { FileSystem } from "@spanexx/gateway-core";
 
 export interface CliOptions {
   readonly fs: FileSystem;

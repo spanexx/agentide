@@ -11,7 +11,7 @@
  * into its value — the zero-code path for "leave a note" style caps.
  */
 
-import type { BackendValue } from "@platform/backend-runtime";
+import type { BackendValue } from "@spanexx/backend-runtime";
 import type { InvocationDetail } from "./types.js";
 
 /**

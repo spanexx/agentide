@@ -1,5 +1,5 @@
 {
-  "name": "@platform/agentide",
+  "name": "@spanexx/agentide",
   "version": "0.0.0",
   "private": true,
   "description": "Meta-package composing Tier 1 components + gateway-core; ships the `agentide` CLI for operators.",
@@ -13,7 +13,7 @@
     }
   },
   "bin": {
-    "agentide": "./dist/cli.js"
+    "agentide": "./dist/bin.js"
   },
   "files": [
     "dist",
@@ -28,17 +28,16 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/adapter-mcp": "workspace:*",
-    "@platform/adapter-websocket": "workspace:*",
-    "@platform/backend-runtime": "workspace:*",
-    "@platform/capability-registry": "workspace:*",
-    "@platform/event-bus": "workspace:*",
-    "@platform/gateway-core": "workspace:*",
-    "@platform/plugin-manager": "workspace:*",
-    "@platform/session-manager": "workspace:*"
+    "@spanexx/adapter-mcp": "workspace:*",
+    "@spanexx/adapter-websocket": "workspace:*",
+    "@spanexx/backend-runtime": "workspace:*",
+    "@spanexx/capability-registry": "workspace:*",
+    "@spanexx/event-bus": "workspace:*",
+    "@spanexx/gateway-core": "workspace:*",
+    "@spanexx/plugin-manager": "workspace:*",
+    "@spanexx/session-manager": "workspace:*"
   },
   "devDependencies": {
-    "@platform/sdk-browser": "workspace:*",
     "@types/node": "^22.10.0",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.65.0",
@@ -47,6 +46,7 @@
     "jsdom": "^30.0.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "@spanexx/sdk-browser": "workspace:*"
   }
 }

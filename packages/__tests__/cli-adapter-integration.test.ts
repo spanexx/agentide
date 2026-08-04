@@ -21,18 +21,18 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { createEventBus, type EventBus } from "@platform/event-bus";
+import { createEventBus, type EventBus } from "@spanexx/event-bus";
 import {
   issueToken,
   type CanonicalInvocation,
   type CanonicalResponse,
   type Clock,
   type Gateway,
-} from "@platform/gateway-core";
+} from "@spanexx/gateway-core";
 import {
   createWebSocketAdapter,
   type WebSocketAdapter,
-} from "@platform/adapter-websocket";
+} from "@spanexx/adapter-websocket";
 
 const SECRET = new TextEncoder().encode("integration-test-secret");
 const BINARY = resolve(

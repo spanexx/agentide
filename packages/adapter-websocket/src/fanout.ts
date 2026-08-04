@@ -19,8 +19,8 @@ import {
   type EventBus,
   type PlatformEvent,
   type Subscription,
-} from "@platform/event-bus";
-import { checkAuthz, type TokenClaims, type YamlValue } from "@platform/gateway-core";
+} from "@spanexx/event-bus";
+import { checkAuthz, type TokenClaims, type YamlValue } from "@spanexx/gateway-core";
 import type { ConnectionRecord, EventFrame } from "./types.js";
 import { enqueueFrame, type QueueOptions } from "./queue.js";
 

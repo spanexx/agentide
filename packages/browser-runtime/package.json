@@ -1,8 +1,8 @@
 {
-  "name": "@platform/browser-runtime",
+  "name": "@spanexx/browser-runtime",
   "version": "0.0.0",
   "private": true,
-  "description": "Browser Runtime plugin — drives a real Chromium via Playwright on behalf of an agent session: launch/close browser, open/list/close tabs, navigate, click, type, scroll, wait, screenshot, query.",
+  "description": "Browser Runtime plugin \u2014 drives a real Chromium via Playwright on behalf of an agent session: launch/close browser, open/list/close tabs, navigate, click, type, scroll, wait, screenshot, query.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

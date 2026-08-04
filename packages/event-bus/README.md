@@ -1,73 +1,38 @@
-# @platform/event-bus
+# @spanexx/event-bus
 
-In-process pub/sub event bus for Agentide platform components.
+In-process pub/sub for Agentide components. Custom (not EventEmitter) — sync dispatch in subscription order, async handlers run via `Promise.allSettled`, one failing handler never blocks others. Wildcard patterns: `*` as final segment matches any depth (`browser.*` matches `browser.page.loaded`); bare `*` matches everything.
 
-Replaces direct cross-component references between Control Plane, Execution
-Plane, Runtimes, and Plugins so any one component can be replaced, restarted,
-or held back without unblocking the rest. Events are immutable facts; handlers
-run in deterministic subscription order; one misbehaving handler never silently
-breaks the others.
+## install
 
-## Install
-
-This package lives inside the Agentide workspace and is consumed as a workspace
-dependency. No external runtime dependencies are added by this package.
-
-## Usage
-
-```ts
-import { createEventBus } from "@platform/event-bus";
-
-const bus = createEventBus();
-
-// Subscribe — exact name or prefix wildcard (`a.b.*` matches any depth).
-const sub = bus.subscribe("browser.*", (event) => {
-  console.log(event.name, event.id, event.publishedAt, event.payload);
-});
-
-// Publish — payload is shallowly frozen before dispatch.
-await bus.publish("browser.page.loaded", { url: "https://example.com", tabId: 7 });
-
-// Cleanup — caller owns the subscription handle.
-sub.unsubscribe();
+```bash
+npm install @spanexx/event-bus
 ```
 
-## Contract
+ESM-only. For CJS consumers (nest, most node apps), use `@spanexx/event-bus-cjs`.
 
-- `createEventBus()` returns an isolated bus instance. Two instances never see
-  each other's events.
-- Subscriptions receive events in registration order. `*` as a final segment
-  matches any remaining depth (prefix wildcard). A bare `*` matches every event.
-- Handlers may be sync or async. `publish()` resolves only after every invoked
-  async handler settles. A throwing or rejecting handler never stops later
-  handlers and never rejects the original `publish()`.
-- One failing handler emits exactly one internal `event.handler_failed` event
-  with `{ eventName, subscriberPattern, error: { message, stack? } }`.
-- Calling `subscription.unsubscribe()` removes the subscription from later
-  publishes. Unsubscribing from inside a handler does not change the in-flight
-  dispatch. Double-unsubscribe is safe (no-op).
-- Payloads are shallow-frozen before dispatch. TypeScript declarations mark
-  payload properties as `readonly` by convention.
-- The `event.*` namespace is reserved for the bus itself; external callers
-  attempting to publish into it are rejected.
+## usage
 
-## Public surface
+```typescript
+import { createEventBus } from '@spanexx/event-bus';
 
-| Export | Kind |
-|---|---|
-| `createEventBus` | factory |
-| `EventBus` | interface (`publish`, `subscribe`) |
-| `PlatformEvent` | interface (immutable event with id + publishedAt) |
-| `HandlerFailedPayload` | interface (payload of `event.handler_failed`) |
-| `EventHandler` | type (sync or async handler) |
-| `Subscription` | interface (unsubscribe handle) |
-| `RESERVED_INTERNAL_PREFIX` | constant (`"event."`) |
-| `matches` | function (pattern ↔ name wildcard matcher) |
+const bus = createEventBus();
+bus.subscribe('session.created', (e) => console.log('got', e));
+bus.subscribe('session.*', (e) => console.log('any session event'));
+bus.publish('session.created', { id: 'abc' });
+```
 
-## Design references
+## when you'll see it
 
-- PRD: [docs/features/event-bus/PRD-event-bus.md](../../docs/features/event-bus/PRD-event-bus.md)
-- TRD: [docs/features/event-bus/TRD-event-bus.md](../../docs/features/event-bus/TRD-event-bus.md)
-- FLOW: [docs/features/event-bus/FLOW-event-bus.md](../../docs/features/event-bus/FLOW-event-bus.md)
-- IMPL: [docs/features/event-bus/IMPL-event-bus.md](../../docs/features/event-bus/IMPL-event-bus.md)
-- Glossary: [docs/CONTEXT.md](../../docs/CONTEXT.md) → *Event / Event Bus*
+every component talks to siblings via this bus, not direct calls. `gateway.invocation` (audit), `sdk.connected` / `sdk.invoke.started` (sdk lifecycle), `session.*`, `plugin.*`, `capability.*` — all flow through it.
+
+## public surface
+
+- `createEventBus()` → `{ subscribe, unsubscribe, publish }`
+- `matches(pattern, eventName)` — wildcard matcher
+- `validatePattern(pattern)` — throws on malformed patterns like `br*wser.*`
+- `Subscription` handle with `.unsubscribe()`
+- `publishInternalEvent(bus, name, payload)` — bypasses the `event.*` reserved namespace guard (used by adapters to publish bus-internal events)
+
+## integration
+
+leaf — no internal deps. depended on by every other package that emits events (gateway-core, adapter-websocket, sdk-node, sdk-browser, session-manager, plugin-manager, capability-registry).

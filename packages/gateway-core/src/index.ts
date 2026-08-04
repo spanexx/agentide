@@ -1,12 +1,12 @@
 // Re-exports for the public surface of @platform/gateway-core.
 // Phases 1-7 progressively add more exports; this stays the single entry point.
 
-export type { BackendRuntime } from "@platform/backend-runtime";
+export type { BackendRuntime } from "@spanexx/backend-runtime";
 export * from "./types.js";
 export * from "./errors.js";
 export * from "./audit.js";
 export * from "./auth.js";
-export { originMatches } from "@platform/origin";
+export { originMatches } from "@spanexx/origin";
 export * from "./rate-limit.js";
 export * from "./tenant-store.js";
 export * from "./authz.js";

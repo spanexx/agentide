@@ -14,7 +14,7 @@
  * Quick lookup: rg -n "CID:manifest-" packages/plugin-manager/src/manifest.ts
  */
 
-import type { CapabilityTier } from "@platform/capability-registry";
+import type { CapabilityTier } from "@spanexx/capability-registry";
 import { ERROR_CODES, PluginManagerError } from "./errors.js";
 import type {
   ManifestCapability,

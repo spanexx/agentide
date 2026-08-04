@@ -27,7 +27,7 @@ import {
   CallToolResult,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { Gateway, YamlValue } from "@platform/gateway-core";
+import type { Gateway, YamlValue } from "@spanexx/gateway-core";
 import { callTool, getRequestCtx, listTools, META_SESSION_ID_KEY, validateMeta } from "./translate.js";
 import { startMcpHttpServer, type McpHttpServerHandle } from "./server.js";
 import type { McpAdapter, McpAdapterConfig } from "./types.js";

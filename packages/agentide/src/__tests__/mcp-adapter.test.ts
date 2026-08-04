@@ -16,8 +16,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { createPlatform, type Platform } from "../index.js";
-import type { FileSystem } from "@platform/gateway-core";
-import type { BackendValue } from "@platform/backend-runtime";
+import type { FileSystem } from "@spanexx/gateway-core";
+import type { BackendValue } from "@spanexx/backend-runtime";
 
 class InMemoryFs implements FileSystem {
   files = new Map<string, string>();

@@ -10,7 +10,7 @@
  * Quick lookup: rg -n "CID:invoke-" packages/adapter-websocket/src/invoke.ts
  */
 
-import type { Gateway, YamlValue } from "@platform/gateway-core";
+import type { Gateway, YamlValue } from "@spanexx/gateway-core";
 import type { ConnectionRecord, InvokeFrame, ServerFrame } from "./types.js";
 import { enqueueFrame, type QueueOptions } from "./queue.js";
 

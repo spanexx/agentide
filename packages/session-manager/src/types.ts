@@ -33,7 +33,7 @@
  * Quick lookup: rg -n "CID:types-" packages/session-manager/src/types.ts
  */
 
-import type { EventBus } from "@platform/event-bus";
+import type { EventBus } from "@spanexx/event-bus";
 
 // CID:types-001 - SessionStatus
 export type SessionStatus = "active" | "suspended" | "archived";

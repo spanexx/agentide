@@ -29,8 +29,8 @@
  * Quick lookup: rg -n "CID:types-" packages/plugin-manager/src/types.ts
  */
 
-import type { EventBus } from "@platform/event-bus";
-import type { CapabilityTier } from "@platform/capability-registry";
+import type { EventBus } from "@spanexx/event-bus";
+import type { CapabilityTier } from "@spanexx/capability-registry";
 
 // CID:types-001 - PluginType
 // Purpose: discriminator union — the top-level key in a manifest names the type

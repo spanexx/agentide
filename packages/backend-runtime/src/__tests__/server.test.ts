@@ -16,8 +16,8 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import WebSocket from "ws";
-import { createEventBus, type EventBus } from "@platform/event-bus";
-import { createCapabilityRegistry, type CapabilityRegistry } from "@platform/capability-registry";
+import { createEventBus, type EventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry, type CapabilityRegistry } from "@spanexx/capability-registry";
 import { createBackendRuntime } from "../index.js";
 import type { BackendRuntime, Clock } from "../types.js";
 import { secretFrom, mintToken } from "./jwt-helper.js";

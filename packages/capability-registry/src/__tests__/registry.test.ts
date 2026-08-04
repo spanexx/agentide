@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createEventBus } from "@platform/event-bus";
+import { createEventBus } from "@spanexx/event-bus";
 import { createCapabilityRegistry, type CapabilityRecord } from "../index.js";
 
 function cap(

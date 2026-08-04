@@ -9,7 +9,7 @@
  * CID:events-002 -> emitConnectionClosed
  */
 
-import type { EventBus } from "@platform/event-bus";
+import type { EventBus } from "@spanexx/event-bus";
 import type { ConnectionAcceptedPayload, ConnectionClosedPayload } from "./types.js";
 
 export async function emitConnectionAccepted(

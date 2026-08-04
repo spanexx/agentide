@@ -12,8 +12,8 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPlatform, type Platform } from "../index.js";
-import type { FileSystem, YamlValue } from "@platform/gateway-core";
-import { ERROR_CODES } from "@platform/gateway-core";
+import type { FileSystem, YamlValue } from "@spanexx/gateway-core";
+import { ERROR_CODES } from "@spanexx/gateway-core";
 
 class InMemoryFs implements FileSystem {
   files = new Map<string, string>();

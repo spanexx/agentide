@@ -9,7 +9,7 @@
  * block the SDK's hot path. Payload shapes mirror sdk-node's events.ts.
  */
 
-import type { BackendValue } from "@platform/backend-runtime";
+import type { BackendValue } from "@spanexx/backend-runtime";
 import type { EventBus } from "@spanexx/event-bus";
 
 // CID:events-001 - SdkConnectedPayload

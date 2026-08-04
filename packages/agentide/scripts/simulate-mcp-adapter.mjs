@@ -28,7 +28,7 @@
  *   covered in packages/adapter-mcp/src/__tests__/scenarios.test.ts instead.)
  */
 
-import { createPlatform } from "@platform/agentide";
+import { createPlatform } from "@spanexx/agentide";
 import { createHmac } from "node:crypto";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";

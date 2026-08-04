@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CanonicalInvocation, CanonicalResponse, Gateway } from "@platform/gateway-core";
+import type { CanonicalInvocation, CanonicalResponse, Gateway } from "@spanexx/gateway-core";
 import type { WebSocket as WSWebSocket } from "ws";
 import { ConnectionRegistry } from "../registry.js";
 import { invokeFrame, parseInvokeFrame, type InvokeOptions } from "../invoke.js";

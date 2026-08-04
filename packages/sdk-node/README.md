@@ -1,76 +1,46 @@
-# @platform/sdk-node
+# @spanexx/sdk-node
 
-Backend SDK for Agentide. Register business capabilities with the Gateway, execute handlers, emit events.
+Backend SDK. Register business capabilities with the gateway, execute handlers locally on inbound invocations, emit lifecycle events. Used by node apps (express, nest, fastify, koa, plain http) that want to expose their business logic as Agentide caps.
 
-## Install
+## install
 
 ```bash
-npm install @platform/sdk-node
+npm install @spanexx/sdk-node @spanexx/event-bus
 ```
 
-## Usage
+ESM-only. For CJS consumers (nest, most node apps), use `@spanexx/sdk-node-cjs` instead.
+
+## usage
 
 ```typescript
-import { createSdk } from "@platform/sdk-node";
+import { createSdk } from '@spanexx/sdk-node';
 
 const sdk = createSdk({
-  gateway: {
-    url: process.env.GATEWAY_URL ?? "ws://localhost:7777",
-    token: process.env.GATEWAY_TOKEN ?? "dev-token",
+  gateway: { url: 'ws://localhost:7300/ws', token: process.env.PLATFORM_TOKEN },
+  app: { id: process.env.PLATFORM_APP_ID, name: 'My Backend' },
+  manifest: { app: 'my-app', capabilities: [{ name: 'product.list', version: '1.0.0', tier: 'read', permissions: ['*'] }] },
+  handlers: {
+    'product.list': async (input, ctx) => ({ items: [] }),
   },
-  app: { id: "customer-app", name: "Acme Customer Service" },
-  manifest: "./manifest.yaml",
-  handlers: "./dist/handlers",
+  observability: { logger: consoleLogger },
 });
 
-await sdk.connect();
-await sdk.register();
+await sdk.connect();    // opens WS, authenticates
+await sdk.register();   // sends cap manifest to gateway
+await sdk.disconnect(); // graceful shutdown
 ```
 
-## Lifecycle
+## public surface
 
-```
-init → connect() → connected
-              ↓
-        register() → registered
-              ↓
-   (invocations happen here)
-              ↓
-       disconnect() → disconnected → (auto-reconnect) → connected → registered
-```
+- `createSdk(config)` → `SdkInstance`
+- `sdk.connect()` / `sdk.register()` / `sdk.disconnect()` / `sdk.reset()` / `sdk.state()`
+- `sdk.invoke(name, input)` — direct invocation (used internally by the WS handler)
+- 8 lifecycle events on the bus: `sdk.connected`, `sdk.disconnected`, `sdk.capability.registered/unregistered/rejected`, `sdk.invoke.started/completed/failed`
 
-## API
+## lifecycle states
 
-| Method | Purpose |
-|---|---|
-| `connect()` | Open WebSocket to Gateway, auth with token. |
-| `register()` | Read manifest + handlers, register each capability with the Gateway. |
-| `invoke(name, input)` | Direct invocation (typically used internally by the SDK's WebSocket handler). |
-| `disconnect()` | Close WebSocket. Triggers auto-reconnect with backoff. |
-| `reset()` | Clear local state (capabilities, phase). |
-| `state()` | Read current phase + registered capabilities. |
+`init → connected → registered → disconnected (auto-reconnect) → connected → registered`
 
-## Events emitted
+## integration
 
-On the shared `@platform/event-bus`:
-- `sdk.connected`
-- `sdk.disconnected`
-- `sdk.capability.registered`
-- `sdk.capability.unregistered`
-- `sdk.invoke.started`
-- `sdk.invoke.completed`
-- `sdk.invoke.failed`
-
-## What's NOT in v1
-
-See `docs/features/sdk-node/future.md` in the Agentide repo. Highlights:
-
-- Token refresh flow (drift #14) — v2.1
-- Schema validation — v2.2
-- Observability hooks (OTel, metrics) — v2.3
-- Multi-app per process — v2.4
-- Lambda / edge / worker pool runtimes — v3.x
-
-## License
-
-MIT
+depends on `@spanexx/event-bus` (its own bus instance, scoped to the SDK). connects to `@spanexx/adapter-websocket` over port 7300. handlers are called by `@spanexx/backend-runtime` when the gateway routes an invoke to this SDK's `appId`.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import { createEventBus } from "@platform/event-bus";
-import { createCapabilityRegistry } from "@platform/capability-registry";
+import { createEventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry } from "@spanexx/capability-registry";
 import {
   createPluginManager,
   ERROR_CODES,

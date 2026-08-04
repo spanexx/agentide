@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runCli } from "../index.js";
-import type { FileSystem, TokenClaims } from "@platform/gateway-core";
-import { verifyToken } from "@platform/gateway-core";
+import type { FileSystem, TokenClaims } from "@spanexx/gateway-core";
+import { verifyToken } from "@spanexx/gateway-core";
 
 class InMemoryFs implements FileSystem {
   files = new Map<string, string>();

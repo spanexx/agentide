@@ -1,8 +1,8 @@
 {
-  "name": "@platform/errors",
+  "name": "@spanexx/errors",
   "version": "0.0.0",
   "private": true,
-  "description": "Shared platform error types — GatewayError + ERROR_CODES, consumed by gateway-core and backend-runtime to avoid a circular dep.",
+  "description": "Shared platform error types \u2014 GatewayError + ERROR_CODES, consumed by gateway-core and backend-runtime to avoid a circular dep.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

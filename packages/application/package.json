@@ -1,8 +1,8 @@
 {
-  "name": "@platform/application",
+  "name": "@spanexx/application",
   "version": "0.0.0",
   "private": true,
-  "description": "Application entity for the Agentide platform — the per-tenant immutable identity for SDK/clients.",
+  "description": "Application entity for the Agentide platform \u2014 the per-tenant immutable identity for SDK/clients.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

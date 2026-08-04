@@ -15,7 +15,7 @@
  * CID:index-004 -> handleInvoke (wire invoke → fan-out → events)
  */
 
-import type { BackendValue } from "@platform/backend-runtime";
+import type { BackendValue } from "@spanexx/backend-runtime";
 import { createEventBus } from "@spanexx/event-bus";
 import { SdkClient } from "./client.js";
 import type { InvokeMessage, RegisterErrorMessage } from "./client.js";

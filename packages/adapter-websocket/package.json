@@ -1,8 +1,8 @@
 {
-  "name": "@platform/adapter-websocket",
+  "name": "@spanexx/adapter-websocket",
   "version": "0.0.0",
   "private": true,
-  "description": "WebSocket adapter — exposes registered capabilities over a flat JSON envelope (16 frame types); JWT auth with origin binding, per-pattern subscription fan-out over the event bus, invoke call/stream translation, and drop-oldest backpressure with stats recovery.",
+  "description": "WebSocket adapter \u2014 exposes registered capabilities over a flat JSON envelope (16 frame types); JWT auth with origin binding, per-pattern subscription fan-out over the event bus, invoke call/stream translation, and drop-oldest backpressure with stats recovery.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,7 +12,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run",
@@ -21,10 +24,10 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/errors": "workspace:*",
-    "@platform/event-bus": "workspace:*",
-    "@platform/gateway-core": "workspace:*",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "@spanexx/errors": "workspace:*",
+    "@spanexx/event-bus": "workspace:*",
+    "@spanexx/gateway-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

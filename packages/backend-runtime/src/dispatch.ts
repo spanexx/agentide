@@ -25,7 +25,7 @@
  * CID:dispatch-004 -> InvocationDispatcher.rejectAllPending
  */
 
-import { ERROR_CODES, GatewayError } from "@platform/errors";
+import { ERROR_CODES, GatewayError } from "@spanexx/errors";
 import type { ConnectionRegistry } from "./registry.js";
 import type { BackendValue, Clock } from "./types.js";
 

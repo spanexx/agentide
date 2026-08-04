@@ -8,7 +8,7 @@
  * Quick lookup: rg -n "CID:register-" packages/platform-capabilities/src/register.ts
  */
 
-import type { CapabilityRegistry } from "@platform/capability-registry";
+import type { CapabilityRegistry } from "@spanexx/capability-registry";
 import { CAPABILITY_CAPS, GATEWAY_CAPS, PLUGIN_CAPS, SESSION_CAPS } from "./caps.js";
 
 // CID:register-001 - registerPlatformCapabilities

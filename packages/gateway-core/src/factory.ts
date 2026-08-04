@@ -17,11 +17,11 @@
 
 import { randomBytes } from "node:crypto";
 import { appendFile, writeFile as fsWriteFile, readFile, access } from "node:fs/promises";
-import type { EventBus } from "@platform/event-bus";
-import type { CapabilityRegistry } from "@platform/capability-registry";
-import { registerPlatformCapabilities } from "@platform/platform-capabilities";
-import type { SessionManager } from "@platform/session-manager";
-import type { PluginManager } from "@platform/plugin-manager";
+import type { EventBus } from "@spanexx/event-bus";
+import type { CapabilityRegistry } from "@spanexx/capability-registry";
+import { registerPlatformCapabilities } from "@spanexx/platform-capabilities";
+import type { SessionManager } from "@spanexx/session-manager";
+import type { PluginManager } from "@spanexx/plugin-manager";
 import { AuditWriter } from "./audit.js";
 import { checkAuthz } from "./authz.js";
 import { issueToken } from "./auth.js";

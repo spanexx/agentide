@@ -21,8 +21,8 @@
  * Quick lookup: rg -n "CID:types-" packages/adapter-websocket/src/types.ts
  */
 
-import type { Subscription } from "@platform/event-bus";
-import type { Adapter, Clock, TokenClaims, YamlValue } from "@platform/gateway-core";
+import type { Subscription } from "@spanexx/event-bus";
+import type { Adapter, Clock, TokenClaims, YamlValue } from "@spanexx/gateway-core";
 import type { WebSocket as WSWebSocket } from "ws";
 
 // CID:types-001 - DEFAULT_CONFIG

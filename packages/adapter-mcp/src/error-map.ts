@@ -12,7 +12,7 @@
  * Quick lookup: rg -n "CID:error-map-" packages/adapter-mcp/src/error-map.ts
  */
 
-import { ERROR_CODES } from "@platform/errors";
+import { ERROR_CODES } from "@spanexx/errors";
 
 // CID:error-map-001 - JsonRpcError
 // Purpose: JSON-RPC 2.0 error envelope produced by the adapter.

@@ -46,8 +46,8 @@
  */
 
 import { WebSocketServer, type WebSocket as WSWebSocket } from "ws";
-import type { CapabilityRecord } from "@platform/capability-registry";
-import { originMatches } from "@platform/origin";
+import type { CapabilityRecord } from "@spanexx/capability-registry";
+import { originMatches } from "@spanexx/origin";
 import type { BackendRuntimeConfig, BackendValue, Clock } from "./types.js";
 import { ConnectionRegistry } from "./registry.js";
 import { InvocationDispatcher } from "./dispatch.js";

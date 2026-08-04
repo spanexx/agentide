@@ -10,7 +10,7 @@
  * Quick lookup: rg -n "CID:protocol-" packages/adapter-websocket/src/protocol.ts
  */
 
-import type { YamlValue } from "@platform/gateway-core";
+import type { YamlValue } from "@spanexx/gateway-core";
 import { parseInvokeFrame } from "./invoke.js";
 import type { ClientFrame, InvokeFrame, SubscribeFrame, UnsubscribeFrame } from "./types.js";
 

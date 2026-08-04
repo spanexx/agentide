@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createEventBus } from "@platform/event-bus";
-import type { TokenClaims } from "@platform/gateway-core";
+import { createEventBus } from "@spanexx/event-bus";
+import type { TokenClaims } from "@spanexx/gateway-core";
 import type { WebSocket as WSWebSocket } from "ws";
 import { ConnectionRegistry } from "../registry.js";
 import { subscribeTopics, type SubscriptionOptions } from "../fanout.js";

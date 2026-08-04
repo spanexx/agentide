@@ -24,14 +24,14 @@
  * CID:platform-factory-002 -> mcpAdapter wiring
  */
 
-import { createEventBus } from "@platform/event-bus";
-import { createCapabilityRegistry } from "@platform/capability-registry";
-import { createSessionManager } from "@platform/session-manager";
-import { createPluginManager } from "@platform/plugin-manager";
-import { createGateway } from "@platform/gateway-core";
-import { createBackendRuntime, type BackendRuntime } from "@platform/backend-runtime";
-import { createMcpAdapter, type McpAdapter } from "@platform/adapter-mcp";
-import { createWebSocketAdapter, type WebSocketAdapter } from "@platform/adapter-websocket";
+import { createEventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry } from "@spanexx/capability-registry";
+import { createSessionManager } from "@spanexx/session-manager";
+import { createPluginManager } from "@spanexx/plugin-manager";
+import { createGateway } from "@spanexx/gateway-core";
+import { createBackendRuntime, type BackendRuntime } from "@spanexx/backend-runtime";
+import { createMcpAdapter, type McpAdapter } from "@spanexx/adapter-mcp";
+import { createWebSocketAdapter, type WebSocketAdapter } from "@spanexx/adapter-websocket";
 import type { Platform, CreatePlatformConfig } from "./types.js";
 
 const DEFAULT_RATE_LIMIT = { capacity: 100, tokensPerSecond: 50 };

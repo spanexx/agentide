@@ -10,11 +10,11 @@
  * Quick lookup: rg -n "CID:dispatch-" packages/gateway-core/src/dispatch.ts
  */
 
-import type { CapabilityRegistry, CapabilityRecord, DescribeResult } from "@platform/capability-registry";
-import type { BackendRuntime } from "@platform/backend-runtime";
-import type { SessionManager } from "@platform/session-manager";
-import type { PluginManager } from "@platform/plugin-manager";
-import { ERROR_CODES as PM_ERROR_CODES, PluginManagerError } from "@platform/plugin-manager";
+import type { CapabilityRegistry, CapabilityRecord, DescribeResult } from "@spanexx/capability-registry";
+import type { BackendRuntime } from "@spanexx/backend-runtime";
+import type { SessionManager } from "@spanexx/session-manager";
+import type { PluginManager } from "@spanexx/plugin-manager";
+import { ERROR_CODES as PM_ERROR_CODES, PluginManagerError } from "@spanexx/plugin-manager";
 import { ERROR_CODES, GatewayError } from "./errors.js";
 import type { Clock, YamlValue } from "./types.js";
 

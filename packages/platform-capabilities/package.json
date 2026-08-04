@@ -1,8 +1,8 @@
 {
-  "name": "@platform/platform-capabilities",
+  "name": "@spanexx/platform-capabilities",
   "version": "0.0.0",
   "private": true,
-  "description": "Single source of truth for all 25 platform-capability registrations (16 migrated from gateway-core + 9 new). Pure registration seam — no handlers, no state.",
+  "description": "Single source of truth for all 25 platform-capability registrations (16 migrated from gateway-core + 9 new). Pure registration seam \u2014 no handlers, no state.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,7 +12,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run",
@@ -21,15 +24,15 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/capability-registry": "workspace:*"
+    "@spanexx/capability-registry": "workspace:*"
   },
   "devDependencies": {
-    "@platform/event-bus": "workspace:*",
     "@types/node": "^22.10.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
     "eslint": "^10.8.0",
     "@typescript-eslint/parser": "^8.65.0",
-    "@typescript-eslint/eslint-plugin": "^8.65.0"
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@spanexx/event-bus": "workspace:*"
   }
 }

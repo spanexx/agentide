@@ -1,4 +1,4 @@
-import type { EventBus } from "@platform/event-bus";
+import type { EventBus } from "@spanexx/event-bus";
 import { EventPublisher } from "./events.js";
 import { ResourceTracker } from "./resources.js";
 import {

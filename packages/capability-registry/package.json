@@ -1,5 +1,5 @@
 {
-  "name": "@platform/capability-registry",
+  "name": "@spanexx/capability-registry",
   "version": "0.0.0",
   "private": true,
   "description": "In-memory capability catalog for Agentide platform components.",
@@ -31,6 +31,6 @@
     "@typescript-eslint/eslint-plugin": "^8.65.0"
   },
   "dependencies": {
-    "@platform/event-bus": "workspace:*"
+    "@spanexx/event-bus": "workspace:*"
   }
 }

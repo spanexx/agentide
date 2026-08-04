@@ -1,7 +1,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import WebSocket from "ws";
 import { createPlatform } from "../index.js";
-import type { FileSystem } from "@platform/gateway-core";
+import type { FileSystem } from "@spanexx/gateway-core";
 import type { Platform } from "../types.js";
 
 class InMemoryFs implements FileSystem {

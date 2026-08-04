@@ -7,3 +7,5 @@ target/
 .reports/
 prototypes
 prompt-log.md
+data/
+*.local

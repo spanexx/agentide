@@ -11,12 +11,12 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { createMcpAdapter } from "../index.js";
-import { createGateway, issueToken } from "@platform/gateway-core";
-import { ERROR_CODES } from "@platform/errors";
-import { createEventBus } from "@platform/event-bus";
-import { createCapabilityRegistry, type CapabilityRegistry } from "@platform/capability-registry";
-import { createSessionManager, type SessionManager } from "@platform/session-manager";
-import { createPluginManager, type PluginManager } from "@platform/plugin-manager";
+import { createGateway, issueToken } from "@spanexx/gateway-core";
+import { ERROR_CODES } from "@spanexx/errors";
+import { createEventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry, type CapabilityRegistry } from "@spanexx/capability-registry";
+import { createSessionManager, type SessionManager } from "@spanexx/session-manager";
+import { createPluginManager, type PluginManager } from "@spanexx/plugin-manager";
 import { META, SystemClock, TEST_SECRET, customerReadCard, InMemoryFs, makeNeverSdk, makeToken, rpc, start, stopAllTracked, track } from "./harness.js";
 
 afterEach(async () => {

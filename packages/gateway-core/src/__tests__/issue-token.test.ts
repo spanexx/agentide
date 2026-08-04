@@ -16,10 +16,10 @@ import { describe, expect, it } from "vitest";
 import { createGateway } from "../index.js";
 import { issueToken, verifyToken } from "../auth.js";
 import type { Clock, FileSystem } from "../index.js";
-import { createEventBus } from "@platform/event-bus";
-import { createCapabilityRegistry } from "@platform/capability-registry";
-import { createSessionManager } from "@platform/session-manager";
-import { createPluginManager } from "@platform/plugin-manager";
+import { createEventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry } from "@spanexx/capability-registry";
+import { createSessionManager } from "@spanexx/session-manager";
+import { createPluginManager } from "@spanexx/plugin-manager";
 
 const TEST_SECRET = new TextEncoder().encode("test-secret-key-for-unit-tests-only!!");
 

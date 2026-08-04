@@ -1,8 +1,8 @@
 {
-  "name": "@platform/__tests__",
+  "name": "@spanexx/__tests__",
   "version": "0.0.0",
   "private": true,
-  "description": "Cross-language integration tests for Agentide — vitest suite that drives the real `platform` binary against the real `@platform/adapter-websocket` + `@platform/gateway-core` factory. Exists outside `packages/*/src/**` so it does not pollute any single package's source tree.",
+  "description": "Cross-language integration tests for Agentide \u2014 vitest suite that drives the real `platform` binary against the real `@platform/adapter-websocket` + `@platform/gateway-core` factory. Exists outside `packages/*/src/**` so it does not pollute any single package's source tree.",
   "type": "module",
   "scripts": {
     "test": "vitest run",
@@ -11,9 +11,9 @@
     "typecheck": "tsc --noEmit --pretty"
   },
   "dependencies": {
-    "@platform/adapter-websocket": "workspace:*",
-    "@platform/event-bus": "workspace:*",
-    "@platform/gateway-core": "workspace:*"
+    "@spanexx/adapter-websocket": "workspace:*",
+    "@spanexx/event-bus": "workspace:*",
+    "@spanexx/gateway-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

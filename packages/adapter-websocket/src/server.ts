@@ -25,8 +25,8 @@
 
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
-import { publishInternalEvent, type EventBus } from "@platform/event-bus";
-import type { Clock, Gateway, YamlValue } from "@platform/gateway-core";
+import { publishInternalEvent, type EventBus } from "@spanexx/event-bus";
+import type { Clock, Gateway, YamlValue } from "@spanexx/gateway-core";
 import { authenticateToken } from "./auth.js";
 import { subscribeTopics, unsubscribeTopics } from "./fanout.js";
 import { invokeFrame } from "./invoke.js";

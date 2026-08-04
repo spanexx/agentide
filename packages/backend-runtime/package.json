@@ -1,5 +1,5 @@
 {
-  "name": "@platform/backend-runtime",
+  "name": "@spanexx/backend-runtime",
   "version": "0.0.0",
   "private": true,
   "description": "In-process component that accepts WebSocket connections from @platform/sdk-node clients, registers their business capabilities, and dispatches gateway invocations back to the connected SDK handler.",
@@ -12,7 +12,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run",
@@ -21,11 +24,11 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/capability-registry": "workspace:*",
-    "@platform/errors": "workspace:*",
-    "@platform/event-bus": "workspace:*",
-    "@platform/origin": "workspace:*",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "@spanexx/capability-registry": "workspace:*",
+    "@spanexx/errors": "workspace:*",
+    "@spanexx/event-bus": "workspace:*",
+    "@spanexx/origin": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

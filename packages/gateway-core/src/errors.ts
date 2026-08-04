@@ -1,7 +1,7 @@
 /*
  * Code Map: gateway-core error re-exports
  * - ERROR_CODES, GatewayError: re-exported from @platform/errors so existing
- *   call sites that import from "@platform/gateway-core" continue to work.
+ *   call sites that import from "@spanexx/gateway-core" continue to work.
  *
  * The actual definitions live in packages/errors/src/index.ts because
  * both gateway-core and backend-runtime need them, and a circular dep
@@ -14,4 +14,4 @@
  * Quick lookup: rg -n "CID:errors-" packages/gateway-core/src/errors.ts
  */
 
-export { ERROR_CODES, GatewayError } from "@platform/errors";
+export { ERROR_CODES, GatewayError } from "@spanexx/errors";

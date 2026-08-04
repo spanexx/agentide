@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket, { type RawData } from "ws";
-import { createEventBus, type EventBus } from "@platform/event-bus";
+import { createEventBus, type EventBus } from "@spanexx/event-bus";
 import {
   issueToken,
   type CanonicalInvocation,
@@ -8,7 +8,7 @@ import {
   type Clock,
   type Gateway,
   type YamlValue,
-} from "@platform/gateway-core";
+} from "@spanexx/gateway-core";
 import { createWebSocketAdapter, type WebSocketAdapter } from "../index.js";
 
 const SECRET = new TextEncoder().encode("server-test-secret");

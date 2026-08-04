@@ -15,7 +15,7 @@
  * Quick lookup: rg -n "CID:caps-" packages/platform-capabilities/src/caps.ts
  */
 
-import type { CapabilityRecord, CapabilityTier } from "@platform/capability-registry";
+import type { CapabilityRecord, CapabilityTier } from "@spanexx/capability-registry";
 
 // CID:caps-005 - cap
 // Purpose: capability-record constructor. All 25 caps share version 1.0.0 and type "platform".

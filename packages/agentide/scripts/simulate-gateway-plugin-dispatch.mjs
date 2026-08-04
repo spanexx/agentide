@@ -24,8 +24,8 @@
  * Pass criterion: all 8 scenarios print PASS. Exit code 0 on success, 1 on any FAIL.
  */
 
-import { createPlatform } from "@platform/agentide";
-import { ERROR_CODES } from "@platform/gateway-core";
+import { createPlatform } from "@spanexx/agentide";
+import { ERROR_CODES } from "@spanexx/gateway-core";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -16,7 +16,7 @@
  * client exposes pauseReconnect / reconnectNow / markSocketDead for them.
  */
 
-import type { BackendValue } from "@platform/backend-runtime";
+import type { BackendValue } from "@spanexx/backend-runtime";
 import type { ConnectionState } from "./types.js";
 
 /** Gateway→SDK invoke wire message (sdk-node parity: callId/name/input). */

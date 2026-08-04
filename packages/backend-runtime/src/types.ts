@@ -21,8 +21,8 @@
  * Quick lookup: rg -n "CID:types-\|CID:clock-" packages/backend-runtime/src/types.ts
  */
 
-import type { EventBus } from "@platform/event-bus";
-import type { CapabilityRecord, CapabilityRegistry, CapabilityTier } from "@platform/capability-registry";
+import type { EventBus } from "@spanexx/event-bus";
+import type { CapabilityRecord, CapabilityRegistry, CapabilityTier } from "@spanexx/capability-registry";
 
 export type { CapabilityRecord };
 

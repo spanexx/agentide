@@ -4,8 +4,8 @@
 // Plugin manager dynamic-imports at install time; handleInvocation calls synchronously.
 
 import { describe, expect, it } from "vitest";
-import { createEventBus } from "@platform/event-bus";
-import { createCapabilityRegistry } from "@platform/capability-registry";
+import { createEventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry } from "@spanexx/capability-registry";
 import {
   createPluginManager,
   PluginManagerError,

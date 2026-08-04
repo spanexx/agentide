@@ -4,8 +4,8 @@
  * auth lowercase phrases, and the no-clash rule against @platform/errors.
  */
 import { describe, expect, it } from "vitest";
-import { ERROR_CODES } from "@platform/errors";
-import { validatePattern } from "@platform/event-bus";
+import { ERROR_CODES } from "@spanexx/errors";
+import { validatePattern } from "@spanexx/event-bus";
 import { AUTH_ERROR_CODES, DEFAULT_CONFIG } from "../types.js";
 import { WS_ERROR_CODES } from "../errors.js";
 

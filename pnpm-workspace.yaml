@@ -2,3 +2,6 @@ packages:
   - "packages/*"
 allowBuilds:
   '@playwright/browser-chromium': true
+minimumReleaseAgeExclude:
+  - '@spanexx/event-bus-cjs@0.0.1'
+  - '@spanexx/event-bus@0.0.1'

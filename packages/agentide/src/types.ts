@@ -26,7 +26,7 @@
 // Uses: gateway-core types (FileSystem), platform defaults (defaultTenant)
 // Used by: createPlatform()
 export interface CreatePlatformConfig {
-  readonly fs: import("@platform/gateway-core").FileSystem;
+  readonly fs: import("@spanexx/gateway-core").FileSystem;
   readonly dataDir: string;
   readonly tenantsPath?: string;
   readonly auditLogPath?: string;
@@ -37,7 +37,7 @@ export interface CreatePlatformConfig {
     readonly capacity: number;
     readonly tokensPerSecond: number;
   };
-  readonly clock?: import("@platform/gateway-core").Clock;
+  readonly clock?: import("@spanexx/gateway-core").Clock;
   /**
    * Optional plugin-manager cleanup-confirmation timeout. When set, this is
    * forwarded to createPluginManager. Default (in plugin-manager) is 5000ms;
@@ -118,11 +118,11 @@ export interface CreatePlatformConfig {
 // Uses: components composed from Tier 1 + gateway-core
 // Used by: CLI, integration tests, custom boot scripts
 export interface Platform {
-  readonly eventBus: import("@platform/event-bus").EventBus;
-  readonly capabilityRegistry: import("@platform/capability-registry").CapabilityRegistry;
-  readonly sessionManager: import("@platform/session-manager").SessionManager;
-  readonly pluginManager: import("@platform/plugin-manager").PluginManager;
-  readonly gateway: import("@platform/gateway-core").Gateway;
+  readonly eventBus: import("@spanexx/event-bus").EventBus;
+  readonly capabilityRegistry: import("@spanexx/capability-registry").CapabilityRegistry;
+  readonly sessionManager: import("@spanexx/session-manager").SessionManager;
+  readonly pluginManager: import("@spanexx/plugin-manager").PluginManager;
+  readonly gateway: import("@spanexx/gateway-core").Gateway;
   /**
    * CID:platform-types-004 - backendRuntime
    * BI[8b]: present when createPlatform was called with backendRuntimePort.
@@ -130,7 +130,7 @@ export interface Platform {
    *   for backend-sdk-* owner-prefixed capabilities.
    * Used by: integration tests, custom boot scripts that want to introspect the runtime.
    */
-  readonly backendRuntime?: import("@platform/backend-runtime").BackendRuntime;
+  readonly backendRuntime?: import("@spanexx/backend-runtime").BackendRuntime;
   /**
    * CID:platform-types-008 - mcpAdapter
    * BI[9]: present when createPlatform was called with adapterMcp !== false.
@@ -139,7 +139,7 @@ export interface Platform {
    *   independently of the rest of the platform.
    * Used by: integration tests, custom boot scripts.
    */
-  readonly mcpAdapter?: import("@platform/adapter-mcp").McpAdapter;
-  readonly wsAdapter?: import("@platform/adapter-websocket").WebSocketAdapter;
+  readonly mcpAdapter?: import("@spanexx/adapter-mcp").McpAdapter;
+  readonly wsAdapter?: import("@spanexx/adapter-websocket").WebSocketAdapter;
   stop(): Promise<void>;
 }

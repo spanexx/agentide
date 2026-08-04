@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { issueToken, type Clock } from "@platform/gateway-core";
+import { issueToken, type Clock } from "@spanexx/gateway-core";
 import { authenticateToken, originMatches, type AuthContext } from "../auth.js";
 
 const SECRET = new TextEncoder().encode("adapter-auth-secret");

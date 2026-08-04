@@ -160,8 +160,8 @@ export interface GatewayConfig {
   readonly handlerTimeoutMs?: number;
   readonly clock?: Clock;
   readonly fs?: FileSystem;
-  readonly eventBus?: import("@platform/event-bus").EventBus;
-  readonly backendRuntime?: import("@platform/backend-runtime").BackendRuntime;
+  readonly eventBus?: import("@spanexx/event-bus").EventBus;
+  readonly backendRuntime?: import("@spanexx/backend-runtime").BackendRuntime;
 }
 
 // CID:types-013 - Adapter

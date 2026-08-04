@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPlatform } from "../index.js";
-import type { FileSystem } from "@platform/gateway-core";
+import type { FileSystem } from "@spanexx/gateway-core";
 
 class InMemoryFs implements FileSystem {
   files = new Map<string, string>();

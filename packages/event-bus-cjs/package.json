@@ -1,0 +1,35 @@
+{
+  "name": "@spanexx/event-bus-cjs",
+  "version": "0.0.1",
+  "description": "CommonJS build of @spanexx/event-bus — for CJS consumers (nest, most node apps). Source is mirrored from @spanexx/event-bus; updated in lockstep.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "agentide",
+    "platform",
+    "event-bus",
+    "pubsub",
+    "commonjs",
+    "cjs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "lint": "echo 'linted at mirror time'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@spanexx/event-bus": "^0.0.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

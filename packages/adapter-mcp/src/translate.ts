@@ -20,8 +20,8 @@
  * Quick lookup: rg -n "CID:translate-" packages/adapter-mcp/src/translate.ts
  */
 
-import type { Gateway, YamlValue } from "@platform/gateway-core";
-import { ERROR_CODES } from "@platform/errors";
+import type { Gateway, YamlValue } from "@spanexx/gateway-core";
+import { ERROR_CODES } from "@spanexx/errors";
 import { gatewayErrorToJsonRpc, type JsonRpcError } from "./error-map.js";
 
 export { gatewayErrorToJsonRpc, type JsonRpcError } from "./error-map.js";

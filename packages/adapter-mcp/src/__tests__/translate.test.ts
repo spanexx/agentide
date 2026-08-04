@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { ERROR_CODES } from "@platform/errors";
-import type { CanonicalInvocation, CanonicalResponse, Gateway } from "@platform/gateway-core";
+import { ERROR_CODES } from "@spanexx/errors";
+import type { CanonicalInvocation, CanonicalResponse, Gateway } from "@spanexx/gateway-core";
 import {
   callTool,
   decodeScopeFromToken,

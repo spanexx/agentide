@@ -9,11 +9,11 @@
  * Quick lookup: rg -n "CID:handle-" packages/gateway-core/src/handle-invocation.ts
  */
 
-import type { BackendRuntime } from "@platform/backend-runtime";
-import type { EventBus } from "@platform/event-bus";
-import type { CapabilityRegistry } from "@platform/capability-registry";
-import type { SessionManager } from "@platform/session-manager";
-import type { PluginManager } from "@platform/plugin-manager";
+import type { BackendRuntime } from "@spanexx/backend-runtime";
+import type { EventBus } from "@spanexx/event-bus";
+import type { CapabilityRegistry } from "@spanexx/capability-registry";
+import type { SessionManager } from "@spanexx/session-manager";
+import type { PluginManager } from "@spanexx/plugin-manager";
 import { checkAuthz } from "./authz.js";
 import { dispatchCapability, resolveCapability, type DispatchHandlers } from "./dispatch.js";
 import { ERROR_CODES, GatewayError } from "./errors.js";

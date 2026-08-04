@@ -16,10 +16,10 @@ import { describe, expect, it } from "vitest";
 import { createGateway } from "../index.js";
 import { issueToken } from "../auth.js";
 import type { Clock, FileSystem, TokenClaims } from "../index.js";
-import { createEventBus } from "@platform/event-bus";
-import { createCapabilityRegistry } from "@platform/capability-registry";
-import { createSessionManager } from "@platform/session-manager";
-import { createPluginManager } from "@platform/plugin-manager";
+import { createEventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry } from "@spanexx/capability-registry";
+import { createSessionManager } from "@spanexx/session-manager";
+import { createPluginManager } from "@spanexx/plugin-manager";
 
 class FakeClock implements Clock {
   nowValue = 1_700_000_000_000;

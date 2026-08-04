@@ -17,7 +17,7 @@ import {
   type Clock,
   type TenantRecord,
   type TokenClaims,
-} from "@platform/gateway-core";
+} from "@spanexx/gateway-core";
 import { AUTH_ERROR_CODES } from "./types.js";
 
 // CID:auth-002 - originMatches

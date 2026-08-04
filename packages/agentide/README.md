@@ -1,62 +1,55 @@
-# @platform/agentide
+# @spanexx/agentide
 
-Meta-package — composes every Tier 1 control-plane component plus `@platform/gateway-core` into one started Platform handle, and ships the `agentide` CLI for operator day-2 operations.
+Composition meta-package. wires gateway-core + capability-registry + session-manager + plugin-manager + platform-capabilities + both adapters (mcp on 7100, websocket on 7300) + optional backend-runtime into a single `createPlatform()` call. ships the `agentide` CLI binary for operator day-2 ops.
 
-`createPlatform(config)` is the entry point: pass it a filesystem seam, a data directory, and an optional default tenant; get back a wired Platform (EventBus, Capability Registry, Session Manager, Plugin Manager, Gateway). The CLI subcommands (`agentide init / status / tenant / token / capability / plugin`) spin up a Platform from on-disk state, operate, tear down — so the same factory that powers the long-lived daemon also powers the operator shell.
+## install
 
-## Install
-
-Workspace dependencies on `@platform/event-bus`, `@platform/capability-registry`, `@platform/session-manager`, `@platform/plugin-manager`, `@platform/gateway-core`. No external runtime dependencies.
-
-## Usage
-
-```ts
-import { createPlatform } from "@platform/agentide";
-
-// Programmatic use (e.g. a custom boot script or integration test)
-const platform = await createPlatform({
-  fs,                                   // production uses node:fs/promises; tests pass InMemoryFs
-  dataDir: "/data",
-  defaultTenant: { id: "default", name: "Default" },  // idempotent on re-init
-});
-// platform.gateway.handleInvocation(...) — call any capability
-// platform.stop() — idempotent
-
-// CLI (production install via install.sh; one binary, one entry point)
-//
-//   agentide init --data-dir ~/.agentide/data --default-tenant acme
-//   agentide status
-//   agentide tenant {create|list|suspend|delete}
-//   agentide token issue --tenant <id> --caller <id> --scope <csv>
-//   agentide capability {list|describe --name <n>} [--owner <o>] [--tier <read|write>]
-//   agentide plugin list
+```bash
+npm install @spanexx/agentide
 ```
 
-## Contract
+## usage
 
-- `createPlatform(config)` is async because the inner `createPluginManager` factory is async (it reads the install record file at startup and re-installs persisted plugins). Everything else composes synchronously around it.
-- `dataDir` defaults all file paths: `${dataDir}/tenants.json`, `${dataDir}/audit.log`, `${dataDir}/gateway-secret`, `${dataDir}/plugins/installed.json`. Each is overridable in `config`.
-- `defaultTenant` is **optional and idempotent** — provided AND the tenant does not already exist, it is created. Pass this from `agentide init` only; other subcommands omit it to avoid leaking a fake `default` tenant into a freshly-init'd install.
-- `platform.stop()` is idempotent (callable multiple times). Currently a no-op pending future adapter cleanup / audit flush; reserved as the canonical shutdown seam.
-- The CLI's `runCli(argv, opts)` accepts a `FileSystem` so tests can drive it without touching disk. The bin entry point (`dist/cli.js`) reads `process.env.AGENTIDE_DATA_DIR` (default `./.agentide/data`).
-- The meta-package depends on every Tier 1 component but **does not register a default adapter** — per PHILOSOPHY §Tiny Kernel, the kernel does not depend on a transport. Operators wire MCP/REST/WS adapters via `gateway.registerAdapter()` from their own boot script.
-- Capability filtering via `--owner` and `--tier` on `agentide capability list` is pure client-side filtering over `registry.list()` output. The CLI calls `registry.describe(name)` per card to read `owner` (N+1 perf smell, sub-millisecond for ~30 caps; deferred helper in `registry.listByOwner()`).
+```typescript
+import { createPlatform } from '@spanexx/agentide';
+import * as fs from 'node:fs/promises';
 
-## Public surface
+const platform = await createPlatform({
+  fs: {
+    readFile: (p) => fs.readFile(p, 'utf8'),
+    writeFile: (p, d, m) => fs.writeFile(p, d, { encoding: 'utf8', mode: m }),
+    exists: async (p) => { try { await fs.access(p); return true; } catch { return false; } },
+  },
+  dataDir: './data',
+  defaultTenant: { id: 'acme', name: 'Acme' },
+  adapterMcp: { host: '127.0.0.1', port: 7100 },
+  adapterWs: { host: '127.0.0.1', port: 7300 },
+  backendRuntimePort: 0,  // optional, auto-creates backend-runtime
+});
+```
 
-| Export | Kind |
-|---|---|
-| `createPlatform` | factory (async) — composes the full Platform |
-| `Platform` | interface (eventBus, capabilityRegistry, sessionManager, pluginManager, gateway, stop) |
-| `CreatePlatformConfig` | interface (fs, dataDir, paths, timeouts, rate limits, defaultTenant?) |
-| `runCli` | function — argv parser + subcommand dispatch, returns `{exitCode, stdout, stderr}` |
-| `CliOptions` / `CliResult` | interfaces (CLI testability seam) |
+## CLI
 
-## Design references
+the package exposes a `bin` entry — once installed globally, `agentide` is on PATH:
 
-- PRD: [docs/features/gateway-core/PRD-gateway-core.md](../../docs/features/gateway-core/PRD-gateway-core.md) §Phase 7 (the meta-package was scoped under the gateway-core pack)
-- TRD: [docs/features/gateway-core/TRD-gateway-core.md](../../docs/features/gateway-core/TRD-gateway-core.md) (the meta-package is part of the gateway-core architecture)
-- FLOW: [docs/features/gateway-core/FLOW-gateway-core.md](../../docs/features/gateway-core/FLOW-gateway-core.md)
-- IMPL: [docs/features/gateway-core/IMPL-gateway-core.md](../../docs/features/gateway-core/IMPL-gateway-core.md) §Phase 7 + §Phase 8
-- GRILL: [docs/features/gateway-core/GRILL-gateway-core.txt](../../docs/features/gateway-core/GRILL-gateway-core.txt) Q12 (distribution + default adapter)
-- Glossary: [docs/CONTEXT.md](../../docs/CONTEXT.md) → *Platform*, *Adapter*
+```bash
+agentide init                                       # initialize data dir + bootstrap tenant
+agentide status                                     # show gateway status
+agentide tenant create --id acme --name "Acme"      # manage tenants
+agentide token issue --tenant acme --caller app --scope '*' --origin https://app.example.com
+agentide capability list                            # list registered caps
+agentide capability describe --name product.list
+agentide plugin list                                # list installed plugins
+```
+
+the CLI spins up a short-lived `Platform` per invocation, runs the command, tears down. CLIs do NOT bind :7100 / :7300 (would race across back-to-back invocations).
+
+## public surface
+
+- `createPlatform(config)` → `Platform` handle with `{ gateway, eventBus, capabilityRegistry, sessionManager, pluginManager, mcpAdapter?, wsAdapter?, backendRuntime?, stop() }`
+- `runCli(argv, opts)` → `CliResult` with `{ stdout, stderr, exitCode }`
+- `installGlobalErrorHandlers(sink?)` — sets up uncaughtException / unhandledRejection loggers
+
+## integration
+
+the top-level composer. depends on every other internal package. this is the only package that end users typically install.

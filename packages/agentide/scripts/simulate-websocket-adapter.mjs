@@ -35,7 +35,7 @@
  * 1 MiB on a fast local socket; the script then logs the observed count).
  */
 
-import { createPlatform, runCli } from "@platform/agentide";
+import { createPlatform, runCli } from "@spanexx/agentide";
 import { createHmac } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import WebSocket from "ws";

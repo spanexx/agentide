@@ -22,11 +22,11 @@
  * (the pre-impl sim with hardcoded state; archive/ after reconciliation).
  */
 
-import { createPlatform } from "@platform/agentide";
-import { createEventBus } from "@platform/event-bus";
-import { createCapabilityRegistry } from "@platform/capability-registry";
-import { createGateway } from "@platform/gateway-core";
-import { createBackendRuntime } from "@platform/backend-runtime";
+import { createPlatform } from "@spanexx/agentide";
+import { createEventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry } from "@spanexx/capability-registry";
+import { createGateway } from "@spanexx/gateway-core";
+import { createBackendRuntime } from "@spanexx/backend-runtime";
 import WebSocket from "ws";
 import { randomBytes, createHmac } from "node:crypto";
 import { performance } from "node:perf_hooks";

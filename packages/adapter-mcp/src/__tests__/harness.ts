@@ -5,13 +5,13 @@
  */
 
 import { createMcpAdapter, type McpAdapter } from "../index.js";
-import { createGateway, issueToken } from "@platform/gateway-core";
-import { createEventBus } from "@platform/event-bus";
-import { createCapabilityRegistry, type CapabilityRecord, type CapabilityRegistry } from "@platform/capability-registry";
-import { createSessionManager, type SessionManager } from "@platform/session-manager";
-import { createPluginManager, type PluginManager } from "@platform/plugin-manager";
-import type { BackendRuntime, BackendValue } from "@platform/backend-runtime";
-import type { Clock, FileSystem } from "@platform/gateway-core";
+import { createGateway, issueToken } from "@spanexx/gateway-core";
+import { createEventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry, type CapabilityRecord, type CapabilityRegistry } from "@spanexx/capability-registry";
+import { createSessionManager, type SessionManager } from "@spanexx/session-manager";
+import { createPluginManager, type PluginManager } from "@spanexx/plugin-manager";
+import type { BackendRuntime, BackendValue } from "@spanexx/backend-runtime";
+import type { Clock, FileSystem } from "@spanexx/gateway-core";
 
 export const JSON_RPC_ACCEPT = "application/json, text/event-stream";
 

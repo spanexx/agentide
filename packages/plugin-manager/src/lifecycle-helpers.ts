@@ -16,8 +16,8 @@
  * Quick lookup: rg -n "CID:helpers-" packages/plugin-manager/src/lifecycle-helpers.ts
  */
 
-import type { CapabilityRecord, CapabilityRegistry, CapabilityTier, CapabilityType } from "@platform/capability-registry";
-import type { EventBus } from "@platform/event-bus";
+import type { CapabilityRecord, CapabilityRegistry, CapabilityTier, CapabilityType } from "@spanexx/capability-registry";
+import type { EventBus } from "@spanexx/event-bus";
 import { ERROR_CODES, PluginManagerError } from "./errors.js";
 import type { EventPublisher } from "./events.js";
 import { manifestId, manifestType, parseManifest, validateManifest } from "./manifest.js";

@@ -9,9 +9,9 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { createEventBus } from "@platform/event-bus";
-import { createCapabilityRegistry } from "@platform/capability-registry";
-import type { CapabilityRegistry, CapabilityRecord } from "@platform/capability-registry";
+import { createEventBus } from "@spanexx/event-bus";
+import { createCapabilityRegistry } from "@spanexx/capability-registry";
+import type { CapabilityRegistry, CapabilityRecord } from "@spanexx/capability-registry";
 import { registerPlatformCapabilities } from "../register.js";
 
 function setup(): { registry: CapabilityRegistry; eventBus: ReturnType<typeof createEventBus> } {

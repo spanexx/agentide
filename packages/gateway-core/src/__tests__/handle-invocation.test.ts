@@ -9,11 +9,11 @@ import type {
   FileSystem,
   TokenClaims,
 } from "../index.js";
-import type { BackendRuntime, BackendValue } from "@platform/backend-runtime";
-import { createEventBus, type PlatformEvent } from "@platform/event-bus";
-import { createCapabilityRegistry, type CapabilityRecord } from "@platform/capability-registry";
-import { createSessionManager } from "@platform/session-manager";
-import { createPluginManager } from "@platform/plugin-manager";
+import type { BackendRuntime, BackendValue } from "@spanexx/backend-runtime";
+import { createEventBus, type PlatformEvent } from "@spanexx/event-bus";
+import { createCapabilityRegistry, type CapabilityRecord } from "@spanexx/capability-registry";
+import { createSessionManager } from "@spanexx/session-manager";
+import { createPluginManager } from "@spanexx/plugin-manager";
 
 class FakeClock implements Clock {
   nowValue = 1_700_000_000_000;

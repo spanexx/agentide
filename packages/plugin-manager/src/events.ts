@@ -28,7 +28,7 @@
  * Quick lookup: rg -n "CID:events-" packages/plugin-manager/src/events.ts
  */
 
-import type { EventBus } from "@platform/event-bus";
+import type { EventBus } from "@spanexx/event-bus";
 import type {
   InstallRecord,
   PluginCleanupPayload,

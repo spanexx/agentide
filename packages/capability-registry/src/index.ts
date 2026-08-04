@@ -7,7 +7,7 @@
  *
  * Quick lookup: rg -n "CID:index-" packages/capability-registry/src/index.ts
  */
-import { type EventBus } from "@platform/event-bus";
+import { type EventBus } from "@spanexx/event-bus";
 import {
   type CapabilityCard,
   type CapabilityRegistry,

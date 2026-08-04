@@ -1,84 +1,62 @@
 # @spanexx/sdk-browser
 
-Browser SDK for Agentide. The DOM is the manifest: annotate elements with `data-sdk-cap`, and the SDK observes them, registers the capabilities with the Gateway, and dispatches invocations back to the page as `CustomEvent`s.
+Browser SDK. The DOM is the manifest: annotate elements with `data-sdk-cap="<capability.name>"`, the SDK observes them via `MutationObserver`, registers each cap with the gateway, and dispatches invocations back to the page as `CustomEvent`s. no manifest file, no handler map.
 
-## Install
+## install
 
 ```bash
 npm install @spanexx/sdk-browser
 ```
 
-## Usage
+ESM-only. (CJS browser doesn't really exist — bundlers handle this. The CJS sibling `@spanexx/sdk-browser-cjs` is for SSR/Node-only consumers.)
+
+## usage
+
+```html
+<!-- in your HTML -->
+<button data-sdk-cap="cart.addItem">Add to cart</button>
+```
 
 ```typescript
-import { createSdk } from "@spanexx/sdk-browser";
+import { createSdk } from '@spanexx/sdk-browser';
 
-// 1. annotate a button in your HTML:
-//    <button data-sdk-cap="cart.addItem">Add to cart</button>
-
-// 2. wire the SDK once at app start:
 const sdk = createSdk({
-  gateway: "ws://localhost:7300",
-  token: process.env.PLATFORM_TOKEN!,
-  appId: "acme-storefront",
-  // optional origin binding — required if your page is served from a real origin
-  expectedOrigins: ["http://localhost:3000"],
+  gateway: 'wss://gateway.example.com/ws',
+  token: process.env.PLATFORM_TOKEN,
+  appId: 'acme-storefront',
+  expectedOrigins: ['https://storefront.example.com'],  // required — deny-by-default
 });
 
-// 3. handle invocations on the page:
-document.addEventListener("sdk.invoke", (e) => {
+document.addEventListener('sdk.invoke', async (e) => {
   const { callId, name, input } = e.detail;
-  if (name === "cart.addItem") {
-    addToCart(input).then(
-      (output) => sdk.resolve(callId, output),
-      (err) => sdk.reject(callId, err.message),
-    );
+  if (name === 'cart.addItem') {
+    try {
+      const output = await addToCart(input);
+      sdk.resolve(callId, output);
+    } catch (err) {
+      sdk.reject(callId, err.message);
+    }
   }
 });
 
 await sdk.connect();
 ```
 
-## Lifecycle
+## how it works
 
-```
-init → connect() → connecting → connected → (invocations happen here)
-                                              ↓
-                                       disconnected → reconnecting → connected
-```
+- `data-sdk-cap` attribute scanned on `createSdk()` + watched via `MutationObserver` (subtree, childList, attribute)
+- 0→1 element enters DOM → register the cap; 1→0 last element leaves → unregister (Gateway doesn't care how many elements back a cap)
+- invocations fan out as `CustomEvent` on **every** annotated element — the dev decides which listener handles it (single delegated listener on `document` with `e.target.closest('[data-sdk-cap="..."]')`)
+- native `globalThis.WebSocket` only — no polyfill, no fallback
+- visibility-aware reconnect (pauses when tab hidden, resumes immediately on visible)
+- offline-aware reconnect (`online` resets backoff and reconnects)
+- `pagehide` graceful disconnect (bfcache-aware — `event.persisted === true` keeps the socket)
 
-## API
+## browser-only constraints
 
-| Method | Purpose |
-|---|---|
-| `connect()` | Open WebSocket to Gateway, send first-message JWT auth. |
-| `disconnect()` | Close WebSocket cleanly. |
-| `resolve(callId, output)` | Send `sdk.invoke.result` back to the Gateway for a pending invocation. |
-| `reject(callId, message)` | Send `sdk.invoke.error` back to the Gateway. |
-| `state()` | Read current `connectionState` (`connecting` / `connected` / `reconnecting` / `disconnected`). |
-| `onStateChange(cb)` | Subscribe to connection-state transitions. |
-| `observe(root?)` | Start observing an extra DOM root (default is `document.body`). |
+- **`expectedOrigins` is REQUIRED** — browser tokens must carry this claim (deny-by-default at the gateway). Node clients bypass origin checks.
+- no node APIs — zero `@types/node`/`@types/ws` deps.
 
-## Events emitted
+## integration
 
-On the local SDK event bus:
-- `sdk.connected`
-- `sdk.disconnected`
-- `sdk.capability.registered`
-- `sdk.capability.unregistered`
-- `sdk.capability.rejected`
-- `sdk.invoke.started`
-- `sdk.invoke.completed`
-- `sdk.invoke.failed`
-
-## Browser-only constraints
-
-- **Native WebSocket only.** No polyfill, no fallback. Every supported browser since 2011 has `WebSocket`.
-- **`expectedOrigins` is REQUIRED for browser tokens** (deny-by-default at the Gateway). Node clients bypass origin checks.
-- **Visibility-aware reconnect** — pauses while the tab is hidden, resumes immediately on `visibilitychange → visible`.
-- **Offline-aware reconnect** — treats `offline` as dead, resets backoff and reconnects on `online`.
-- **`pagehide` disconnect** — best-effort `sdk.disconnect` on real unload; bfcache pages (`event.persisted === true`) keep the socket alive.
-
-## License
-
-MIT
+depends on `@spanexx/event-bus`. connects to `@spanexx/adapter-websocket` over the public internet (uses `wss://`). the dev-supplied `expectedOrigins` claim is enforced by `@spanexx/origin` at handshake time.

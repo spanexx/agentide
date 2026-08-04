@@ -53,7 +53,7 @@
  * frames, state transitions, CustomEvent fan-out, and DOM effects.
  */
 
-import { createSdk } from "@platform/sdk-browser";
+import { createSdk } from "@spanexx/sdk-browser";
 import { JSDOM } from "jsdom";
 import { createHmac } from "node:crypto";
 import { WebSocket as WSClient, WebSocketServer } from "ws";

@@ -1,5 +1,5 @@
 {
-  "name": "@platform/gateway-core",
+  "name": "@spanexx/gateway-core",
   "version": "0.0.0",
   "private": true,
   "description": "In-process control-plane component that authenticates callers, authorizes capability invocations, manages sessions, dispatches to capability handlers, audits every invocation, applies rate limits, and enforces tenant isolation.",
@@ -12,7 +12,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run",
@@ -21,14 +24,14 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/backend-runtime": "workspace:*",
-    "@platform/capability-registry": "workspace:*",
-    "@platform/errors": "workspace:*",
-    "@platform/event-bus": "workspace:*",
-    "@platform/origin": "workspace:*",
-    "@platform/platform-capabilities": "workspace:*",
-    "@platform/plugin-manager": "workspace:*",
-    "@platform/session-manager": "workspace:*"
+    "@spanexx/backend-runtime": "workspace:*",
+    "@spanexx/capability-registry": "workspace:*",
+    "@spanexx/errors": "workspace:*",
+    "@spanexx/event-bus": "workspace:*",
+    "@spanexx/origin": "workspace:*",
+    "@spanexx/platform-capabilities": "workspace:*",
+    "@spanexx/plugin-manager": "workspace:*",
+    "@spanexx/session-manager": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

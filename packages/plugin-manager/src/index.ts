@@ -8,8 +8,8 @@
  * Quick lookup: rg -n "CID:index-" packages/plugin-manager/src/index.ts
  */
 
-import type { CapabilityRegistry } from "@platform/capability-registry";
-import type { EventBus } from "@platform/event-bus";
+import type { CapabilityRegistry } from "@spanexx/capability-registry";
+import type { EventBus } from "@spanexx/event-bus";
 import { ERROR_CODES, PluginManagerError } from "./errors.js";
 import { EventPublisher } from "./events.js";
 import { nodeFileSystem } from "./fs.js";
