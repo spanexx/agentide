@@ -1,7 +1,9 @@
 # Drift Log
-**Last updated:** 2026-08-03  **Open:** 8  **Resolved:** 41  **Critical/High:** 2
+**Last updated:** 2026-08-03  **Open:** 9  **Resolved:** 41  **Critical/High:** 2
 
 ## Open
+
+- **D-64** (Medium, 2026-08-03, reporter: npm-publish + cli consumer session) — Two CLIs in the platform create naming + role confusion. (a) `@platform/agentide` ships a TS operator CLI (`agentide` binary) for managing gateway state (init/status/tenant/token/capability/plugin). (b) `crates/cli-adapter/` was chartered (BI[23] "CHARTED", never delivered as a feature-pipeline run) as a rust consumer CLI (`platform` binary) for invoking caps over websocket. Only the operator CLI shipped; the consumer side never landed. Plan exists to add consumer commands (invoke, watch, sessions, health) to the TS CLI and delete the rust crate. Tracked as feature pack BI[28] `agentide-cli-consumer` at `docs/features/agentide-cli-consumer/` (GRILL + PRD-TRD + IMPL + future). Until that lands, the rust crate sits unused (no callers, no tests pass because it depends on the renamed `@spanexx/*` workspace packages), and any agent or human searching for "the CLI" gets two candidates with no README disambiguation. Resolved when BI[28] ships + `crates/cli-adapter/` is deleted. To fix: run the IMPL phases (8 phases per IMPL-agentide-cli-consumer.md), then delete the rust crate + update BI[23] in Feature_Backlog.md.
 
 - **D-50** (High, 2026-08-03, reporter: dashboard-core D4 resolution) — Origin-bound browser tokens cannot be minted: the `expectedOrigins` claim is never issued.
   - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — "every browser SDK token MUST carry a signed `expectedOrigins` claim; `auth.token.issue` CLI gains `--kind browser` + `--origin` / `--origins` flags" (`docs/features/sdk-browser/GRILL-sdk-browser.txt:223-230`); adapter-websocket W2 sub-Q 4 (closed 2026-08-03) locks enforcement — browser `Origin` present → claim REQUIRED, exact match, deny-by-default, mismatch → `auth.error "origin mismatch"` → close 1008.

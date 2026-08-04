@@ -1,0 +1,111 @@
+# GRILL: agentide CLI consumer commands
+
+**Slug:** agentide-cli-consumer
+**Status:** Draft (replaces BI[23] cli-adapter for consumer use case)
+**Date:** 2026-08-03
+
+## question
+
+the rust `platform` binary (BI[23] cli-adapter, "CHARTED" — never delivered as a feature-pipeline run) is the only consumer CLI that can talk to a running gateway: invoke caps, watch events, render results. the TS `agentide` CLI (in `packages/agentide/`) is operator-only today (init / status / tenant / token / capability / plugin). we want one CLI for both.
+
+## locked decisions (port from cli-adapter GRILL Q1–Q5, decisions stand)
+
+### Q1 — language & shape (LOCKED — TS, not rust)
+
+**Decision:** extend the existing TS `agentide` CLI in `packages/agentide/src/cli.ts`. do NOT build a new rust binary.
+
+**Why:** one CLI to learn. one bin on PATH. one set of bugs. the rust binary (cli-adapter) was a deliberate cross-language consumer; that experiment is settled. future language CLIs (python, go) are out of scope for v1.
+
+**Consequence:** the rust crate `crates/cli-adapter/` gets deprecated then removed in this same release line.
+
+### Q2 — binary surface (LOCKED)
+
+**Decision:** the existing `agentide` bin entry at `dist/bin.js` (already fixed this session — see commit `c621005`). install via `npm install -g @platform/agentide` puts `agentide` on PATH.
+
+**Subcommands (target):**
+```
+agentide init                                          # in-process platform: bootstrap data dir + tenant
+agentide status                                        # in-process platform: gateway status
+agentide tenant {create|list|suspend|delete}           # in-process platform: tenant mgmt
+agentide token issue --tenant <id> --caller <id> --scope <csv> --origin <url>...
+                                                       # in-process platform: mint JWT
+agentide capability {list|describe --name <name>}      # in-process platform: cap catalog
+agentide plugin list                                   # in-process platform: installed plugins
+agentide sessions list                                 # NEW (remote): query live sessions
+agentide health                                        # NEW (alias): system.health
+agentide invoke <cap> [--args '<json>'] [--session <id>] [--mode call|stream]
+                                                       # NEW (remote): universal cap invocation
+agentide watch <alias> [--topic <pattern>]              # NEW (remote): live event stream
+```
+
+**In-process vs remote commands:**
+- in-process (no `--url` needed): `init`, `status`, `tenant *`, `token issue`, `capability *`, `plugin list`
+- remote (needs `--url` or env/config): `sessions list`, `health`, `invoke`, `watch`
+
+**Why this split:** in-process commands manage gateway state on disk (no running gateway needed). remote commands query/invoke a live gateway over websocket.
+
+### Q3 — config precedence (LOCKED — verbatim from cli-adapter Q3)
+
+**Decision:** `flag > env > config file > prompt (TTY only)`. same precedence tree as the rust CLI.
+
+```
+flag:        --url <ws://host/ws>  --token <jwt|path:/...>
+env:         PLATFORM_GATEWAY_URL  PLATFORM_TOKEN
+config file: <OS-config-dir>/platform/config.toml  (override with --config <path>)
+             v1 schema: { gateway_url = "...", token = "..." }
+             unknown keys IGNORED
+prompt:      TTY-only, no-echo token read. URL never prompted (no default in v1).
+```
+
+**`path:` indirection (verbatim from cli-adapter):** any source that supplies `path:/path/to/file` reads the file contents as the token, once per run. applies to flag, env, and config file token values.
+
+**No hardcoded default URL in v1.** missing URL + non-TTY → exit 2.
+
+### Q4 — exit codes (LOCKED — verbatim from cli-adapter Q4)
+
+```
+0 = invoke.result
+1 = invoke.error (any GATEWAY_* code passed through verbatim)
+2 = pre-flight / connection failure (usage, config, token unparseable, refused, close 1009/1011, subscribe.error, error frame)
+3 = TLS / upgrade failure
+4 = auth.error before auth.ok (close 1008, all W2 codes except origin mismatch — CLI never sends Origin)
+5 = interrupted (Ctrl-C / SIGTERM)
+```
+
+### Q5 — output shaping (LOCKED — verbatim from cli-adapter Q5)
+
+```
+TTY + alias (capabilities/sessions/plugins) → table (name/version/tier or id/status/created)
+TTY + status/health                     → key:value
+TTY + invoke                             → pretty JSON
+non-TTY OR --json                         → compact one-line JSON (script-safe)
+```
+
+**No third vocabulary.** errors print `error: <code> — <message>` where the code is the gateway's `GATEWAY_*` code passed verbatim.
+
+## the 8 scenarios (port verbatim from cli-adapter PRD-TRD)
+
+1. **config precedence** — flag > env > config file > prompt (TTY only)
+2. **alias commands** — `capabilities`/`sessions`/`plugins`/`status`/`health` map to cap invokes
+3. **output shaping** — TTY vs non-TTY vs `--json`
+4. **invoke with arguments** — `agentide invoke <cap> [--args '<json>'] [--session <id>]`
+5. **exit codes** — 0–5 mapping per Q4
+6. **token hygiene** — config + `path:` token files at 0600 or warn-once on stderr
+7. **watch** — `agentide watch <alias>` snapshots + subscribes to default topic + streams NDJSON until Ctrl-C
+8. **failure surfaces** — every error path returns exit code + plain-English stderr message
+
+## what to delete
+
+- `crates/cli-adapter/` — entire rust crate. superseded by this pack.
+- `crates/cli-adapter/README.md` — replaced by `packages/agentide/README.md` (already updated).
+- BI[23] row in `docs/Feature_Backlog.md` — flip from "CHARTED" to "DELETED — SUPERSEDED by agentide CLI (BI[28])".
+
+## scope: NOT in this pack
+
+- shell completions
+- `--stream` invoke mode (forward-compat only — `--mode stream` is a no-op in v1)
+- watch reconnect / resync after disconnect
+- profile switching (`[profiles]` in config.toml)
+- interactive REPL
+
+these are in `docs/features/agentide-cli-consumer/future.md` (TBD).
