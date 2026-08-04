@@ -7,7 +7,8 @@ import { homedir } from "node:os";
 import { createPlatform } from "./factory.js";
 import { hasUrlSource } from "./config.js";
 import { runConsumer } from "./consumer.js";
-import { runStart } from "./start.js";
+import { runStart, runStop, runDetachedStart } from "./start.js";
+import { printTokenWithClear } from "./lifecycle.js";
 import type { CliOptions, CliResult } from "./cli-types.js";
 
 let globalHandlersInstalled = false;
@@ -35,8 +36,9 @@ const HELP = `agentide — Agent Runtime Platform operator CLI
 
 Usage:
   agentide init    [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]
-  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>]
-  agentide status  [--data-dir <path>]
+  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>] [--pid-file <path>] [--log-file <path>] [--foreground]
+  agentide stop    [--pid-file <path>]
+  agentide status  [--data-dir <path>] [--pid-file <path>] [--url ...] [--token ...] [--json] [remote-only if --url given]  (remote gateway.status)
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
   agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--origin <url> ...] [--origins <csv>] [--data-dir <path>]
   agentide capability {list|describe --name <name>} [--owner <string>] [--tier <read|write|act|destructive>] [--data-dir <path>]
@@ -127,7 +129,9 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
       case "init":
         return await runInit(dataDir, flags, opts);
       case "start":
-        return await runStart(dataDir, flags, opts);
+        return await runDetachedStart(dataDir, flags, opts);
+      case "stop":
+        return await runStop(dataDir, flags, opts);
       case "status":
         // in-process when no remote config; remote (gateway.status) otherwise
         return (await hasUrlSource(argv, process.env))
@@ -193,12 +197,15 @@ async function runInit(dataDir: string, flags: Record<string, string | boolean |
     expiresInMs: 365 * 24 * 60 * 60 * 1000,
   });
   await platform.stop();
-  return result(
+
+  // Header (always visible) + token (auto-clears on Enter or after 30s).
+  process.stdout.write(
     `# Initialized Agentide in ${dataDir}\n` +
-      `# Default tenant: ${tenantId} (${tenantName})\n` +
-      `# Bootstrap token for tenant "${tenantId}":\n` +
-      `${token}\n`,
+    `# Default tenant: ${tenantId} (${tenantName})\n` +
+    `# Bootstrap token below — auto-clears in 30s or on Enter:\n\n`,
   );
+  await printTokenWithClear(token);
+  return result("");
 }
 
 

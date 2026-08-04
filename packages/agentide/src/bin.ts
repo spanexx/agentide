@@ -15,6 +15,7 @@
  */
 
 import { runCli } from "./cli.js";
+import { DETACH_CHILD_FLAG } from "./lifecycle.js";
 import * as fsPromises from "node:fs/promises";
 import type { FileSystem } from "@spanexx/gateway-core";
 
@@ -31,8 +32,19 @@ const defaultFs: FileSystem = {
   },
 };
 
+/**
+ * Strip the internal --detach-child flag from argv before runCli sees it.
+ * This flag is only meaningful to the lifecycle helpers (it tells the
+ * forked child "you're already detached, run the gateway normally");
+ * cli.ts doesn't recognize it and would error otherwise.
+ */
+function stripDetachFlag(argv: readonly string[]): string[] {
+  return argv.filter((a) => a !== DETACH_CHILD_FLAG);
+}
+
 async function main(): Promise<void> {
-  const result = await runCli(process.argv.slice(2), { fs: defaultFs });
+  const argv = stripDetachFlag(process.argv.slice(2));
+  const result = await runCli(argv, { fs: defaultFs });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   process.exit(result.exitCode);

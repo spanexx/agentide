@@ -27,12 +27,26 @@ describe("integration: full lifecycle", () => {
     const fs = new InMemoryFs();
     const dataDir = "/data";
 
-    // 1. init
-    const init = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs });
+    // 1. init — capture stdout because init writes the token directly to it
+    // (for the auto-clear-on-Enter behavior). The runCli result doesn't have it.
+    const initOut: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((c: string | Uint8Array) => {
+      initOut.push(typeof c === "string" ? c : c.toString());
+      return true;
+    }) as typeof process.stdout.write;
+    let init;
+    try {
+      init = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs });
+    } finally {
+      process.stdout.write = origWrite;
+    }
     expect(init.exitCode).toBe(0);
     expect(fs.files.has(`${dataDir}/gateway-secret`)).toBe(true);
     expect(fs.files.has(`${dataDir}/tenants.json`)).toBe(true);
-    const bootstrapLine = init.stdout.split("\n").find((l: string) => l.includes(".") && l.match(/^[A-Za-z0-9_-]+\./)) ?? "";
+    const captured = initOut.join("");
+    const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
+    const bootstrapLine = captured.split("\n").map(stripAnsi).find((l) => /^eyJ/.test(l)) ?? "";
     expect(bootstrapLine).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
 
     // 2. status shows the bootstrap tenant

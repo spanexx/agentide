@@ -143,3 +143,96 @@ export async function runStart(
   await new Promise<never>(() => {});
   return result(banner);
 }
+
+// =============================================================================
+// CID:start-009 - runStop
+// Read pid file, send SIGTERM (10s grace), then SIGKILL. Return result with
+// what happened so the operator sees the outcome.
+// =============================================================================
+export async function runStop(
+  _dataDir: string,
+  flags: Record<string, string | boolean | string[]>,
+  _opts: CliOptions,
+): Promise<CliResult> {
+  const { DEFAULT_PID_FILE, readPidFile, removePidFile, stopByPid } = await import("./lifecycle.js");
+  const { getFlag } = await import("./cli.js");
+
+  const pidFile = getFlag(flags, "pid-file", DEFAULT_PID_FILE);
+  const pid = await readPidFile(pidFile);
+  if (pid === null) {
+    return result("", `no gateway running (no pid file at ${pidFile})\n`, 1);
+  }
+  const outcome = await stopByPid(pid);
+  await removePidFile(pidFile);
+
+  const msgs: Record<typeof outcome, string> = {
+    "graceful": `Gateway stopped (PID ${pid}, graceful).`,
+    "forced": `Gateway stopped (PID ${pid}, SIGKILL — did not respond to SIGTERM within 10s).`,
+    "already-gone": `Gateway (PID ${pid}) was already not running. Pid file removed.`,
+  };
+  return result(`${msgs[outcome]}\n`);
+}
+
+// =============================================================================
+// CID:start-010 - runDetachedStart
+// Parent (foreground) side of `agentide start --detach`. Returns immediately
+// after forking a detached child that runs the gateway in the background.
+// The child is the actual gateway; the parent just reports the pid.
+// =============================================================================
+export async function runDetachedStart(
+  dataDir: string,
+  flags: Record<string, string | boolean | string[]>,
+  opts: CliOptions,
+): Promise<CliResult> {
+  const { getFlag, result } = await import("./cli.js");
+  const {
+    DEFAULT_PID_FILE, DEFAULT_LOG_FILE,
+    detachChild, writePidFile, readPidFile, isAlive,
+  } = await import("./lifecycle.js");
+
+  const logFile = getFlag(flags, "log-file", DEFAULT_LOG_FILE);
+  const pidFile = getFlag(flags, "pid-file", DEFAULT_PID_FILE);
+  const noDetach = flags["foreground"] === true;
+
+  // Refuse to start a second one when one is already alive.
+  const existing = await readPidFile(pidFile);
+  if (existing !== null && isAlive(existing)) {
+    return result("", `error: gateway already running (PID ${existing}). Use \`agentide stop\` first.\n`, 2);
+  }
+
+  // Pass-through argv (everything we received) so the child re-runs runCli
+  // with the same flags but no --foreground.
+  const passThrough = [
+    "start",
+    "--data-dir", dataDir,
+    "--pid-file", pidFile,
+    "--log-file", logFile,
+    ...Object.entries(flags).flatMap(([k, v]) => {
+      if (k === "foreground") return []; // child must NOT inherit --foreground
+      if (k === "pid-file" || k === "log-file" || k === "data-dir") return []; // already included above
+      if (v === true) return [`--${k}`];
+      return [`--${k}`, String(v)];
+    }),
+  ];
+
+  // Foreground mode = run normally (for local debugging).
+  if (noDetach) {
+    return runStart(dataDir, flags, opts);
+  }
+
+  // Detach: fork a child, write pid file, return immediately.
+  const detached = detachChild({
+    logFile,
+    pidFile,
+    argv: passThrough,
+  });
+  if ("error" in detached) {
+    return result("", `error: detach failed: ${detached.error}\n`, 2);
+  }
+  await writePidFile(pidFile, detached.childPid);
+  return result(
+    `Detached. PID: ${detached.childPid}. ` +
+      `Logs: ${logFile}. ` +
+      `Stop with: agentide stop [--pid-file ${pidFile}].\n`,
+  );
+}

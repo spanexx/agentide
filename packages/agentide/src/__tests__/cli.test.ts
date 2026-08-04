@@ -38,15 +38,36 @@ describe("CLI", () => {
     expect(r.exitCode).toBe(0);
   });
 
-  it("`init` creates the default tenant + secret file and prints the bootstrap token", async () => {
-    const fs = new InMemoryFs();
-    const r = await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    expect(r.exitCode).toBe(0);
-    expect(fs.files.has("/data/gateway-secret")).toBe(true);
-    expect(r.stdout).toMatch(/Bootstrap token for tenant "acme":/);
-    // The token is a JWT
-    const tokenLine = r.stdout.split("\n").find((l: string) => l.includes(".") && l.includes(".") && !l.startsWith("#")) ?? "";
-    expect(tokenLine).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  it("init creates default tenant + secret + prints bootstrap token", async () => {
+    const mem = new InMemoryFs();
+    // init writes the token directly to process.stdout (so it can auto-clear
+    // on Enter / 30s). Capture it for the test.
+    const stdoutWrites: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      stdoutWrites.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const r = await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs: mem });
+      expect(r.exitCode).toBe(0);
+      expect(mem.files.has("/data/gateway-secret")).toBe(true);
+      const captured = stdoutWrites.join("");
+      expect(captured).toMatch(/Initialized Agentide/);
+      expect(captured).toMatch(/Default tenant: acme/);
+      // The token is a JWT (header.payload.signature).
+      // Strip ANSI escapes before matching since printTokenWithClear adds them.
+      const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
+      const tokenLine = captured.split("\n").find(
+        (l) => {
+          const clean = stripAnsi(l);
+          return clean.startsWith("eyJ") || /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(clean);
+        }
+      ) ?? "";
+      expect(tokenLine).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    } finally {
+      process.stdout.write = origWrite;
+    }
   });
 
   it("`status` returns a JSON-ish status line after init", async () => {

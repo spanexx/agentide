@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How to Agentide — install, run, use</title>
+<style>
+  :root {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e;
+    --accent: #58a6ff; --accent-2: #79c0ff;
+    --border: #30363d; --card: #161b22;
+    --ok: #3fb950; --warn: #d29922; --err: #f85149;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+         color: var(--fg); background: var(--bg); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 38px; margin: 0 0 4px; letter-spacing: -0.5px; }
+  h2 { margin-top: 56px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { margin-top: 28px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px;
+         background: rgba(88,166,255,.15); color: var(--accent); margin-right: 6px; }
+  .lede { color: var(--muted); font-size: 17px; margin: 4px 0 24px; max-width: 720px; }
+  pre { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+        padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 13.5px;
+        line-height: 1.5; max-width: 100%; }
+  code { font-family: var(--mono); background: rgba(110,118,129,.2); padding: 1px 6px;
+         border-radius: 4px; font-size: 13.5px; }
+  pre code { background: none; padding: 0; font-size: 13.5px; }
+  .ascii { color: var(--muted); font-size: 12px; line-height: 1.25; }
+  .diagram { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+             padding: 12px 14px; margin: 20px 0; overflow: hidden; }
+  .diagram pre.ascii { font-size: 10.5px; line-height: 1.2; margin: 0; }
+  .flow { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 24px; }
+  .flow > div { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+                padding: 10px 14px; flex: 1 1 160px; min-width: 160px; }
+  .flow > div b { color: var(--accent-2); display: block; margin-bottom: 4px; }
+  .arrow { display: flex; align-items: center; justify-content: center;
+           color: var(--muted); font-size: 22px; flex: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr));
+          gap: 14px; margin: 18px 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+          padding: 14px 16px; }
+  .card h4 { margin: 0 0 8px; font-size: 15px; color: var(--accent-2); }
+  .card p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--accent-2); font-weight: 600; }
+  td code { font-size: 12.5px; }
+  details { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+            padding: 10px 14px; margin: 10px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .toc { padding: 10px 0 12px; margin-bottom: 32px;
+         border-bottom: 1px solid var(--border); }
+  .toc ol { margin: 8px 0 12px; padding-left: 22px; }
+  .footnote { color: var(--muted); font-size: 12px; margin-top: 64px; padding-top: 16px;
+              border-top: 1px solid var(--border); }
+  .ok-tag { color: var(--ok); font-weight: 600; }
+  .warn-tag { color: var(--warn); font-weight: 600; }
+  .err-tag { color: var(--err); font-weight: 600; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+
+  /* Copy buttons on code blocks */
+  pre { position: relative; }
+  .copy-btn {
+    position: absolute;
+    top: 8px; right: 8px;
+    background: rgba(110,118,129,.35);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font: 12px/1 var(--mono);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .15s ease, background .15s ease;
+  }
+  pre:hover .copy-btn,
+  pre .copy-btn:focus { opacity: 1; }
+  .copy-btn:hover { background: rgba(88,166,255,.35); border-color: var(--accent); }
+  .copy-btn.copied { background: rgba(63,185,80,.35); border-color: var(--ok); color: var(--ok); }
+  @media (hover: none) {
+    .copy-btn { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>How to Agentide</h1>
+  <p class="lede">
+    Install the <code>agentide</code> binary from npm, boot a gateway, register
+    capabilities from your backend SDK, and let agents (Claude Code, MCP-CLI,
+    custom apps) call them. One CLI does everything.
+  </p>
+
+  <div class="toc">
+    <strong>Jump to:</strong>
+    <ol>
+      <li><a href="#what">What is Agentide</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#gateway">Start the gateway</a></li>
+      <li><a href="#tokens">Mint a token</a></li>
+      <li><a href="#sdk">Wire your backend (SDK)</a></li>
+      <li><a href="#browser">Wire your browser SDK</a></li>
+      <li><a href="#call">Call a capability</a></li>
+      <li><a href="#commands">All commands</a></li>
+      <li><a href="#trouble">Troubleshooting</a></li>
+    </ol>
+  </div>
+
+  <h2 id="what">1. What is Agentide</h2>
+  <p>
+    Agentide is a runtime platform that connects agents to your backend code.
+    You expose <b>capabilities</b> (think "remote functions") from your app;
+    agents call them via MCP, WebSocket, or the CLI. The gateway sits in the
+    middle handling auth, rate limits, audit logs, and session bookkeeping.
+  </p>
+
+  <h2 id="install">2. Install</h2>
+
+  <div class="diagram">
+<pre class="ascii">                  ┌───────────────────────────┐
+                  │  you (operator / dev)     │
+                  └─────────────┬─────────────┘
+                                │  npm install -g
+                                ▼
+                  ┌───────────────────────────┐
+                  │  agentide  (CLI binary)   │
+                  │  on your $PATH            │
+                  └─────────────┬─────────────┘
+                                │  agentide start
+                                ▼
+                  ┌───────────────────────────┐
+                  │  gateway (your laptop)    │
+                  │   :7100  mcp              │
+                  │   :7300  websocket /ws    │
+                  └─────────────┬─────────────┘
+                                │  ws://... + JWT
+                                ▼
+                  ┌───────────────────────────┐
+                  │  your backend SDK         │
+                  │  (nest / express / etc)   │
+                  └───────────────────────────┘</pre>
+  </div>
+
+  <h3>One-liner (recommended)</h3>
+  <p>Requires Node 20+.</p>
+<pre><code>npm install -g @spanexx/agentide</code></pre>
+
+  <p>You should now have <code>agentide</code> on your PATH. Verify:</p>
+<pre><code>agentide --help</code></pre>
+
+  <h3>Alternative: install.sh</h3>
+  <p>Detects your OS and installs the right binary (or Docker image, or npx fallback):</p>
+<pre><code>curl -fsSL https://agentide.io/install.sh | bash</code></pre>
+
+  <h3>Two consumers you might want too</h3>
+  <p>For nestjs / express backends (most node apps), also install the CJS sibling:</p>
+<pre><code>npm install @spanexx/sdk-node-cjs</code></pre>
+  <p>For browser apps (react/vue/svelte):</p>
+<pre><code>npm install @spanexx/sdk-browser-cjs</code></pre>
+
+  <h2 id="gateway">3. Start the gateway</h2>
+
+  <p>The gateway listens on two ports:</p>
+  <table>
+    <tr><th>port</th><th>protocol</th><th>used by</th></tr>
+    <tr><td><code>7100</code></td><td>MCP (HTTP + JSON-RPC)</td><td>Claude Desktop, MCP-CLI, AI agents</td></tr>
+    <tr><td><code>7300</code></td><td>WebSocket at <code>/ws</code></td><td>SDKs (sdk-node, sdk-browser), the CLI</td></tr>
+  </table>
+
+  <h3>First run</h3>
+  <p>Pick a data dir (defaults to <code>~/.agentide/data</code>) and start:</p>
+<pre><code>agentide init   --data-dir ~/.agentide/data --default-tenant acme
+agentide start  --data-dir ~/.agentide/data --default-tenant acme</code></pre>
+
+  <p>You should see:</p>
+<pre><code>[gateway] platform up — mcp :7100, ws :7300</code></pre>
+
+  <p>Stop it with <code>Ctrl-C</code> (graceful) or <code>kill &lt;pid&gt;</code>.</p>
+
+  <h3>Available flags</h3>
+  <table>
+    <tr><th>flag</th><th>default</th><th>what it does</th></tr>
+    <tr><td><code>--data-dir &lt;path&gt;</code></td><td><code>~/.agentide/data</code></td><td>where the secret + tenants + audit log live</td></tr>
+    <tr><td><code>--bind &lt;ip&gt;</code></td><td><code>127.0.0.1</code></td><td><code>0.0.0.0</code> for network access</td></tr>
+    <tr><td><code>--port-mcp &lt;n&gt;</code></td><td><code>7100</code></td><td>MCP listener port</td></tr>
+    <tr><td><code>--no-mcp</code> / <code>--no-ws</code></td><td>off</td><td>disable the respective adapter</td></tr>
+    <tr><td><code>--default-tenant &lt;id&gt;</code></td><td>none</td><td>bootstrap a tenant on first start (idempotent)</td></tr>
+  </table>
+
+  <details>
+    <summary>What gets written to the data dir?</summary>
+    <ul>
+      <li><code>gateway-secret</code> — HS256 signing key for tokens. generated on first run.</li>
+      <li><code>tenants.json</code> — list of tenants the gateway knows about.</li>
+      <li><code>audit.log</code> — append-only log of every capability invocation.</li>
+    </ul>
+  </details>
+
+  <h2 id="tokens">4. Mint a token</h2>
+
+  <p>The gateway mints JWTs. Tokens are how callers prove they're allowed to
+  invoke caps. Two flavors:</p>
+
+  <table>
+    <tr><th>kind</th><th>how</th><th>used by</th></tr>
+    <tr><td>admin token</td><td><code>agentide token issue ...</code> (full scope)</td><td>you, the operator, anyone with the secret</td></tr>
+    <tr><td>consumer token</td><td>same command, narrow scope</td><td>your backend SDK, agent harnesses</td></tr>
+  </table>
+
+  <h3>Example: minimal admin token for the nest SDK</h3>
+<pre><code>agentide token issue \
+  --tenant acme \
+  --caller nest-app \
+  --scope '*'</code></pre>
+
+  <p>Output is a single JWT line. Copy it.</p>
+
+  <h3>Example: narrow token for a read-only agent</h3>
+<pre><code>agentide token issue \
+  --tenant acme \
+  --caller product-reader-agent \
+  --scope 'product.read'
+</code></pre>
+
+  <p>This token can only call <code>product.*</code> caps with a <code>read</code> tier.</p>
+
+  <h2 id="sdk">5. Wire your backend SDK</h2>
+
+  <p>Three SDKs available on npm:</p>
+  <table>
+    <tr><th>env</th><th>package</th><th>use case</th></tr>
+    <tr><td>server (CJS)</td><td><a href="https://www.npmjs.com/package/@spanexx/sdk-node-cjs"><code>@spanexx/sdk-node-cjs</code></a></td><td>nest, express, fastify, koa, most node</td></tr>
+    <tr><td>server (ESM)</td><td><a href="https://www.npmjs.com/package/@spanexx/sdk-node"><code>@spanexx/sdk-node</code></a></td><td>ts-node, deno, modern module-only</td></tr>
+    <tr><td>browser (CJS)</td><td><a href="https://www.npmjs.com/package/@spanexx/sdk-browser-cjs"><code>@spanexx/sdk-browser-cjs</code></a></td><td>webpack/vite legacy bundles</td></tr>
+    <tr><td>browser (ESM)</td><td><a href="https://www.npmjs.com/package/@spanexx/sdk-browser"><code>@spanexx/sdk-browser</code></a></td><td>esbuild/vite/rollup ESM</td></tr>
+  </table>
+
+  <h3>Example: a nest backend that exposes product + user caps</h3>
+
+<pre><code>import { Module } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { PlatformAgentModule, createPlatformAgent } from '@spanexx/agentide-cjs';
+import { sdkLogger } from '@spanexx/sdk-node-cjs';
+
+@Module({
+  imports: [
+    PlatformAgentModule.forRoot({
+      url: 'ws://127.0.0.1:7300/ws',
+      token: process.env.PLATFORM_TOKEN!,
+      capabilities: {
+        app: 'nestjs-ecommerce',
+        capabilities: [
+          { name: 'product.list',  version: '1.0.0', tier: 'read',  permissions: ['*'] },
+          { name: 'product.create', version: '1.0.0', tier: 'write', permissions: ['*'] },
+          { name: 'user.register',  version: '1.0.0', tier: 'write', permissions: ['*'] },
+        ],
+      },
+      handlers: {
+        'product.list': async () =&gt; ({
+          items: await db.product.find({ active: true }),
+          count: 0,
+        }),
+        'product.create': async (input: { sku: string; name: string }) =&gt; {
+          return db.product.insert(input);
+        },
+        'user.register': async (input: { email: string; password: string }) =&gt; {
+          return db.user.insert({ ...input, passwordHash: await hash(input.password) });
+        },
+      } as any,
+      observability: { logger: sdkLogger },
+    }),
+  ],
+})
+class AppModule {}
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(3000);
+}
+bootstrap();</code></pre>
+
+  <p>The two <strong>mandatory</strong> pieces of every manifest:</p>
+  <ul>
+    <li><code>app</code> — a non-empty string identifying your app.</li>
+    <li><code>capabilities</code> — an array. <strong>each entry must have a non-empty <code>permissions</code> array</strong> (use <code>['*']</code> for dev, granular strings for prod).</li>
+  </ul>
+
+  <p>On boot the SDK sends the manifest to the gateway via WebSocket. The
+  gateway registers them as callable capabilities.</p>
+
+  <h2 id="browser">6. Wire your browser SDK</h2>
+
+  <p>The browser SDK is annotation-driven: tag DOM elements with
+  <code>data-sdk-cap="&lt;capability.name&gt;"</code>, the SDK observes them via
+  <code>MutationObserver</code>, registers them with the gateway, and the page's
+  UI becomes a thin client to the backend caps.</p>
+
+<pre><code>import { initBrowserSdk } from '@spanexx/sdk-browser-cjs';
+
+initBrowserSdk({
+  url: 'wss://gateway.example.com/ws',
+  token: '&lt;jwt-from-server&gt;',
+  app: 'web-storefront',
+});
+
+// anywhere in your HTML:
+// &lt;button data-sdk-cap="cart.add" data-sdk-args='{"sku":"ABC123"}'&gt;add to cart&lt;/button&gt;</code></pre>
+
+  <p>The server-rendered page mints a per-user token (with HTTP-only cookie
+  binding the session), ships the token in the HTML, and the SDK connects on
+  page load. Optional runtime handler overrides let you pre-fill
+  <code>data-sdk-*</code> values before dispatch.</p>
+
+  <h2 id="call">7. Call a capability</h2>
+
+  <p>Three ways to invoke a registered capability.</p>
+
+  <h3>a) from an MCP-compatible agent (Claude Desktop, MCP-CLI)</h3>
+  <p>Configure your agent to point at <code>http://127.0.0.1:7100/mcp</code>, with a
+  JWT in the MCP config. The agent sees your caps as <code>tools</code>.</p>
+
+  <h3>b) from the CLI</h3>
+<pre><code>agentide invoke product.list '{}'
+agentide invoke product.create '{"sku":"ABC123","name":"widget"}' \
+  --session my-session-id</code></pre>
+
+  <p>Use <code>--json</code> for machine-readable output, omit for human tables.</p>
+
+  <h3>c) from another backend via the SDK</h3>
+<pre><code>import { invoke } from '@spanexx/sdk-node-cjs';
+
+const result = await invoke('product.list', { userId: 'u_42' });</code></pre>
+
+  <h2 id="commands">8. All commands</h2>
+
+  <h3>Operator (run on the host where the gateway lives)</h3>
+  <table>
+    <tr><th>command</th><th>what it does</th></tr>
+    <tr><td><code>agentide init</code></td><td>bootstrap a data dir + mint a bootstrap token</td></tr>
+    <tr><td><code>agentide start</code></td><td>launch the gateway (long-lived daemon)</td></tr>
+    <tr><td><code>agentide status</code></td><td>show uptime, tenants, audit log size</td></tr>
+    <tr><td><code>agentide tenant create --id &lt;id&gt; --name &lt;n&gt;</code></td><td>add a tenant</td></tr>
+    <tr><td><code>agentide token issue --tenant ...</code></td><td>mint a JWT</td></tr>
+    <tr><td><code>agentide capability list</code></td><td>list registered cap names (in-process)</td></tr>
+    <tr><td><code>agentide plugin list</code></td><td>installed plugins (runtime, service, observer)</td></tr>
+  </table>
+
+  <h3>Consumer (call against a running gateway)</h3>
+  <table>
+    <tr><th>command</th><th>what it does</th></tr>
+    <tr><td><code>agentide capabilities</code></td><td>list caps on the gateway (alias for <code>capability.list</code>)</td></tr>
+    <tr><td><code>agentide sessions</code></td><td>list active sessions</td></tr>
+    <tr><td><code>agentide plugins</code></td><td>list runtime-installed plugin caps</td></tr>
+    <tr><td><code>agentide status</code></td><td>gateway uptime, plugin count, etc.</td></tr>
+    <tr><td><code>agentide health</code></td><td><code>{"status":"ok"}</code> ping</td></tr>
+    <tr><td><code>agentide invoke &lt;cap&gt; [--args '&lt;json&gt;'] [--session &lt;id&gt;]</code></td><td>universal pull</td></tr>
+    <tr><td><code>agentide watch &lt;alias&gt; [--topic &lt;pattern&gt;]</code></td><td>live event stream (NDJSON, Ctrl-C to exit)</td></tr>
+  </table>
+
+  <h3>Common flags</h3>
+  <pre><code>--url &lt;ws://host/ws&gt;        # default ws://127.0.0.1:7300/ws (config file wins)
+--token &lt;jwt | path:/...&gt;   # override the token (env PLATFORM_TOKEN works too)
+--config &lt;path-to-toml&gt;     # config file override (defaults to &lt;os-config-dir&gt;/platform/config.toml)
+--json                       # machine-readable output (one line)</code></pre>
+
+  <h2 id="trouble">9. Troubleshooting</h2>
+
+  <details>
+    <summary><span class="err-tag">error: port 7100 already in use (is another gateway running?)</span></summary>
+    <p>Either kill the other process or move the new one:</p>
+<pre><code>agentide start --port-mcp 17100 --port-ws 17300</code></pre>
+  </details>
+
+  <details>
+    <summary><span class="err-tag">error: token required (--token, PLATFORM_TOKEN, or config file)</span></summary>
+    <p>Consumer commands need auth. Either pass <code>--token</code>, set
+    <code>PLATFORM_TOKEN</code>, or create <code>~/.config/platform/config.toml</code>:</p>
+<pre><code>gateway_url = "ws://127.0.0.1:7300/ws"
+token       = "&lt;jwt&gt;"</code></pre>
+  </details>
+
+  <details>
+    <summary><span class="err-tag">error: token invalid</span></summary>
+    <p>The JWT signature doesn't match the gateway's secret. Two main causes:</p>
+    <ol>
+      <li>the secret changed (wiped <code>~/.agentide/data/gateway-secret</code>) since the token was minted — re-mint.</li>
+      <li>wrong gateway — the token was minted for a different tenant/scope. check <code>--tenant</code> and <code>--scope</code> on the <code>token issue</code>.</li>
+    </ol>
+  </details>
+
+  <details>
+    <summary><span class="warn-tag">capability.list returns empty []</span></summary>
+    <p>Two meanings: (a) no backend SDK has booted against this gateway yet.
+    (b) all registered caps are filtered out by your token's scope
+    or the <code>--owner</code> filter. Check that your token's
+    <code>--scope</code> includes the cap you're looking for.</p>
+  </details>
+
+  <details>
+    <summary><span class="warn-tag">GATEWAY_SESSION_REQUIRED on invoke</span></summary>
+    <p>The cap requires a session and none was attached. Pass <code>--session &lt;id&gt;</code> or
+    call against the consumer <code>sessions</code> handle. Pre-existing platforms
+    spawn a session automatically; existing SDKs use <code>'*'</code> for unscoped.</p>
+  </details>
+
+  <details>
+    <summary><span class="warn-tag">ws adapter won't bind to 0.0.0.0</span></summary>
+    <p>v1 hardcodes the WS port at <code>7300</code>. <code>--port-ws</code> is rejected
+    today (the platform factory has no <code>adapterWsPort</code> field). Tracked
+    in <code>docs/features/agentide-cli-consumer/future.md</code>. To change the WS port today, edit
+    <code>packages/agentide/src/factory.ts</code> directly.</p>
+  </details>
+
+  <hr style="margin-top:56px;border-color:var(--border)">
+
+  <h3>Quick mental model (recap)</h3>
+  <div class="two">
+    <div class="card">
+      <h4>On your laptop / server</h4>
+      <p>You install <code>agentide</code> once. You start it once. It binds two ports and writes three files under <code>~/.agentide/data</code>. It doesn't do anything interesting by itself.</p>
+    </div>
+    <div class="card">
+      <h4>In your backend</h4>
+      <p>Your app imports the SDK, declares its caps in a manifest, and connects. The gateway registers them. Agents discover them. They get called.</p>
+    </div>
+  </div>
+
+  <p class="footnote">
+    Agentide <code>v0.0.1</code> (CLI) + 11 supporting packages on npm under the
+    <code>@spanexx</code> scope. Generated 2026-08-04. The full install script
+    (docker image, binary download, npx fallback) lives at
+    <code>packages/agentide/install.sh</code>. Reference architecture in
+    <code>docs/architecture/Agentide.md</code>.
+  </p>
+
+</div>
+
+<script>
+(function () {
+  // Attach a copy button to every <pre><code> block.
+  const blocks = document.querySelectorAll('pre');
+  blocks.forEach((pre) => {
+    const code = pre.querySelector('code');
+    if (!code) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = 'copy';
+    btn.setAttribute('aria-label', 'Copy code to clipboard');
+    btn.addEventListener('click', async () => {
+      const text = code.innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (err) {
+        // Fallback for older browsers / non-secure contexts (file://).
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+        } catch (e) {
+          document.body.removeChild(ta);
+          btn.textContent = 'error';
+          return;
+        }
+        document.body.removeChild(ta);
+      }
+      const original = btn.textContent;
+      btn.textContent = 'copied';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove('copied');
+      }, 1400);
+    });
+    pre.appendChild(btn);
+  });
+})();
+</script>
+</body>
+</html>

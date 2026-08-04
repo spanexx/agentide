@@ -19,6 +19,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { runCli } from "../cli.js";
 import type { CliResult } from "../cli-types.js";
 import { createPlatform } from "../factory.js";
+import { runStart } from "../start.js";
 
 // Shape of the createPlatform call config — only the fields our tests assert on.
 interface CreatePlatformCallConfig {
@@ -96,9 +97,27 @@ function makeInMemoryFileSystemAdapter(mem: InMemoryFs) {
   };
 }
 
-// runCli accepts a `fs` option so we can swap out the file system.
+// runStart directly (the cli router now goes through runDetachedStart which
+// actually forks a child — not appropriate for unit tests).
 async function run(args: string[], mem: InMemoryFs): Promise<CliResult> {
-  return await runCli(args, { fs: makeInMemoryFileSystemAdapter(mem) });
+  const flags: Record<string, string | boolean | string[]> = {};
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (tok?.startsWith("--")) {
+      const key = tok.slice(2);
+      const next = args[i + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        flags[key] = next;
+        i++;
+      } else {
+        flags[key] = true;
+      }
+    } else if (tok !== undefined) {
+      positional.push(tok);
+    }
+  }
+  return await runStart("/data", flags, { fs: makeInMemoryFileSystemAdapter(mem) });
 }
 
 beforeEach(() => {
