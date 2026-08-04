@@ -150,7 +150,7 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
       case "watch":
         return await runConsumer(argv, consumerOptions(argv));
       default:
-        return result("", `unknown command: ${cmd}\n\n${HELP}`, 1);
+        return result("", `unknown command: ${cmd}\n\n${HELP}`, 2);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

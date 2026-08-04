@@ -250,6 +250,7 @@ export function createWsClient(config: WsClientConfig): WsClientHandle {
           type: "invoke",
           correlationId,
           name,
+          mode: "call",
           ...(options?.input === undefined ? {} : { input: options.input }),
           ...(options?.sessionId === undefined ? {} : { sessionId: options.sessionId }),
         }));
