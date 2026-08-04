@@ -1,8 +1,8 @@
 {
   "name": "@spanexx/adapter-mcp",
-  "version": "0.0.0",
-  "private": true,
-  "description": "MCP (Model Context Protocol) adapter \u2014 exposes registered capabilities as MCP tools over Streamable HTTP; translates MCP JSON-RPC messages into canonical gateway.handleInvocation() calls.",
+  "version": "0.0.1",
+  "private": false,
+  "description": "MCP adapter \u2014 exposes the Agentide gateway as MCP tools over Streamable HTTP (POST /mcp).",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,7 +21,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
-    "typecheck": "tsc --build --pretty"
+    "typecheck": "tsc --build --pretty",
+    "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -40,5 +41,20 @@
     "@spanexx/event-bus": "workspace:*",
     "@spanexx/plugin-manager": "workspace:*",
     "@spanexx/session-manager": "workspace:*"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agentide",
+    "platform",
+    "mcp",
+    "model-context-protocol",
+    "adapter"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

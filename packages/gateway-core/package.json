@@ -1,8 +1,8 @@
 {
   "name": "@spanexx/gateway-core",
-  "version": "0.0.0",
-  "private": true,
-  "description": "In-process control-plane component that authenticates callers, authorizes capability invocations, manages sessions, dispatches to capability handlers, audits every invocation, applies rate limits, and enforces tenant isolation.",
+  "version": "0.0.1",
+  "private": false,
+  "description": "The kernel. Single function handleInvocation(req) \u2192 response. Auth \u2192 rate limit \u2192 session \u2192 authz (tier-hierarchy) \u2192 version resolve \u2192 dispatch (by owner prefix).",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,7 +21,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
-    "typecheck": "tsc --build --pretty"
+    "typecheck": "tsc --build --pretty",
+    "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
     "@spanexx/backend-runtime": "workspace:*",
@@ -40,5 +41,21 @@
     "eslint": "^10.8.0",
     "@typescript-eslint/parser": "^8.65.0",
     "@typescript-eslint/eslint-plugin": "^8.65.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agentide",
+    "platform",
+    "gateway",
+    "kernel",
+    "dispatch",
+    "routing"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

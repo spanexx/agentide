@@ -1,8 +1,8 @@
 {
   "name": "@spanexx/agentide",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Meta-package composing Tier 1 components + gateway-core; ships the `agentide` CLI for operators.",
+  "version": "0.0.1",
+  "private": false,
+  "description": "@platform/agentide (renamed to @spanexx/agentide) \u2014 meta-package composing Tier 1 components + gateway-core; ships the `agentide` CLI for operators.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,19 +13,21 @@
     }
   },
   "bin": {
-    "agentide": "./dist/bin.js"
+    "agentide": "./dist/bin.bundled.cjs"
   },
   "files": [
     "dist",
-    "src",
+    "README.md",
     "install.sh"
   ],
   "scripts": {
-    "build": "tsc --build --pretty",
+    "build": "tsc --build --pretty && pnpm run bundle",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
-    "typecheck": "tsc --build --pretty"
+    "typecheck": "tsc --build --pretty",
+    "bundle": "esbuild src/bin.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/bin.bundled.cjs --banner:js='#!/usr/bin/env node' && chmod +x dist/bin.bundled.cjs",
+    "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
     "@spanexx/adapter-mcp": "workspace:*",
@@ -46,7 +48,23 @@
     "jsdom": "^30.0.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
-    "ws": "^8.21.1",
-    "@spanexx/sdk-browser": "workspace:*"
+    "ws": "^8.21.1"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agentide",
+    "platform",
+    "gateway",
+    "cli",
+    "mcp",
+    "websocket",
+    "capabilities"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

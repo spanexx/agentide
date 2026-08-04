@@ -1,0 +1,37 @@
+{
+  "name": "@spanexx/agentide-cjs",
+  "version": "0.0.1",
+  "description": "CommonJS build of @spanexx/agentide \u2014 meta-package composing Tier 1 components + gateway-core; ships the `agentide` CLI for operators. Source mirrored from @spanexx/agentide; updated in lockstep.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "agentide",
+    "platform",
+    "gateway",
+    "cli",
+    "capabilities",
+    "commonjs",
+    "cjs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "lint": "echo 'linted at mirror time'",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bash scripts/prepare-publish.sh"
+  },
+  "dependencies": {
+    "@spanexx/agentide": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

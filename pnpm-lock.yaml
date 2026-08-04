@@ -171,9 +171,6 @@ importers:
         specifier: workspace:*
         version: link:../session-manager
     devDependencies:
-      '@spanexx/sdk-browser':
-        specifier: workspace:*
-        version: link:../sdk-browser
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.1
@@ -201,6 +198,12 @@ importers:
       ws:
         specifier: ^8.21.1
         version: 8.21.1
+
+  packages/agentide-cjs:
+    dependencies:
+      '@spanexx/agentide':
+        specifier: workspace:*
+        version: link:../agentide
 
   packages/application:
     dependencies:

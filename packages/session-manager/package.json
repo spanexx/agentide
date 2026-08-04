@@ -1,8 +1,8 @@
 {
   "name": "@spanexx/session-manager",
-  "version": "0.0.0",
-  "private": true,
-  "description": "In-process execution session lifecycle manager.",
+  "version": "0.0.1",
+  "private": false,
+  "description": "Lifecycle manager for execution contexts. Active \u21c4 Suspended \u2192 Archived. Sessions own their runtime resources.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,7 +21,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
-    "typecheck": "tsc --build --pretty"
+    "typecheck": "tsc --build --pretty",
+    "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
     "@spanexx/event-bus": "workspace:*"
@@ -32,5 +33,19 @@
     "eslint": "^10.8.0",
     "@typescript-eslint/parser": "^8.65.0",
     "@typescript-eslint/eslint-plugin": "^8.65.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agentide",
+    "platform",
+    "sessions",
+    "lifecycle"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
