@@ -29,7 +29,16 @@
     "bundle": "esbuild src/bin.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/bin.bundled.cjs --banner:js='#!/usr/bin/env node' && chmod +x dist/bin.bundled.cjs",
     "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@spanexx/adapter-mcp": "workspace:*",
+    "@spanexx/adapter-websocket": "workspace:*",
+    "@spanexx/backend-runtime": "workspace:*",
+    "@spanexx/capability-registry": "workspace:*",
+    "@spanexx/event-bus": "workspace:*",
+    "@spanexx/gateway-core": "workspace:*",
+    "@spanexx/plugin-manager": "workspace:*",
+    "@spanexx/session-manager": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/ws": "^8.18.1",

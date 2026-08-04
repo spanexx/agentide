@@ -24,6 +24,20 @@ class InMemoryFs implements FileSystem {
 }
 
 describe("CLI", () => {
+  it("prints the version and exits 0 with --version", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli(["--version"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.trim()).toMatch(/^0\.0\.\d+$/);
+  });
+
+  it("prints the version with -v", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli(["-v"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.trim()).toMatch(/^0\.0\.\d+$/);
+  });
+
   it("prints help and exits 0 when invoked with --help", async () => {
     const fs = new InMemoryFs();
     const r = await runCli(["--help", "--data-dir", "/data"], { fs });

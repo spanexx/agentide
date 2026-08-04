@@ -32,7 +32,12 @@ export function installGlobalErrorHandlers(sink: ErrorSink = defaultErrorSink): 
   return true;
 }
 
-const HELP = `agentide — Agent Runtime Platform operator CLI
+// CID:cli-version-001 - CLI_VERSION
+// Version reported by `agentide --version`. Kept in sync manually with
+// package.json (esbuild bundles the source, so no runtime package.json read).
+const CLI_VERSION = "0.0.3";
+
+const HELP = `agentide (v${CLI_VERSION}) — Agent Runtime Platform operator CLI
 
 Usage:
   agentide init    [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]
@@ -117,6 +122,13 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
   installGlobalErrorHandlers();
   const { positional, flags } = parseArgs(argv);
   const cmd = positional[0];
+
+  // --version / -v: short-circuit before command routing so it works even
+  // without a data-dir / gateway. Note: parseArgs turns "--version" into
+  // flags.version + cmd=undefined, so this must come BEFORE the help check.
+  if (cmd === "-v" || flags["version"] === true) {
+    return result(`${CLI_VERSION}\n`);
+  }
 
   if (cmd === undefined || cmd === "--help" || cmd === "-h" || flags["help"] === true) {
     return result(HELP);
