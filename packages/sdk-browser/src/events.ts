@@ -1,7 +1,7 @@
 /**
  * Phase 5 — lifecycle event publisher (8 events, sdk-node parity).
  *
- * Maps SDK state transitions to `@platform/event-bus` publishes:
+ * Maps SDK state transitions to `@spanexx/event-bus` publishes:
  *   sdk.connected / sdk.disconnected / sdk.capability.{registered,
  *   unregistered, rejected} / sdk.invoke.{started, completed, failed}
  *
@@ -10,7 +10,7 @@
  */
 
 import type { BackendValue } from "@platform/backend-runtime";
-import type { EventBus } from "@platform/event-bus";
+import type { EventBus } from "@spanexx/event-bus";
 
 // CID:events-001 - SdkConnectedPayload
 export interface SdkConnectedPayload {

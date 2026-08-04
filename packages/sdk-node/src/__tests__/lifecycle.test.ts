@@ -19,7 +19,7 @@ import { createSdk } from "../index.js";
 import type { WsClientMessage } from "../client.js";
 import { dispatchIncoming, makeLogger, makeCallContext, makeHandlerContext, invokeHandler } from "../invoke.js";
 import { SdkEventPublisher } from "../events.js";
-import { createEventBus } from "@platform/event-bus";
+import { createEventBus } from "@spanexx/event-bus";
 import type { Handler } from "../types.js";
 
 /**

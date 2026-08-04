@@ -13,7 +13,7 @@
  *   - Each capability registered with the Gateway
  *   - Phase transitions to 'registered'
  *
- * Bus events emitted (Phase 6 wires these to @platform/event-bus):
+ * Bus events emitted (Phase 6 wires these to @spanexx/event-bus):
  *   - sdk.capability.registered  per capability
  */
 

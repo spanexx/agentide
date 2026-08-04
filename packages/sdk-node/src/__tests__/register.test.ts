@@ -10,7 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { WsClientMessage } from "../client.js";
-import { createEventBus, type EventBus } from "@platform/event-bus";
+import { createEventBus, type EventBus } from "@spanexx/event-bus";
 import { SdkEventPublisher, type SdkCapabilityRejectedPayload } from "../events.js";
 import { dispatchIncoming, makeLogger } from "../invoke.js";
 

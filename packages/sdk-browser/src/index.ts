@@ -16,7 +16,7 @@
  */
 
 import type { BackendValue } from "@platform/backend-runtime";
-import { createEventBus } from "@platform/event-bus";
+import { createEventBus } from "@spanexx/event-bus";
 import { SdkClient } from "./client.js";
 import type { InvokeMessage, RegisterErrorMessage } from "./client.js";
 import { dispatchInvoke } from "./dispatch.js";

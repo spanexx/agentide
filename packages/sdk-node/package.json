@@ -1,9 +1,9 @@
 {
-  "name": "@platform/sdk-node",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@spanexx/sdk-node",
+  "version": "0.0.2",
   "description": "Backend SDK for Agentide — register business capabilities with the Gateway, execute handlers, emit events.",
   "type": "module",
+  "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -14,8 +14,20 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "README.md"
   ],
+  "keywords": [
+    "agentide",
+    "platform",
+    "sdk",
+    "backend",
+    "capabilities"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run",
@@ -24,7 +36,7 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@platform/event-bus": "workspace:*",
+    "@spanexx/event-bus": "^0.0.1",
     "ws": "^8.18.0",
     "yaml": "^2.6.0"
   },

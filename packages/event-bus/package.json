@@ -1,9 +1,9 @@
 {
-  "name": "@platform/event-bus",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@spanexx/event-bus",
+  "version": "0.0.1",
   "description": "In-process pub/sub event bus for Agentide platform components.",
   "type": "module",
+  "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -14,8 +14,19 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "README.md"
   ],
+  "keywords": [
+    "agentide",
+    "platform",
+    "event-bus",
+    "pubsub"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run",

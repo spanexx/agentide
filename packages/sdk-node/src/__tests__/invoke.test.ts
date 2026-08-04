@@ -14,7 +14,7 @@ import { describe, it, expect, vi } from "vitest";
 import type { WsClientMessage } from "../client.js";
 import { dispatchIncoming, invokeHandler, makeHandlerContext, makeCallContext, makeLogger } from "../invoke.js";
 import { SdkEventPublisher } from "../events.js";
-import { createEventBus } from "@platform/event-bus";
+import { createEventBus } from "@spanexx/event-bus";
 import type { Handler, HandlerContext } from "../types.js";
 
 /** Build a noop-observing publisher for tests. */

@@ -12,7 +12,7 @@
  * Phase 6 adds lifecycle.ts which keeps a Map of registered capabilities
  * so that on reconnect, every cap is re-registered automatically.
  *
- * Phase 7 wires @platform/event-bus — every PRD-TRD event is emitted here:
+ * Phase 7 wires @spanexx/event-bus — every PRD-TRD event is emitted here:
  *   sdk.connected, sdk.disconnected, sdk.capability.{registered,unregistered},
  *   sdk.invoke.{started,completed,failed}.
  */
@@ -40,7 +40,7 @@ import {
   type LifecycleState,
   type RegisteredCapability,
 } from "./lifecycle.js";
-import { createEventBus, type EventBus } from "@platform/event-bus";
+import { createEventBus, type EventBus } from "@spanexx/event-bus";
 import { SdkEventPublisher } from "./events.js";
 
 /**

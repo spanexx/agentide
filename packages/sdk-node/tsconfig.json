@@ -3,7 +3,10 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "composite": true
+    "composite": true,
+    "paths": {
+      "@spanexx/event-bus": ["../event-bus/src/index.ts"]
+    }
   },
   "include": ["src/**/*"],
   "references": [

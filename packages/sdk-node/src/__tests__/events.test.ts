@@ -1,7 +1,7 @@
 /*
  * Code Map: event bus integration tests (Phase 7)
  *
- * Verifies all 8 PRD-TRD events fire on the @platform/event-bus:
+ * Verifies all 8 PRD-TRD events fire on the @spanexx/event-bus:
  *   sdk.connected, sdk.disconnected,
  *   sdk.capability.{registered,unregistered,rejected},
  *   sdk.invoke.{started,completed,failed}.
@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { WsClient } from "../client.js";
 import { createSdk } from "../index.js";
 import type { WsClientMessage } from "../client.js";
-import { createEventBus, type EventBus, type PlatformEvent } from "@platform/event-bus";
+import { createEventBus, type EventBus, type PlatformEvent } from "@spanexx/event-bus";
 import type {
   SdkConnectedPayload,
   SdkDisconnectedPayload,

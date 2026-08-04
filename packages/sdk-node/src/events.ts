@@ -1,7 +1,7 @@
 /*
  * Code Map: sdk-node event publisher + payload types (Phase 7 / Gap 1)
  *
- * Wires the SDK's lifecycle to the shared @platform/event-bus. Every
+ * Wires the SDK's lifecycle to the shared @spanexx/event-bus. Every
  * PRD-TRD §Events emitted payload lives here; the publisher below maps
  * internal state transitions to the 8 documented events.
  *
@@ -19,7 +19,7 @@
  * Quick lookup: rg -n "CID:events-" packages/sdk-node/src/events.ts
  */
 
-import type { EventBus } from "@platform/event-bus";
+import type { EventBus } from "@spanexx/event-bus";
 import type { WirePrimitive, WireObject } from "./client.js";
 
 /** Any value that can appear on the wire — primitives, nested objects, and

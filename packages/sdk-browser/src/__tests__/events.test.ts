@@ -2,13 +2,13 @@
 /**
  * Phase 5 — event publisher (sdk-node parity).
  *
- * The 8 lifecycle events go through `@platform/event-bus`:
+ * The 8 lifecycle events go through `@spanexx/event-bus`:
  *   sdk.connected / sdk.disconnected / sdk.capability.{registered,
  *   unregistered, rejected} / sdk.invoke.{started, completed, failed}
  * Payload shapes mirror sdk-node's events.ts (readonly fields + appId).
  */
 
-import { createEventBus } from "@platform/event-bus";
+import { createEventBus } from "@spanexx/event-bus";
 import { describe, expect, it } from "vitest";
 import {
   SdkEventPublisher,
