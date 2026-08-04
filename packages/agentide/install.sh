@@ -1,20 +1,30 @@
 #!/usr/bin/env bash
 # install.sh — Agentide one-line installer
 #
-# Detects the host (OS + arch + Node/Docker presence), picks the best distribution
-# (binary download, Docker, or npx), and prints next steps.
+# Detects the host (OS + arch + Node/Docker presence), picks the best working
+# distribution, and installs. If nothing works, prints a clear fallback message.
 #
-# Per IMPL §Phase 7 (install.sh). Designed to fail loudly with a clear fallback message
-# rather than leaving the operator with a half-installed system.
+# Distribution order (per IMPL §Phase 7):
+#   1. npm global install (requires Node). The "do it" option.
+#   2. npx --package=@spanexx/agentide -y <cmd>  (one-off, doesn't pollute PATH)
+#   3. Docker (only if a real published image exists — TODO; off by default)
+#   4. GitHub release binary download (only if a release is published)
 #
 # The script itself is hosted at:
 #   https://raw.githubusercontent.com/spanexx/agentide/main/packages/agentide/install.sh
-#
 # Fork the repo and change REPO + the raw URL if self-hosting.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/spanexx/agentide/main/packages/agentide/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/spanexx/agentide/main/packages/agentide/install.sh | bash -s -- --data-dir ~/.agentide/data
+#
+# Env overrides:
+#   AGENTIDE_VERSION       default: latest
+#   AGENTIDE_SKIP_NPM      default: 0 (set 1 to skip the npm install)
+#   AGENTIDE_SKIP_NPX      default: 0 (set 1 to skip the npx fallback)
+#   AGENTIDE_SKIP_DOCKER   default: 0 (set 1 to skip the docker branch)
+#   AGENTIDE_SKIP_BINARY   default: 0 (set 1 to skip the binary-download branch)
+#   AGENTIDE_DATA_DIR      default: ~/.agentide/data
 #
 # Exit codes:
 #   0  installed (or already present)
@@ -24,13 +34,14 @@
 set -euo pipefail
 
 DATA_DIR="${AGENTIDE_DATA_DIR:-$HOME/.agentide/data}"
-BIN_DIR=""
 VERSION="${AGENTIDE_VERSION:-latest}"
 REPO="spanexx/agentide"
+PACKAGE="@spanexx/agentide"
 
 log() { printf "\033[36m[agentide]\033[0m %s\n" "$*"; }
 err() { printf "\033[31m[agentide]\033[0m %s\n" "$*" 1>&2; }
 ok() { printf "\033[32m[agentide]\033[0m %s\n" "$*"; }
+warn() { printf "\033[33m[agentide]\033[0m %s\n" "$*"; }
 
 # ── 1. Detect environment ──────────────────────────────────────────────────────
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -48,62 +59,67 @@ case "$ARCH" in
   *) err "Unsupported arch: $ARCH"; exit 1 ;;
 esac
 
-# ── 2. Pick distribution ───────────────────────────────────────────────────────
-pick_install_path() {
-  if [ -w /usr/local/bin ]; then
-    BIN_DIR="/usr/local/bin"
-  elif [ -w "$HOME/.local/bin" ]; then
-    BIN_DIR="$HOME/.local/bin"
-    mkdir -p "$BIN_DIR"
-  else
-    BIN_DIR="$HOME/.agentide/bin"
-    mkdir -p "$BIN_DIR"
-    log "Note: installing to $BIN_DIR (no /usr/local/bin or ~/.local/bin writable)"
-    log "Add this to your PATH: export PATH=\"$BIN_DIR:\$PATH\""
+# ── 2. Distributions ──────────────────────────────────────────────────────────
+
+# Primary: install with npm globally. This is the version-tag-driven path
+# that picks up the latest published @spanexx/agentide.
+install_via_npm() {
+  if [ "${AGENTIDE_SKIP_NPM:-0}" = "1" ]; then return 1; fi
+  if ! command -v npm >/dev/null 2>&1; then return 1; fi
+  log "Node.js detected; installing with npm (registry @ spanexx, version: $VERSION)"
+  mkdir -p "$DATA_DIR"
+  if npm install -g "$PACKAGE@$VERSION" 2>&1 | tail -5; then
+    ok "Installed $PACKAGE via npm."
+    ok "Next steps:"
+    ok "  agentide init  --data-dir '$DATA_DIR' --default-tenant acme"
+    ok "  agentide start --data-dir '$DATA_DIR' --default-tenant acme"
+    ok "  agentide status"
+    ok "Logs:   /tmp/agentide.log"
+    ok "Stop:   agentide stop"
+    return 0
   fi
+  return 1
 }
 
+# Fallback: one-off `npx --package` for environments that don't allow global
+# installs. Doesn't pollute PATH; user must wrap each invocation in `npx`.
 install_via_npx() {
-  if command -v npx >/dev/null 2>&1 && [ "${AGENTIDE_SKIP_NPX:-0}" != "1" ]; then
-    log "Node.js detected; using npx distribution"
-    ok "Run with: npx -y @platform/agentide@${VERSION} init --data-dir \"$DATA_DIR\""
-    ok "Then:      npx -y @platform/agentide@${VERSION} start"
-    return 0
-  fi
-  return 1
+  if [ "${AGENTIDE_SKIP_NPX:-0}" = "1" ]; then return 1; fi
+  if ! command -v npx >/dev/null 2>&1; then return 1; fi
+  log "npx fallback — one-off invocations."
+  mkdir -p "$DATA_DIR"
+  ok "Run with:"
+  ok "  npx -y $PACKAGE@$VERSION init  --data-dir '$DATA_DIR' --default-tenant acme"
+  ok "  npx -y $PACKAGE@$VERSION start --data-dir '$DATA_DIR' --default-tenant acme"
+  ok "  npx -y $PACKAGE@$VERSION stop"
+  return 0
 }
 
+# Docker: only emit if a real image tag exists. Off until we publish one.
 install_via_docker() {
-  if command -v docker >/dev/null 2>&1; then
-    log "Docker detected; using docker distribution"
-    mkdir -p "$DATA_DIR"
-    ok "Run with: docker run --rm -v \"$DATA_DIR:/data\" -p 7100:7100 ${REPO}:${VERSION} init --data-dir /data"
-    ok "Then:      docker run -d --name agentide -v \"$DATA_DIR:/data\" -p 7100:7100 ${REPO}:${VERSION}"
-    return 0
-  fi
+  if [ "${AGENTIDE_SKIP_DOCKER:-0}" = "1" ]; then return 1; fi
+  if ! command -v docker >/dev/null 2>&1; then return 1; fi
+  warn "Docker detected, but no published agentide image yet ($REPO on Docker Hub is empty)."
+  warn "Skipping the docker branch. Use npm (recommended) instead."
   return 1
 }
 
+# Binary: GitHub releases. Off until we cut a real release there.
 install_binary() {
-  pick_install_path
+  if [ "${AGENTIDE_SKIP_BINARY:-0}" = "1" ]; then return 1; fi
   local url="https://github.com/${REPO}/releases/download/${VERSION}/agentide-${OS}-${ARCH}"
-  log "Downloading agentide binary ($OS/$ARCH) from $url"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$BIN_DIR/agentide" || { err "download failed"; return 1; }
-  elif command -v wget >/dev/null 2>&1; then
-    wget -q "$url" -O "$BIN_DIR/agentide" || { err "download failed"; return 1; }
-  else
-    err "neither curl nor wget present; cannot download binary"
-    return 1
-  fi
-  chmod +x "$BIN_DIR/agentide" || true
-  ok "Installed to $BIN_DIR/agentide"
+  warn "Binary download not yet published for $OS/$ARCH at $url"
+  warn "Skipping the binary branch. Use npm (recommended) instead."
+  return 1
 }
 
 # ── 3. Main ────────────────────────────────────────────────────────────────────
 mkdir -p "$DATA_DIR"
 
-if install_via_docker; then
+# Order matters: most likely to succeed first. Each function returns 0 on
+# success. If a step is "off by default" (docker / binary), it returns 1 to
+# skip the success branch and try the next path.
+if install_via_npm; then
   exit 0
 fi
 
@@ -111,13 +127,15 @@ if install_via_npx; then
   exit 0
 fi
 
-if install_binary; then
-  ok "Next steps:"
-  ok "  agentide init --data-dir \"$DATA_DIR\""
-  ok "  agentide start"
+if install_via_docker; then
   exit 0
 fi
 
-err "Could not install via docker, npx, or binary download."
-err "Install Node.js (https://nodejs.org) or Docker, then re-run this script."
+if install_binary; then
+  exit 0
+fi
+
+err "Could not install $PACKAGE."
+err "Install Node.js + npm (https://nodejs.org) and re-run this script."
+err "Or fork the repo and run \`pnpm -r publish\` to make the package available locally."
 exit 2
