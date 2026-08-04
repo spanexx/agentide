@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { createPlatform } from "./factory.js";
 import { hasUrlSource } from "./config.js";
 import { runConsumer } from "./consumer.js";
+import { runStart } from "./start.js";
 import type { CliOptions, CliResult } from "./cli-types.js";
 
 let globalHandlersInstalled = false;
@@ -34,6 +35,7 @@ const HELP = `agentide — Agent Runtime Platform operator CLI
 
 Usage:
   agentide init    [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]
+  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>]
   agentide status  [--data-dir <path>]
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
   agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--origin <url> ...] [--origins <csv>] [--data-dir <path>]
@@ -93,7 +95,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   return { positional, flags };
 }
 
-function getFlag(flags: Record<string, string | boolean | string[]>, key: string, fallback: string): string {
+export function getFlag(flags: Record<string, string | boolean | string[]>, key: string, fallback: string): string {
   const v = flags[key];
   if (Array.isArray(v)) return v[v.length - 1];
   return typeof v === "string" ? v : fallback;
@@ -105,7 +107,7 @@ function getFlagAll(flags: Record<string, string | boolean | string[]>, key: str
   return typeof v === "string" ? [v] : [];
 }
 
-function result(stdout: string, stderr = "", exitCode = 0): CliResult {
+export function result(stdout: string, stderr = "", exitCode = 0): CliResult {
   return { exitCode, stdout, stderr };
 }
 
@@ -124,6 +126,8 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
     switch (cmd) {
       case "init":
         return await runInit(dataDir, flags, opts);
+      case "start":
+        return await runStart(dataDir, flags, opts);
       case "status":
         // in-process when no remote config; remote (gateway.status) otherwise
         return (await hasUrlSource(argv, process.env))
@@ -196,6 +200,7 @@ async function runInit(dataDir: string, flags: Record<string, string | boolean |
       `${token}\n`,
   );
 }
+
 
 async function runStatus(dataDir: string, opts: CliOptions): Promise<CliResult> {
   const platform = await createPlatform({

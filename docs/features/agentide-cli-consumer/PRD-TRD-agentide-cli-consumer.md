@@ -96,6 +96,35 @@ aliases are additive — no alias is removed without a preceding deprecation not
 
 prints `{type:"event", ...}` frames as NDJSON (one per line) until Ctrl-C. snapshot prints in the normal TTY/`--json` shape; events never re-render it. `--topic <pattern>` overrides the default. `--watch --json` = pure JSON stream. a `stats` frame with `dropped > 0` → one stderr warning. Ctrl-C → exit 5. **no reconnect in v1**.
 
+### Scenario 9: Start the gateway
+
+**Given** an initialized data dir (or `agentide init` will bootstrap one on first start with `--default-tenant`)
+**When** the operator runs `agentide start [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>]`
+**Then** the CLI boots the gateway as a long-lived daemon: `createPlatform({ fs, dataDir, defaultTenant?, adapterMcp?, adapterWs? })` is called with sensible defaults (`--bind 127.0.0.1`, `--port-mcp 7100`, `--port-ws 7300`), listeners bind, and the process stays up until SIGINT/SIGTERM. On signal, graceful shutdown via `platform.stop()` then exit 0.
+
+**Flags:**
+- `--data-dir <path>` (env `AGENTIDE_DATA_DIR`) — required, default `~/.agentide/data`. mkdir on first start if missing.
+- `--bind <ip>` (env `AGENTIDE_BIND`) — default `127.0.0.1`. `0.0.0.0` for network access.
+- `--port-mcp <n>` (env `AGENTIDE_PORT_MCP`) — default `7100`. `0` = OS-assigned.
+- *WS port is fixed at `7300` in v1* (no `--port-ws` flag; the platform factory has no `adapterWsPort` field). To change it: edit `packages/agentide/src/factory.ts` (and add `adapterWsPort` to `CreatePlatformConfig`). Tracked in `future.md`.
+- `--no-mcp` / `--no-ws` — disable respective adapter.
+- `--default-tenant <id>` + `--default-tenant-name <name>` — bootstrap a tenant on first start if `tenants.json` doesn't exist. Idempotent: if the tenant already exists, no-op.
+
+**Constraints:**
+- at least one of MCP/WS must be enabled. `agentide start --no-mcp --no-ws` → exit 2 with usage.
+- if the chosen port is already bound (EADDRINUSE) → print `error: port <n> already in use (is another gateway running?)` to stderr, exit 2.
+- if `data-dir` cannot be created/accessed (permission denied) → print `error: cannot access data dir <path>: <errno>` to stderr, exit 2.
+- if `createPlatform` throws (corrupted `gateway-secret`, etc.) → print `error: <msg>` to stderr, exit 2.
+- SIGINT/SIGTERM → `platform.stop()` → exit 0.
+
+**Output:**
+- on success: `[gateway] platform up — mcp :<port>, ws :<port>` on stdout.
+- on shutdown: `[gateway] stopping...` on stdout, then exit.
+
+**What `start` does NOT do:**
+- does NOT mint a bootstrap token (use `agentide init` for that — the two are complementary: `init` once, then `start` to run).
+- does NOT install as a service (systemd unit, k8s deployment, etc. — that's deployment-specific config, not the CLI's job).
+
 ### Scenario 8: Failure surfaces
 
 **Given** a run that cannot complete
