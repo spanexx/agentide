@@ -156,8 +156,9 @@
 <pre><code>agentide --help</code></pre>
 
   <h3>Alternative: install.sh</h3>
-  <p>Detects your OS and installs the right binary (or Docker image, or npx fallback):</p>
-<pre><code>curl -fsSL https://agentide.io/install.sh | bash</code></pre>
+  <p>Detects your OS and installs the right binary (or Docker image, or npx fallback). Hosted on GitHub raw:</p>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/spanexx/agentide/main/packages/agentide/install.sh | bash</code></pre>
+  <p>(requires the <code>spanexx/agentide</code> repo to be public — if you fork or self-host, change the URL.)</p>
 
   <h3>Two consumers you might want too</h3>
   <p>For nestjs / express backends (most node apps), also install the CJS sibling:</p>
@@ -174,15 +175,24 @@
     <tr><td><code>7300</code></td><td>WebSocket at <code>/ws</code></td><td>SDKs (sdk-node, sdk-browser), the CLI</td></tr>
   </table>
 
+  <p><strong>v0.0.2:</strong> <code>agentide start</code> detaches by default (background daemon). It returns immediately and writes the child PID to <code>--pid-file</code> (default <code>/tmp/agentide.pid</code>) and logs to <code>--log-file</code> (default <code>/tmp/agentide.log</code>). Both files live under <code>/tmp</code> so reboots wipe them automatically — no stale state.</p>
+
   <h3>First run</h3>
   <p>Pick a data dir (defaults to <code>~/.agentide/data</code>) and start:</p>
 <pre><code>agentide init   --data-dir ~/.agentide/data --default-tenant acme
 agentide start  --data-dir ~/.agentide/data --default-tenant acme</code></pre>
 
-  <p>You should see:</p>
-<pre><code>[gateway] platform up — mcp :7100, ws :7300</code></pre>
+  <p>You'll see:</p>
+<pre><code>Detached. PID: 48211. Logs: /tmp/agentide.log. Stop with: agentide stop.</code></pre>
 
-  <p>Stop it with <code>Ctrl-C</code> (graceful) or <code>kill &lt;pid&gt;</code>.</p>
+  <p>Watch the log:</p>
+<pre><code>tail -f /tmp/agentide.log</code></pre>
+
+  <p>Stop it:</p>
+<pre><code>agentide stop</code></pre>
+
+  <p>Need foreground debugging? Use <code>--foreground</code>:</p>
+<pre><code>agentide start --foreground --data-dir ~/.agentide/data</code></pre>
 
   <h3>Available flags</h3>
   <table>
@@ -192,6 +202,9 @@ agentide start  --data-dir ~/.agentide/data --default-tenant acme</code></pre>
     <tr><td><code>--port-mcp &lt;n&gt;</code></td><td><code>7100</code></td><td>MCP listener port</td></tr>
     <tr><td><code>--no-mcp</code> / <code>--no-ws</code></td><td>off</td><td>disable the respective adapter</td></tr>
     <tr><td><code>--default-tenant &lt;id&gt;</code></td><td>none</td><td>bootstrap a tenant on first start (idempotent)</td></tr>
+    <tr><td><code>--pid-file &lt;path&gt;</code></td><td><code>/tmp/agentide.pid</code></td><td>where <code>start</code> writes the child PID</td></tr>
+    <tr><td><code>--log-file &lt;path&gt;</code></td><td><code>/tmp/agentide.log</code></td><td>where the daemon writes its output</td></tr>
+    <tr><td><code>--foreground</code></td><td>off</td><td>run in the current terminal (blocks)</td></tr>
   </table>
 
   <details>
@@ -213,6 +226,8 @@ agentide start  --data-dir ~/.agentide/data --default-tenant acme</code></pre>
     <tr><td>admin token</td><td><code>agentide token issue ...</code> (full scope)</td><td>you, the operator, anyone with the secret</td></tr>
     <tr><td>consumer token</td><td>same command, narrow scope</td><td>your backend SDK, agent harnesses</td></tr>
   </table>
+
+  <p><strong>Security note (v0.0.2):</strong> <code>agentide init</code> prints the bootstrap token to stdout inside an ANSI reverse-video block. It auto-clears (overwrites scrollback with a blank screen) when you press <strong>Enter</strong>, or after <strong>30 seconds</strong>, whichever comes first. The token is not written to any file. In a non-TTY (CI, pipe, redirect) the print-and-clear step is skipped.</p>
 
   <h3>Example: minimal admin token for the nest SDK</h3>
 <pre><code>agentide token issue \
@@ -343,9 +358,10 @@ const result = await invoke('product.list', { userId: 'u_42' });</code></pre>
   <h3>Operator (run on the host where the gateway lives)</h3>
   <table>
     <tr><th>command</th><th>what it does</th></tr>
-    <tr><td><code>agentide init</code></td><td>bootstrap a data dir + mint a bootstrap token</td></tr>
-    <tr><td><code>agentide start</code></td><td>launch the gateway (long-lived daemon)</td></tr>
-    <tr><td><code>agentide status</code></td><td>show uptime, tenants, audit log size</td></tr>
+    <tr><td><code>agentide init</code></td><td>bootstrap a data dir + mint a bootstrap token (auto-clears in 30s)</td></tr>
+    <tr><td><code>agentide start</code></td><td>launch the gateway as a detached daemon (returns PID + log path)</td></tr>
+    <tr><td><code>agentide stop</code></td><td>SIGTERM the daemon (10s grace, SIGKILL fallback)</td></tr>
+    <tr><td><code>agentide status</code></td><td>show uptime, tenants, audit log size, daemon PID</td></tr>
     <tr><td><code>agentide tenant create --id &lt;id&gt; --name &lt;n&gt;</code></td><td>add a tenant</td></tr>
     <tr><td><code>agentide token issue --tenant ...</code></td><td>mint a JWT</td></tr>
     <tr><td><code>agentide capability list</code></td><td>list registered cap names (in-process)</td></tr>
@@ -433,11 +449,7 @@ token       = "&lt;jwt&gt;"</code></pre>
   </div>
 
   <p class="footnote">
-    Agentide <code>v0.0.1</code> (CLI) + 11 supporting packages on npm under the
-    <code>@spanexx</code> scope. Generated 2026-08-04. The full install script
-    (docker image, binary download, npx fallback) lives at
-    <code>packages/agentide/install.sh</code>. Reference architecture in
-    <code>docs/architecture/Agentide.md</code>.
+    Agentide <code>v0.0.2</code> on npm (<a href="https://www.npmjs.com/package/@spanexx/agentide">@spanexx/agentide</a>) + 11 supporting packages. Generated 2026-08-04. The full install script (docker image, binary download, npx fallback) lives at <code>packages/agentide/install.sh</code> and is served from GitHub raw. Reference architecture in <code>docs/architecture/Agentide.md</code>.
   </p>
 
 </div>

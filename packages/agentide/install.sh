@@ -7,9 +7,14 @@
 # Per IMPL §Phase 7 (install.sh). Designed to fail loudly with a clear fallback message
 # rather than leaving the operator with a half-installed system.
 #
+# The script itself is hosted at:
+#   https://raw.githubusercontent.com/spanexx/agentide/main/packages/agentide/install.sh
+#
+# Fork the repo and change REPO + the raw URL if self-hosting.
+#
 # Usage:
-#   curl -fsSL https://agentide.io/install.sh | bash
-#   curl -fsSL https://agentide.io/install.sh | bash -s -- --data-dir ~/.agentide/data
+#   curl -fsSL https://raw.githubusercontent.com/spanexx/agentide/main/packages/agentide/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/spanexx/agentide/main/packages/agentide/install.sh | bash -s -- --data-dir ~/.agentide/data
 #
 # Exit codes:
 #   0  installed (or already present)
