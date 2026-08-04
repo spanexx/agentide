@@ -35,7 +35,7 @@ export function installGlobalErrorHandlers(sink: ErrorSink = defaultErrorSink): 
 // CID:cli-version-001 - CLI_VERSION
 // Version reported by `agentide --version`. Kept in sync manually with
 // package.json (esbuild bundles the source, so no runtime package.json read).
-const CLI_VERSION = "0.0.4";
+const CLI_VERSION = "0.0.5";
 
 const HELP = `agentide (v${CLI_VERSION}) — Agent Runtime Platform operator CLI
 
