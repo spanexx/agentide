@@ -1,7 +1,7 @@
 {
   "name": "@spanexx/platform-capabilities",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.3",
+  "private": false,
   "description": "Single source of truth for all 25 platform-capability registrations (16 migrated from gateway-core + 9 new). Pure registration seam \u2014 no handlers, no state.",
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
-    "typecheck": "tsc --build --pretty"
+    "typecheck": "tsc --build --pretty",
+    "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
     "@spanexx/capability-registry": "workspace:*"
@@ -34,5 +35,20 @@
     "@typescript-eslint/parser": "^8.65.0",
     "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@spanexx/event-bus": "workspace:*"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agentide",
+    "platform",
+    "capabilities",
+    "registration",
+    "seam"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

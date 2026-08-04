@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # prepare-publish.sh — run by pnpm publish (prepublishOnly hook).
-# Bumps patch version + flattens workspace:* deps to semver, runs build.
+# Bumps patch version + flattens workspace:* deps to semver.
+# Edits package.json in place; next pnpm install restores workspace refs.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HERE"
@@ -9,6 +10,7 @@ current=$(python3 -c 'import json; print(json.load(open("package.json"))["versio
 parts=(${current//./ })
 patch=$((parts[2] + 1))
 bumped="${parts[0]}.${parts[1]}.${patch}"
+
 OWN_NAME=$(python3 -c 'import json; print(json.load(open("package.json"))["name"])')
 
 python3 - <<EOF
@@ -25,15 +27,6 @@ for k, v in p.get("devDependencies", {}).items():
 p["devDependencies"] = new_dev
 with open("package.json", "w") as f:
     json.dump(p, f, indent=2)
-    f.write("\\n")
+    f.write("\n")
 EOF
-
-# Install dev deps (typescript + @types/node + transitive workspace packages)
-# so tsc can resolve everything. Skip postinstall hooks since they're not needed.
-echo "[prepare-publish] $OWN_NAME: installing dev deps..."
-pnpm install --prod=false --ignore-scripts 2>&1 | tail -3 || true
-
-# Mirror + compile
-bash scripts/build.sh
-
-echo "[prepare-publish] $OWN_NAME bumped to $bumped + workspace refs flattened + dist built."
+echo "[prepare-publish] $OWN_NAME bumped to $bumped + workspace refs flattened."

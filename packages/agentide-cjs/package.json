@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/agentide-cjs",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "CommonJS build of @spanexx/agentide \u2014 meta-package composing Tier 1 components + gateway-core; ships the `agentide` CLI for operators. Source mirrored from @spanexx/agentide; updated in lockstep.",
   "license": "MIT",
   "main": "dist/index.js",
@@ -29,9 +29,21 @@
     "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
-    "@spanexx/agentide": "workspace:*"
+    "@spanexx/agentide": "workspace:*",
+    "@spanexx/adapter-mcp": "workspace:*",
+    "@spanexx/adapter-websocket": "workspace:*",
+    "@spanexx/backend-runtime": "workspace:*",
+    "@spanexx/capability-registry": "workspace:*",
+    "@spanexx/event-bus": "workspace:*",
+    "@spanexx/gateway-core": "workspace:*",
+    "@spanexx/plugin-manager": "workspace:*",
+    "@spanexx/session-manager": "workspace:*"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3"
   }
 }

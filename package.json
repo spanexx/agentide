@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Agent Runtime Platform — monorepo root",
+  "description": "Agent Runtime Platform \u2014 monorepo root",
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run --passWithNoTests",
@@ -12,7 +12,7 @@
     "gateway:log": "node scripts/start-gateway.mjs > /tmp/gateway.log 2>&1",
     "precommit": "bash scripts/check-banned-types.sh && npm run typecheck && npm run lint && npm run build",
     "lint": "eslint .",
-    "typecheck": "test -z \"$(ls -A packages 2>/dev/null)\" && echo 'no packages yet — skipping typecheck' || tsc --build --pretty"
+    "typecheck": "test -z \"$(ls -A packages 2>/dev/null)\" && echo 'no packages yet \u2014 skipping typecheck' || tsc --build --pretty"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
