@@ -1,0 +1,92 @@
+{
+  "stage": "post-impl",
+  "updated": "2026-08-04T09:24:19.758Z",
+  "gateway": "ws://127.0.0.1:7300/ws",
+  "checks": [
+    {
+      "name": "1 in-process status (S1/S3 key:value)",
+      "expectedExit": 0,
+      "exit": 0,
+      "ok": true
+    },
+    {
+      "name": "2 in-process capability list (table)",
+      "expectedExit": 0,
+      "exit": 0,
+      "ok": true
+    },
+    {
+      "name": "3 remote capability list (S2 alias→cap)",
+      "expectedExit": 0,
+      "exit": 0,
+      "ok": true
+    },
+    {
+      "name": "4 sessions alias (S2 session.list)",
+      "expectedExit": 0,
+      "exit": 0,
+      "ok": true
+    },
+    {
+      "name": "5 invoke gateway.status (S4 pretty JSON)",
+      "expectedExit": 0,
+      "exit": 0,
+      "ok": true
+    },
+    {
+      "name": "6 invoke product.list (unregistered → invoke.error)",
+      "expectedExit": 1,
+      "exit": 1,
+      "ok": true
+    },
+    {
+      "name": "7 sessions --json (S3 compact)",
+      "expectedExit": 0,
+      "exit": 0,
+      "ok": true
+    },
+    {
+      "name": "8 watch sessions (S7 NDJSON → Ctrl-C=5)",
+      "expectedExit": 5,
+      "exit": 5,
+      "ok": true
+    },
+    {
+      "name": "9 bad.jwt (S5 exit 4)",
+      "expectedExit": 4,
+      "exit": 4,
+      "ok": true
+    },
+    {
+      "name": "10 path:/nope.jwt (S1 exit 2)",
+      "expectedExit": 2,
+      "exit": 2,
+      "ok": true
+    },
+    {
+      "name": "11 no URL non-TTY (S1 exit 2)",
+      "expectedExit": 2,
+      "exit": 2,
+      "ok": true
+    },
+    {
+      "name": "12 wss:// TLS (S5 exit 3)",
+      "expectedExit": 3,
+      "exit": 3,
+      "ok": true
+    },
+    {
+      "name": "13 config 0644 (S6 one warning)",
+      "expectedExit": 0,
+      "exit": 0,
+      "ok": true
+    }
+  ],
+  "pass": 13,
+  "fail": 0,
+  "observedGaps": [
+    "capability.list with empty input.scope returns [] (gateway-core scope filter) — the `capabilities` alias therefore prints an empty table against a real gateway; v2: forward caller scope or operator full-catalog view.",
+    "invoke product.list on a bare gateway → GATEWAY_SESSION_REQUIRED (unregistered cap), exit 1 — S5 verbatim passthrough verified; business caps appear once a backend SDK registers.",
+    "wss:// against the ws listener surfaces as EPROTO/SSL-record error — exit-codes.ts now classifies it as exit 3 (fixed during post-impl sim)."
+  ]
+}

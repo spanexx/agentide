@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
+import { createEventBus } from "@spanexx/event-bus";
+import { issueToken, type CanonicalInvocation, type CanonicalResponse, type Clock, type FileSystem, type Gateway } from "@spanexx/gateway-core";
+import { createWebSocketAdapter } from "@spanexx/adapter-websocket";
 import { runCli } from "../index.js";
-import type { FileSystem } from "@spanexx/gateway-core";
 
 class InMemoryFs implements FileSystem {
   files = new Map<string, string>();
@@ -231,5 +233,99 @@ describe("CLI token issue expectedOrigins", () => {
     expect(r.exitCode).toBe(0);
     expect(r.payload?.expectedOrigins).toEqual(["https://app.acme.com"]);
     expect(r.raw).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  });
+});
+
+// Remote consumer dispatch: `--url` switches aliases/status/capability list
+// onto the live-gateway path (GRILL Q2 / Q3). Non-TTY here → compact JSON.
+describe("CLI remote dispatch (--url)", () => {
+  const SECRET = new TextEncoder().encode("cli-dispatch-secret");
+  const adapters: ReturnType<typeof createWebSocketAdapter>[] = [];
+
+  class CliTestClock implements Clock {
+    nowValue = 1_700_000_000_000;
+    now(): number { return this.nowValue; }
+    setTimeout(callback: () => void, delayMs: number): number { return setTimeout(callback, delayMs) as unknown as number; }
+    clearTimeout(handle: number): void { clearTimeout(handle); }
+  }
+
+  async function startAdapter(handler?: (req: CanonicalInvocation) => Promise<CanonicalResponse>): Promise<string> {
+    const gateway: Gateway = {
+      listTenants: () => [{ id: "acme", name: "Acme", createdAt: 1, suspended: false }],
+      handleInvocation: handler ?? (async (req): Promise<CanonicalResponse> => {
+        switch (req.capability.name) {
+          case "session.list": return { output: [] };
+          case "gateway.status": return { output: { status: "ok", tenantCount: 1, pluginCount: 1, uptimeMs: 7 } };
+          case "system.health": return { output: { status: "ok" } };
+          default: return { output: { name: req.capability.name } };
+        }
+      }),
+    } as unknown as Gateway;
+    const adapter = createWebSocketAdapter(gateway, createEventBus(), {
+      tokenSecret: SECRET,
+      port: 0,
+      clock: new CliTestClock(),
+    });
+    await adapter.start();
+    adapters.push(adapter);
+    const address = adapter.address();
+    return `ws://127.0.0.1:${address!.port}/ws`;
+  }
+
+  function tok(): string {
+    const clock = new CliTestClock();
+    return issueToken({
+      sub: { tenantId: "acme", callerId: "ops" },
+      scope: ["platform.*.read"],
+      iat: clock.now(),
+      exp: clock.now() + 60_000,
+    }, SECRET, clock);
+  }
+
+  afterEach(async () => {
+    await Promise.all(adapters.splice(0).map((a) => a.stop()));
+  });
+
+  it("help lists the remote commands", async () => {
+    const r = await runCli(["--help"], { fs: new InMemoryFs() });
+    expect(r.stdout).toMatch(/Remote \(live gateway over websocket/);
+    expect(r.stdout).toMatch(/agentide sessions/);
+    expect(r.stdout).toMatch(/agentide invoke <cap>/);
+    expect(r.stdout).toMatch(/agentide watch <alias>/);
+  });
+
+  it("`sessions --url` dispatches to the consumer (compact JSON)", async () => {
+    const url = await startAdapter();
+    const r = await runCli(["sessions", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("[]");
+  });
+
+  it("`status --url` hits gateway.status remotely instead of local status", async () => {
+    const url = await startAdapter();
+    const r = await runCli(["status", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe('{"status":"ok","tenantCount":1,"pluginCount":1,"uptimeMs":7}');
+  });
+
+  it("`capability list --url` dispatches to the consumer", async () => {
+    const url = await startAdapter(async (req) => ({ output: [{ name: "gateway.status", version: "1.0.0", tier: "read" }] }));
+    const r = await runCli(["capability", "list", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe('[{"name":"gateway.status","version":"1.0.0","tier":"read"}]');
+  });
+
+  it("`health --url` hits system.health", async () => {
+    const url = await startAdapter();
+    const r = await runCli(["health", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe('{"status":"ok"}');
+  });
+
+  it("`invoke --url` returns the gateway output", async () => {
+    const url = await startAdapter();
+    const r = await runCli(["invoke", "product.list", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe('{"name":"product.list"}');
   });
 });

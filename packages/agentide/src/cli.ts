@@ -3,7 +3,10 @@
 // discovery/issues: argv parsing follows GNU-ish conventions — subcommand first, then sub-subcommand + flags. We keep the parser minimal (no dependency on commander/yargs).
 // Uses: createPlatform() to wire the stack per-invocation (init/start/status/etc each spin up a Platform from disk state, operate, tear down).
 // Used by: bin entry point, integration tests, future programmatic CLI consumers.
+import { homedir } from "node:os";
 import { createPlatform } from "./factory.js";
+import { hasUrlSource } from "./config.js";
+import { runConsumer } from "./consumer.js";
 import type { CliOptions, CliResult } from "./cli-types.js";
 
 let globalHandlersInstalled = false;
@@ -36,7 +39,19 @@ Usage:
   agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--origin <url> ...] [--origins <csv>] [--data-dir <path>]
   agentide capability {list|describe --name <name>} [--owner <string>] [--tier <read|write|act|destructive>] [--data-dir <path>]
   agentide plugin  {list} [--data-dir <path>]
-  agentide --help
+
+Remote (live gateway over websocket — needs --url/PLATFORM_GATEWAY_URL or config file):
+  agentide sessions            # session.list alias
+  agentide capabilities        # capability.list alias
+  agentide plugins             # plugin.list alias
+  agentide status              # gateway.status alias (remote when --url present)
+  agentide health              # system.health alias
+  agentide invoke <cap> [--args '<json>'] [--session <id>] [--mode call|stream]
+  agentide watch <alias> [--topic <pattern>]
+
+  common flags: --url <ws://host/ws> --token <jwt|path:/...> --json
+  config: <OS-config-dir>/platform/config.toml (override: --config <path>)
+
 
 Run \`agentide <command> --help\` for command-specific options.
 `;
@@ -110,15 +125,30 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
       case "init":
         return await runInit(dataDir, flags, opts);
       case "status":
-        return await runStatus(dataDir, opts);
+        // in-process when no remote config; remote (gateway.status) otherwise
+        return (await hasUrlSource(argv, process.env))
+          ? await runConsumer(argv, consumerOptions(argv))
+          : await runStatus(dataDir, opts);
       case "tenant":
         return await runTenant(positional.slice(1), dataDir, flags, opts);
       case "token":
         return await runToken(positional.slice(1), dataDir, flags, opts);
       case "capability":
+        // `capability list` is remote when --url/env/config supplies a URL
+        if (positional[1] === "list" && (await hasUrlSource(argv, process.env))) {
+          return await runConsumer(argv, consumerOptions(argv));
+        }
         return await runCapability(positional.slice(1), dataDir, flags, opts);
       case "plugin":
         return await runPlugin(positional.slice(1), dataDir, opts);
+      // remote consumer commands (GRILL Q2)
+      case "sessions":
+      case "capabilities":
+      case "plugins":
+      case "health":
+      case "invoke":
+      case "watch":
+        return await runConsumer(argv, consumerOptions(argv));
       default:
         return result("", `unknown command: ${cmd}\n\n${HELP}`, 1);
     }
@@ -126,6 +156,17 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
     const msg = e instanceof Error ? e.message : String(e);
     return result("", `error: ${msg}\n`, 1);
   }
+}
+
+function consumerOptions(argv: readonly string[]) {
+  return {
+    argv,
+    env: process.env,
+    isTTY: process.stdout.isTTY === true,
+    width: process.stdout.columns,
+    cwd: process.cwd(),
+    home: homedir(),
+  };
 }
 
 async function runInit(dataDir: string, flags: Record<string, string | boolean | string[]>, opts: CliOptions): Promise<CliResult> {
