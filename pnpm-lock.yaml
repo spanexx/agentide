@@ -145,6 +145,31 @@ importers:
         version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(yaml@2.9.0))
 
   packages/agentide:
+    dependencies:
+      '@spanexx/adapter-mcp':
+        specifier: workspace:*
+        version: link:../adapter-mcp
+      '@spanexx/adapter-websocket':
+        specifier: workspace:*
+        version: link:../adapter-websocket
+      '@spanexx/backend-runtime':
+        specifier: workspace:*
+        version: link:../backend-runtime
+      '@spanexx/capability-registry':
+        specifier: workspace:*
+        version: link:../capability-registry
+      '@spanexx/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@spanexx/gateway-core':
+        specifier: workspace:*
+        version: link:../gateway-core
+      '@spanexx/plugin-manager':
+        specifier: workspace:*
+        version: link:../plugin-manager
+      '@spanexx/session-manager':
+        specifier: workspace:*
+        version: link:../session-manager
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
