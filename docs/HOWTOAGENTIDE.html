@@ -108,6 +108,7 @@
       <li><a href="#sdk">Wire your backend (SDK)</a></li>
       <li><a href="#browser">Wire your browser SDK</a></li>
       <li><a href="#call">Call a capability</a></li>
+      <li><a href="#credentials">Client credentials (machine identity)</a></li>
       <li><a href="#commands">All commands</a></li>
       <li><a href="#trouble">Troubleshooting</a></li>
     </ol>
@@ -353,7 +354,57 @@ agentide invoke product.create '{"sku":"ABC123","name":"widget"}' \
 
 const result = await invoke('product.list', { userId: 'u_42' });</code></pre>
 
-  <h2 id="commands">8. All commands</h2>
+  <h2 id="credentials">8. Client credentials (machine identity)</h2>
+
+  <p>Unattended backends (NestJS apps, workers, CI jobs) shouldn't paste a
+  human-minted JWT into <code>.env</code>. Instead, register a <b>client</b> —
+  a machine identity — and let the SDK mint + refresh its own tokens via the
+  OAuth <code>client_credentials</code> grant. The gateway stores only a
+  salted hash of the secret; the plaintext is shown exactly once, at creation.</p>
+
+  <h3>a) create a client (operator)</h3>
+<pre><code>agentide client create --tenant acme --name nest-app --scope 'product.*'</code></pre>
+  <p>Prints the client id + the path to the secret file
+  (<code>&lt;data-dir&gt;/clients/.secret-&lt;id&gt;.txt</code>, mode 0600). Copy the
+  secret into the app's <code>.env</code> — the gateway cannot show it again.
+  Rate limit: 5 creates per operator per hour.</p>
+
+  <h3>b) SDK mints + refreshes its own tokens</h3>
+<pre><code>const sdk = createSdk({
+  gateway: { url: 'ws://127.0.0.1:7300/ws' },   // no token needed here
+  app:     { id: 'nest-app', name: 'nest-app' },
+  manifest: 'manifest.json',
+  oauthUrl:    'http://127.0.0.1:7100',
+  clientId:    'cli_xxx',
+  clientSecret: process.env.PLATFORM_CLIENT_SECRET,
+});
+await sdk.connect();   // POSTs client_credentials, stores the JWT, connects</code></pre>
+  <p>Environment variables <code>PLATFORM_CLIENT_ID</code> and
+  <code>PLATFORM_CLIENT_SECRET</code> work too. The SDK refreshes the token
+  before expiry (60s window + jitter, one in-flight refresh at a time). If the
+  operator revokes the client, the next refresh gets
+  <code>client_revoked</code>, the SDK closes the WebSocket cleanly and stops
+  reconnecting (your <code>onRevoked</code> callback fires).</p>
+
+  <h3>c) offline handoff: registration codes</h3>
+  <p>No secret to paste? Grant a one-time code, redeem it on first boot:</p>
+<pre><code>agentide client grant --tenant acme --name nest-app --scope 'product.*'
+# → code: rc_xxx  (valid 5 min, one-time use)
+agentide client redeem --code rc_xxx
+# → client_id + client_secret — save these into config.toml</code></pre>
+
+  <h3>d) revoke / rotate</h3>
+<pre><code>agentide client revoke --client-id cli_xxx   # instant: next token mint → 401 client_revoked
+agentide client rotate --client-id cli_xxx   # new secret; old one valid 5 min grace</code></pre>
+
+  <h3>e) humans: OIDC auth-code grant (dev stub)</h3>
+  <p>Start the gateway with <code>--enable-oidc</code> to expose
+  <code>GET /oauth/authorize</code> + <code>GET /oauth/callback</code> — a
+  dev-stub approval page issues a JWT via the auth-code flow (one-shot codes).
+  Off by default; swap the stub for a real IdP (Auth0, Keycloak) in
+  <code>oauth-token-handler.ts:handleAuthorize</code> for production.</p>
+
+  <h2 id="commands">9. All commands</h2>
 
   <h3>Operator (run on the host where the gateway lives)</h3>
   <table>
@@ -366,6 +417,9 @@ const result = await invoke('product.list', { userId: 'u_42' });</code></pre>
     <tr><td><code>agentide token issue --tenant ...</code></td><td>mint a JWT</td></tr>
     <tr><td><code>agentide capability list</code></td><td>list registered cap names (in-process)</td></tr>
     <tr><td><code>agentide plugin list</code></td><td>installed plugins (runtime, service, observer)</td></tr>
+    <tr><td><code>agentide client create --tenant &lt;id&gt; --name &lt;n&gt; [--scope '&lt;s&gt;']</code></td><td>register a machine identity (see <a href="#credentials">§8</a>)</td></tr>
+    <tr><td><code>agentide client grant/redeem</code></td><td>one-time registration-code handoff (offline-friendly)</td></tr>
+    <tr><td><code>agentide client list/revoke/rotate</code></td><td>manage machine identities (rotate keeps 5-min grace)</td></tr>
   </table>
 
   <h3>Consumer (call against a running gateway)</h3>
@@ -386,7 +440,7 @@ const result = await invoke('product.list', { userId: 'u_42' });</code></pre>
 --config &lt;path-to-toml&gt;     # config file override (defaults to &lt;os-config-dir&gt;/platform/config.toml)
 --json                       # machine-readable output (one line)</code></pre>
 
-  <h2 id="trouble">9. Troubleshooting</h2>
+  <h2 id="trouble">10. Troubleshooting</h2>
 
   <details>
     <summary><span class="err-tag">error: port 7100 already in use (is another gateway running?)</span></summary>

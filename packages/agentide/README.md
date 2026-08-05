@@ -40,9 +40,17 @@ agentide token issue --tenant acme --caller app --scope '*' --origin https://app
 agentide capability list                            # list registered caps
 agentide capability describe --name product.list
 agentide plugin list                                # list installed plugins
+agentide client create --tenant acme --name nest-app --scope 'product.*'   # machine identity (secret shown once, 0600 file)
+agentide client grant --tenant acme --name nest-app --scope 'product.*'    # one-time registration code (5 min)
+agentide client redeem --code rc_xxx                                        # turn a code into client_id + secret
+agentide client list [--tenant acme]                                        # list clients
+agentide client revoke --client-id cli_xxx                                  # instant revoke (next mint → 401)
+agentide client rotate --client-id cli_xxx                                  # new secret, old valid 5 min grace
 ```
 
 the CLI spins up a short-lived `Platform` per invocation, runs the command, tears down. CLIs do NOT bind :7100 / :7300 (would race across back-to-back invocations).
+
+machine identity end-to-end (create → SDK auto-mint/refresh → revoke) is documented in [HOWTOAGENTIDE.html §8 Client credentials](../../docs/HOWTOAGENTIDE.html#credentials); the SDK side (`oauthUrl`/`clientId`/`clientSecret` on `createSdk`) lives in `@spanexx/sdk-node`.
 
 ## public surface
 

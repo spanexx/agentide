@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-03  **Open:** 10  **Resolved:** 44  **Critical/High:** 2
+**Last updated:** 2026-08-05  **Open:** 11  **Resolved:** 45  **Critical/High:** 2
 
 ## Open
 
@@ -83,9 +83,22 @@
   - To fix: v2 — alias forwards `{scope: callerScope}` (caller's token scope), or gateway treats operator-minted tokens (`callerId` in a reserved set / token claim) as full-catalog. Logged, not fixed in v1 (GRILL Q2 locks the thin alias; changing it mid-pack would violate the locked contract).
   - Verified by: `packages/agentide/scripts/simulate-cli-consumer.mjs` check 3, sim-state.json `observedGaps[0]`.
 
+- **D-70** (Medium, 2026-08-05, reporter: agentide-client-credentials Phase 8 review) — Client-action audit coverage is partial: cap-based client actions audit, but CLI-path client actions and `token_mint` rows do not.
+  - Doc claim: PRD-TRD-agentide-client-credentials.md "Operational signals" lists `audit_emit({action:"client.create",...})`, `audit_emit({action:"client.revoke",...})`, `log("oauth_token request",...)` as shipped behavior (lines 309-315). IMPL Phase 8 line 952 cites "S9 in PRD-TRD says 'all client actions write to audit log'" as close evidence — that citation is wrong (S9 is the brute-force rate-limit scenario, line 271/288; audit is the GRILL S10 topic, GRILL line 94).
+  - Code reality: capability-path client actions (`client.create`/`list`/`revoke`/`rotate` via `handleInvocation`) DO write audit rows — factory.ts registers them as wrapped handlers (`packages/gateway-core/src/factory.ts:453-495`) that flow through `auditOk`/`auditError` (`packages/gateway-core/src/handle-invocation.ts:332-375`), verified by `client-capabilities.test.ts`. BUT: (a) `agentide client create/grant/revoke/rotate/redeem` calls `clientService` DIRECTLY, bypassing `handleInvocation` entirely — no audit rows (`packages/agentide/src/cli.ts:333-407`); (b) the `auditEmit` hook on `TokenRequestEnv` (`packages/gateway-core/src/oauth-token-handler.ts:38,94`, `{action:"client_credentials.token_mint"}`) is never wired — factory.ts's `oauthTokenHandler` closure passes no `auditEmit` (`packages/gateway-core/src/factory.ts:135-148`), so no token-mint audit row is ever emitted in production (only the unit test wires it).
+  - Why matters: an operator running `agentide client create` gets zero audit trail — the exact signal PRD-TRD promises. Compliance/forensics gap; the cap path works but the CLI is the primary operator surface.
+  - To fix: (a) route `runClient` subcommands through a thin `handleInvocation`-equivalent audit emit (or call the same `auditOk` path); (b) pass `auditEmit` from factory.ts into `handleTokenRequest`. Both are small additive changes.
+  - Related: D-65 (capability.list empty table — same operator-CLI blind spot class).
+
 ---
 
 ## Resolved
+
+- **D-71** (Resolved 2026-08-05, reporter: agentide-client-credentials Phase 6-7 review) — IMPL prose for the SDK OAuth shape drifted from shipped code in two places; both resolved by documenting code reality.
+  - Doc claim: IMPL-agentide-client-credentials.md Phase 6 describes a flat async `createSdk({url, oauthUrl, clientId, clientSecret, ...})` with a test file `client.test.ts`; Phase 7 prose says `handleCallback` "creates a registration code" (reg-code flow).
+  - Code reality: shipped `createSdk(config)` is the nested sync `SdkConfig {gateway:{url,token}, app, manifest, handlers}` factory from Phase 1-5 with `clientId`/`clientSecret`/`oauthUrl` added as flat optional fields (`packages/sdk-node/src/types.ts` SdkConfig, CID:sdk-002); tests live in `refresher.test.ts` (name collision with the Phase 3 `client.test.ts` WsClient suite — resolved by renaming, header documents it); `handleCallback` mints a JWT directly (`packages/gateway-core/src/oauth-token-handler.ts`, CID:oidc-002) — reg-code redeem is a separate `grant_type=registration_code` path.
+  - Verified by: 989/989 vitest tests, build/lint/typecheck/check-banned-types clean after Phases 6-7 commits `9a9b739` + `4334c84`; code matches PRD-TRD S2/S3/S6 scenario locks (client_credentials POST body, refresh-before-expiry, one-shot code redeem). IMPL remains a build plan, superseded where it disagrees with shipped code; refresher.test.ts header + this entry are the citation trail.
+
 
 - **D-65** (Low, 2026-08-03, reporter: agentide-cli-consumer drift review) — PRD-TRD-agentide-cli-consumer.md Scenario 4 wire frame lock (`input?` optional) was ambiguous about whether the CLI should omit the field entirely or send `input: {}`. The CLI omits when empty (DRIFT: client.ts); the gateway treats omission and explicit-empty equivalently. Resolved by adding an explicit sentence to Scenario 4: "*`input?` and `sessionId?` are optional — the CLI omits a field from the wire entirely when not supplied (rather than sending `null` or `{}`); the gateway treats both 'field omitted' and 'field: undefined' as the same value (defaults applied at dispatch).*" Doc-only fix in `docs/features/agentide-cli-consumer/PRD-TRD-agentide-cli-consumer.md` Scenario 4. No code change.
 - **D-66** (Low, 2026-08-03, reporter: agentide-cli-consumer drift review) — Invoke frames from `createWsClient` omitted the `mode` field, while PRD S4 Scenario 4 locks `mode:"call"|"stream"` in the wire frame. Server normalized the missing field to `call`, so v1 behavior was unchanged, but the wire contract drifted from the spec. Fix: `packages/adapter-websocket/src/client.ts` now emits `mode: "call"` explicitly on every invoke frame. Confirmed by 168/168 passing tests on `@platform/agentide` + `@platform/adapter-websocket` after the fix.
