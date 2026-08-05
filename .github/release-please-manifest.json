@@ -1,0 +1,56 @@
+{
+  "packages/agentide": {
+    "version": "0.0.6"
+  },
+  "packages/gateway-core": {
+    "version": "0.0.2"
+  },
+  "packages/sdk-node": {
+    "version": "0.0.2"
+  },
+  "packages/sdk-node-cjs": {
+    "version": "0.0.1"
+  },
+  "packages/sdk-browser": {
+    "version": "0.0.3"
+  },
+  "packages/sdk-browser-cjs": {
+    "version": "0.0.1"
+  },
+  "packages/adapter-mcp": {
+    "version": "0.0.2"
+  },
+  "packages/adapter-websocket": {
+    "version": "0.0.2"
+  },
+  "packages/backend-runtime": {
+    "version": "0.0.2"
+  },
+  "packages/capability-registry": {
+    "version": "0.0.2"
+  },
+  "packages/event-bus": {
+    "version": "0.0.1"
+  },
+  "packages/event-bus-cjs": {
+    "version": "0.0.1"
+  },
+  "packages/origin": {
+    "version": "0.0.2"
+  },
+  "packages/errors": {
+    "version": "0.0.2"
+  },
+  "packages/platform-capabilities": {
+    "version": "0.0.3"
+  },
+  "packages/plugin-manager": {
+    "version": "0.0.2"
+  },
+  "packages/session-manager": {
+    "version": "0.0.2"
+  },
+  "packages/agentide-cjs": {
+    "version": "0.0.2"
+  }
+}
