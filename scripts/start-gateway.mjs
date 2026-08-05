@@ -16,7 +16,9 @@
 //
 // Network surface when running:
 //   - 127.0.0.1:7100 — MCP adapter (JSON-RPC, for AI agents)
-//   - 127.0.0.1:7300 — WebSocket adapter (for SDKs like sdk-node-cjs)
+//   - 127.0.0.1:7300 — WebSocket adapter (for CLI, dashboard, agents)
+//   - 127.0.0.1:7350 — Backend runtime (for sdk-node/sdk-browser — the
+//                       SDK door; first-frame protocol is {type:"sdk.auth"})
 //
 // Auth:
 //   The gateway signs JWTs with a secret stored in ./data/gateway-secret.
@@ -61,9 +63,16 @@ const platform = await createPlatform({
   // Both adapters default to ON; explicit here for clarity.
   adapterMcp: { host: '127.0.0.1', port: 7100 },
   adapterWs: { host: '127.0.0.1', port: 7300 },
+  // BI[cjs-sdk-bootstrap] Phase 1: the canonical dev bootstrap opens the
+  // SDK door so the example app (and any back-end consumer) has a reachable
+  // target. CLI `agentide start` keeps the door closed by default; opt-in
+  // via --port-sdk (start.ts:52-72). The factory accepts a bare port number;
+  // --bind cannot be plumbed through to backend-runtime in v1 (server.ts:277
+  // hardcodes host "127.0.0.1") — flagged as a follow-up.
+  backendRuntimePort: 7350,
 });
 
-console.log('[gateway] platform up — mcp :7100, ws :7300');
+console.log('[gateway] platform up — mcp :7100, ws :7300, sdk :7350');
 
 // Graceful shutdown — closes the adapters (releasing the ports) and lets
 // in-flight invocations drain before the process exits.

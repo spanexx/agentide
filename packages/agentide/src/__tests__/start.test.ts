@@ -29,6 +29,7 @@ interface CreatePlatformCallConfig {
   adapterWs?: boolean;
   adapterWsHost?: string;
   defaultTenant?: { id: string; name: string };
+  backendRuntimePort?: number;
 }
 
 // Mock the platform factory so tests don't bind real ports / write real disk.
@@ -226,5 +227,44 @@ describe("agentide start", () => {
     const r = await run(["start", "--data-dir", "/data", "--port-ws", "17300"], mem);
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toMatch(/--port-ws is not supported/);
+  });
+
+  // BI[cjs-sdk-bootstrap] Phase 1 — --port-sdk opens the backend-runtime door
+  // (where sdk-node/sdk-browser connect with the {type:"sdk.auth"} first-frame
+  // protocol). Opt-in: flag absent → no backendRuntimePort passed, but the
+  // rest of the platform boots normally. These tests pin the contract.
+  it("--port-sdk absent → no backendRuntimePort passed (backward compat)", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data"], mem);
+    const call = lastCreatePlatformCall();
+    expect(call.backendRuntimePort).toBeUndefined();
+  });
+
+  it("--port-sdk 7350 → backendRuntimePort: 7350", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data", "--port-sdk", "7350"], mem);
+    const call = lastCreatePlatformCall();
+    expect(call.backendRuntimePort).toBe(7350);
+  });
+
+  it("--port-sdk with no value → defaults to 7350", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data", "--port-sdk"], mem);
+    const call = lastCreatePlatformCall();
+    expect(call.backendRuntimePort).toBe(7350);
+  });
+
+  it("--port-sdk with invalid value → exit 2", async () => {
+    const mem = makeFs();
+    const r = await run(["start", "--data-dir", "/data", "--port-sdk", "abc"], mem);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/invalid port --port-sdk=abc/);
+  });
+
+  it("--port-sdk 7300 → exit 2 (collision with WS adapter)", async () => {
+    const mem = makeFs();
+    const r = await run(["start", "--data-dir", "/data", "--port-sdk", "7300"], mem);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/collides with MCP\/WS adapter doors/);
   });
 });

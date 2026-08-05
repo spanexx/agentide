@@ -5,6 +5,7 @@
 // Used by: bin entry point, integration tests, future programmatic CLI consumers.
 import { homedir } from "node:os";
 import { createPlatform } from "./factory.js";
+import { readFileSync } from "node:fs";
 import { hasUrlSource } from "./config.js";
 import { runConsumer } from "./consumer.js";
 import { runStart, runStop, runDetachedStart } from "./start.js";
@@ -34,15 +35,68 @@ export function installGlobalErrorHandlers(sink: ErrorSink = defaultErrorSink): 
 }
 
 // CID:cli-version-001 - CLI_VERSION
-// Version reported by `agentide --version`. Single source = package.json; esbuild
-// injects it at bundle time via --define (see the `bundle` script).
+// Version reported by `agentide --version`. Source of truth = package.json.
+// Two paths resolve it:
+//   1. esbuild `--define:CLI_VERSION=...` inlines the literal at bundle time
+//      (see the `bundle` script in packages/agentide/package.json) — used by
+//      the published `dist/bin.bundled.cjs` and the global `agentide` CLI.
+//   2. vitest's `define` in vitest.config.ts inlines it for the test suite.
+// The plain `tsc`-built dist/index.js (what `scripts/start-gateway.mjs` and
+// any CJS consumer of `@spanexx/agentide` load) has neither define. To make
+// the dist safe to load directly, we fall back to readPackageVersion() at
+// runtime. The define is still preferred (cuts a fs.readFileSync per run)
+// but the runtime fallback guarantees the dist never crashes on
+// `CLI_VERSION is not defined`.  CID:dist-001 in dist.test.ts pins this.
 declare const CLI_VERSION: string;
 
-const HELP = `agentide (v${CLI_VERSION}) — Agent Runtime Platform operator CLI
+let cachedVersion: string | undefined;
+function readPackageVersion(): string {
+  if (cachedVersion !== undefined) return cachedVersion;
+  // The CLI source lives at packages/agentide/src/cli.ts (one level up from
+  // the dist/ directory at build time). Resolve the package.json at runtime
+  // via import.meta.url. Walk up from the current file's location: dist/
+  // or src/, both are children of packages/agentide/.
+  try {
+    const candidates = [
+      new URL("../package.json", import.meta.url),  // dist/cli.js → packages/agentide/package.json
+      new URL("../package.json", new URL("./cli.ts", import.meta.url)),  // src/cli.ts → packages/agentide/package.json (defensive)
+    ];
+    for (const url of candidates) {
+      try {
+        const raw = readFileSync(url, "utf-8") as string;
+        const pkg = JSON.parse(raw) as { version?: string };
+        if (typeof pkg.version === "string") {
+          cachedVersion = pkg.version;
+          return cachedVersion;
+        }
+      } catch {
+        // try next candidate
+      }
+    }
+    cachedVersion = "0.0.0";
+  } catch {
+    cachedVersion = "0.0.0";
+  }
+  return cachedVersion;
+}
+
+function cliVersion(): string {
+  // When esbuild or vitest defines CLI_VERSION, the const is a real string.
+  // The `declare const` is TypeScript-only; at runtime it is undeclared
+  // unless the defines above substitute a literal. `typeof` short-circuits
+  // on the undeclared-symbol case so we never throw ReferenceError when the
+  // dist is loaded by raw Node.
+  return typeof CLI_VERSION === "string" && CLI_VERSION !== ""
+    ? CLI_VERSION
+    : readPackageVersion();
+}
+
+function buildHelp(): string {
+  return `agentide (v${cliVersion()}) — Agent Runtime Platform operator CLI
 
 Usage:
   agentide init    [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]
-  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>] [--pid-file <path>] [--log-file <path>] [--foreground] [--enable-oidc] [--no-tls]
+  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--port-sdk <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>] [--pid-file <path>] [--log-file <path>] [--foreground] [--enable-oidc] [--no-tls]
   agentide stop    [--pid-file <path>]
   agentide status  [--data-dir <path>] [--pid-file <path>] [--url ...] [--token ...] [--json] [remote-only if --url given]  (remote gateway.status)
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
@@ -66,6 +120,7 @@ Remote (live gateway over websocket — needs --url/PLATFORM_GATEWAY_URL or conf
 
 Run \`agentide <command> --help\` for command-specific options.
 `;
+}
 
 interface ParsedArgs {
   positional: string[];
@@ -129,11 +184,11 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
   // without a data-dir / gateway. Note: parseArgs turns "--version" into
   // flags.version + cmd=undefined, so this must come BEFORE the help check.
   if (cmd === "-v" || flags["version"] === true) {
-    return result(`${CLI_VERSION}\n`);
+    return result(`${cliVersion()}\n`);
   }
 
   if (cmd === undefined || cmd === "--help" || cmd === "-h" || flags["help"] === true) {
-    return result(HELP);
+    return result(buildHelp());
   }
 
   const dataDir = getFlag(flags, "data-dir", process.env["AGENTIDE_DATA_DIR"] ?? "./.agentide/data");
@@ -174,7 +229,7 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
       case "watch":
         return await runConsumer(argv, consumerOptions(argv));
       default:
-        return result("", `unknown command: ${cmd}\n\n${HELP}`, 2);
+        return result("", `unknown command: ${cmd}\n\n${buildHelp()}`, 2);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

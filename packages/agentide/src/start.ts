@@ -10,6 +10,7 @@
  * CID:start-006 - bootstrap tenant only when tenants.json missing
  * CID:start-007 - signal handlers keep the event loop alive after return
  * CID:start-008 - AGENTIDE_TEST_NO_BLOCK env var skips the blocking wait for tests
+ * CID:start-012 - --port-sdk opt-in flag (BI[cjs-sdk-bootstrap] Phase 1)
  *
  * Quick lookup: rg -n "CID:start-" packages/agentide/src/start.ts
  */
@@ -52,6 +53,31 @@ export async function runStart(
   const portWsExplicit = getFlag(flags, "port-ws", "");
   if (portWsExplicit !== "") {
     return result("", "error: --port-ws is not supported yet (WS adapter port is fixed at 7300 in v1; future versions will expose adapterWsPort)\n", 2);
+  }
+
+  // CID:start-012 - --port-sdk opt-in (BI[cjs-sdk-bootstrap] Phase 1).
+  // Opens the backend-runtime door (where sdk-node/sdk-browser connect with
+  // the {type:"sdk.auth"} first-frame protocol). Flag absent → door stays
+  // closed; the factory's backward-compat regression test (no backendRuntime
+  // → GATEWAY_SDK_UNREACHABLE) stays green. Default 7350 when present with
+  // no value (matches DEFAULT_SDK_PORT in factory.ts).
+  const portSdkFlag = flags["port-sdk"];
+  let portSdk: number | undefined;
+  if (portSdkFlag !== undefined) {
+    if (typeof portSdkFlag === "boolean" && portSdkFlag === true) {
+      portSdk = 7350;
+    } else if (typeof portSdkFlag === "string") {
+      const parsed = Number.parseInt(portSdkFlag, 10);
+      if (!Number.isFinite(parsed)) {
+        return result("", `error: invalid port --port-sdk=${portSdkFlag}\n`, 2);
+      }
+      portSdk = parsed;
+    } else {
+      return result("", `error: invalid --port-sdk value (${String(portSdkFlag)})\n`, 2);
+    }
+    if (portSdk === 7100 || portSdk === 7200 || portSdk === 7300) {
+      return result("", `error: --port-sdk=${portSdk} collides with MCP/WS adapter doors (7100/7200/7300)\n`, 2);
+    }
   }
 
   // CID:start-004 - at least one adapter required
@@ -123,6 +149,14 @@ export async function runStart(
       adapterMcpPort: portMcp,
       adapterWs: adapterWsEnabled,
       adapterWsHost: bind,
+      // CID:start-012 - SDK door opt-in. Spread only when portSdk is set so
+      // the no-flag path keeps createPlatform's config shape identical to
+      // before (regression test at factory.ts:78-80 stays valid).
+      // NOTE: backendRuntime's WebSocketServer currently hardcodes host
+      // "127.0.0.1" (packages/backend-runtime/src/server.ts:277); --bind
+      // does not flow through to the SDK door in v1. Phase 1 ships the
+      // port-on opt-in; bind-on is a follow-up patch.
+      ...(portSdk !== undefined ? { backendRuntimePort: portSdk } : {}),
       ...(enableOidc ? { enableOidc: true } : {}),
       requireTls: !noTls,
     });
@@ -135,7 +169,8 @@ export async function runStart(
   // CID:start-001 - banner
   const mcpBanner = !adapterMcpEnabled ? "(disabled)" : `:${portMcp}`;
   const wsBanner = !adapterWsEnabled ? "(disabled)" : `:7300`;
-  const banner = `[gateway] platform up — mcp ${mcpBanner}, ws ${wsBanner}\n`;
+  const sdkBanner = portSdk === undefined ? "(disabled)" : `:${portSdk}`;
+  const banner = `[gateway] platform up — mcp ${mcpBanner}, ws ${wsBanner}, sdk ${sdkBanner}\n`;
 
   // CID:start-007 - Register signal handlers BEFORE returning so they stay active for the
   // lifetime of the process. node keeps the event loop alive while SIGINT/SIGTERM

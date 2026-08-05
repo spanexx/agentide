@@ -28,14 +28,14 @@ describe("CLI", () => {
     const fs = new InMemoryFs();
     const r = await runCli(["--version"], { fs });
     expect(r.exitCode).toBe(0);
-    expect(r.stdout.trim()).toMatch(/^0\.0\.\d+$/);
+    expect(r.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it("prints the version with -v", async () => {
     const fs = new InMemoryFs();
     const r = await runCli(["-v"], { fs });
     expect(r.exitCode).toBe(0);
-    expect(r.stdout.trim()).toMatch(/^0\.0\.\d+$/);
+    expect(r.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it("prints help and exits 0 when invoked with --help", async () => {

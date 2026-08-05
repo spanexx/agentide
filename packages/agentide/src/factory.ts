@@ -40,6 +40,16 @@ const DEFAULT_ADAPTER_MCP_PORT = 7100;
 const DEFAULT_ADAPTER_MCP_HOST = "127.0.0.1";
 const DEFAULT_ADAPTER_WS_PORT = 7300;
 const DEFAULT_ADAPTER_WS_HOST = "127.0.0.1";
+// CID:cjs-sdk-bootstrap-001 - backend-runtime default port. 7350 sits in the
+// 7xx0 band that 7100 (MCP) / 7200 (dashboard, reserved) / 7300 (adapter-
+// websocket) already use. The SDK's door (backend-runtime) speaks the
+// {type:"sdk.auth"} first-frame protocol per CONTEXT.md sdk-node T5 lock; the
+// adapter-websocket door speaks {type:"auth"} — different doors, different
+// protocols. The SDK door is opt-in (flag-only) so the factory's backward-
+// compat regression test (no backendRuntime → GATEWAY_SDK_UNREACHABLE) stays
+// green.
+export const DEFAULT_SDK_PORT = 7350;
+export const DEFAULT_SDK_HOST = "127.0.0.1";
 
 export async function createPlatform(config: CreatePlatformConfig): Promise<Platform> {
   const tenantsPath = config.tenantsPath ?? `${config.dataDir}/tenants.json`;
