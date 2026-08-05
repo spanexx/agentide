@@ -33,7 +33,7 @@ Phase order for the `release-process` pack. Sibling to `PRD-TRD-release-process.
 The inner monorepo tooling fixes. No GitHub, no secrets. Lands as a single PR.
 
 **Build:**
-- `agentide/.nvmrc` → `22.10.0` (Q11)
+- `agentide/.nvmrc` → `22.13.1` (Q11, raised during PR-21 sanity check — pnpm 11.10.0's runtime requires Node 22.13+; the original `22.10.0` pin failed `pnpm install --frozen-lockfile` on a fresh runner with "This version of pnpm requires at least Node.js v22.13")
 - `agentide/package.json` → add `"packageManager": "pnpm@<lockfile-version>"` (Q10); read version via `pnpm --version` after `corepack enable`
 - `packages/agentide/package.json` → same `packageManager` field (Q10)
 - `packages/agentide/src/cli.ts:39` → `const CLI_VERSION = "0.0.6"` becomes `declare const CLI_VERSION: string;` (Q3, TypeScript-only, erased by esbuild)
