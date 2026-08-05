@@ -1,0 +1,201 @@
+CJS SDK Bootstrap - Grill Notes
+
+Status: Phase 0 locked
+Date: 2026-08-05
+Source: docs/Feature_Backlog.md (open bug: CJS variants publish blocked) + user
+        direction "Fix the CJS SDK properly (the open bug) — sync the CJS
+        mirrors, start the backend-runtime door in the boot path, then the
+        example works as written."
+
+What this pack is about
+
+- The example nest app (repos/example/, master, last commit 89fd083) cannot
+  connect to the agentide gateway because two structural gaps in the
+  agentide monorepo (inner repo, main) make its target environment off-limits:
+    (a) The CLI bootstrap and the example dev bootstrap both omit the
+        backend-runtime door (the door sdk-node/sdk-browser speak). Neither
+        `pnpm run gateway` (start-gateway.mjs) nor `agentide start` opens
+        it. The example's sdk-node-cjs therefore has no reachable door.
+    (b) The CJS sibling mirrors are stale and/or broken. sdk-node-cjs on
+        npm is 0.0.1, mirrors ESM source from an older snapshot, and speaks
+        the deprecated {type:"sdk.auth"} handshake. The other three CJS
+        siblings (event-bus-cjs, sdk-browser-cjs, agentide-cjs) have
+        related drift; event-bus-cjs and the chain deps are also stale.
+- This pack re-syncs the sdk-node-cjs (+ transitive event-bus-cjs) CJS mirror,
+  makes the backend-runtime door part of the default boot path, and publishes
+  the CJS siblings so the example app can `npm install` them and run as
+  written.
+- After this pack: `pnpm run gateway` (from the agentide repo) + `pnpm run
+  serve` (from the example repo) connect clean, register 11 caps, and the
+  example's REST surface stays usable for the duration of the test.
+
+What this pack does NOT do
+
+- Rebuild every CJS sibling down to the leaf (backend-runtime-cjs,
+  gateway-core-cjs, adapter-{mcp,websocket}-cjs). The example only needs
+  sdk-node-cjs + event-bus-cjs. sdk-browser-cjs and agentide-cjs are
+  acknowledged drift to record, not part of this pack.
+- Touch the example app's source code (platform.agent.ts, services). The
+  example is consumed-as-is after the gateway + .env are fixed.
+- Migrate the example from CJS to ESM. CJS sibling is the v1 contract.
+- Add OIDC / client-credentials flow. Out of scope; the example uses a
+  plain issued token.
+- Phase 6 of the prior release-process pack (sim→required). Still deferred.
+
+Drifts surfaced during grilling
+
+- OPEN-DRIFT-1 (Updated) — SDK canonical connect URL. The README of
+  sdk-node and the example's BUILDING-WITH-AGENTIDE.md and the example
+  README all say "ws://host:7300/ws". Code reality: sdk-node connects to
+  the backend-runtime door, which is on `backendRuntimePort` (no path)
+  and is NOT bound by default. The 7300 adapter-websocket door accepts
+  only {type:"auth", token} — not the {type:"n", token} handshake the SDK
+  sends. Locked decision: docs (sdk-node README, BUILDING-WITH-AGENTIDE
+  §1+§5, example README start-section) are stale and must be rewritten
+  to point at the backend-runtime door URL with no `/ws` path.
+- OPEN-DRIFT-2 (Updated) — example example/README.md "Known issue" was
+  the user-facing symptom of the unlocked D-1 above plus a glued,
+  expired PLATFORM_TOKEN. After this pack, both resolved; the known
+  issue is replaceable with a top-of-file "Quick start" section that
+  documents the new URL and the token mint flow.
+
+Questions and answers locked so far
+
+1. What does this pack actually deliver?
+Answer:
+- The example app (repos/example) can `pnpm install` (picks up fresh
+  sdk-node-cjs + event-bus-cjs from npm), `pnpm run serve`, and connect
+  to a freshly-booted gateway with no protocol drift, no token errors,
+  and no FORCE-DOWN-OR-OPEN-ANOTHER-DOOR workarounds.
+- The agentide CLI's `agentide start` (and the dev `start-gateway.mjs`)
+  open the backend-runtime door by default on a known port, so SDKs
+  have a reachable target.
+
+Why:
+- This is the stated user outcome: "the example works as written."
+- It materializes the open bug — "CJS variants publish blocked" — by
+  patching the broken mirror chain for the two CJS packages the example
+  actually consumes, plus patching the boot path so the door is open.
+
+2. Which door port does the SDK actually need, and where do we lock it?
+Answer:
+- The SDK's door is the backend-runtime WebSocket on its own port. No
+  `path` is configured on `WebSocketServer`; the SDK connects to
+  `ws://127.0.0.1:<port>` with `{type:"sdk.auth", token}` as the first
+  message after `onopen` (matches CONTEXT.md T5 Q1 lock; backend-runtime
+  verifies with `isAuthMessage` at server.ts:114-150).
+- Default port: 7350. Rationale: 7100 (MCP), 7200 (dashboard-core,
+  reserved), 7300 (adapter-websocket) — 7350 is the next free slot in
+  the 7xx0 band that the rest of the monorepo uses (per
+  docs/architecture/Agentide.md).
+- The default lives in a new constant `DEFAULT_SDK_PORT` exported
+  from `packages/agentide/src/factory.ts` (sibling to
+  `DEFAULT_ADAPTER_MCP_PORT` / `DEFAULT_ADAPTER_WS_PORT`).
+
+Why:
+- Pinning a default keeps the canonical URL stable so the example
+  demo + docs + tests agree. Tests that currently pass `backendRuntime
+  Port: 0` (OS-assigned) are unaffected because they never read the
+  default.
+- Source: `packages/sdk-node/src/client.ts:120-123` (first-frame wire),
+  `packages/backend-runtime/src/server.ts:107-141` (server expectations),
+  `packages/backend-runtime/src/server.ts:277` (WebSocketServer with no
+  path), `docs/CONTEXT.md` decisions-log entries for sdk-node T5 Q1/Q2.
+
+3. Does `agentide start` open the backend-runtime door by default, or
+   behind a flag?
+Answer:
+- Behind a flag, off by default. The new flag is `--port-sdk <n>`,
+  default `7350` when the flag is present with no value? No — the flag
+  is opt-in: passing `--port-sdk` (no value) or `--port-sdk <n>` opens
+  the door. The host binds to the same `--bind` as MCP/WS.
+- `start-gateway.mjs` (the example dev bootstrap) passes
+  `backendRuntimePort: 7350` explicitly. It is the canonical "open
+  every door" config used by the example.
+
+Why:
+- The factory's `createPlatform` already has a backward-compat
+  regression test that asserts no backendRuntime = dispatch returns
+  GATEWAY_SDK_UNREACHABLE (factory.ts:78-80). Flipping the default to
+  ON would break that test and surprise operators who expect a
+  reproduceable dev shape.
+- The example, however, must succeed. start-gateway.mjs gets the
+  default port baked in. The CLI's --port-sdk flag is the operator
+  opt-in for SDK-on production gateways.
+- Source: `packages/agentide/src/factory.ts:78-80`,
+  `packages/agentide/src/start.ts:117-128` (createPlatform call),
+  `packages/agentide-cjs/src/factory.ts` (mirror, same behavior).
+
+4. Scope of CJS sibling re-sync — just sdk-node-cjs + event-bus-cjs,
+   or all four?
+Answer:
+- This pack ONLY ships sdk-node-cjs and event-bus-cjs. The example is
+  the consumer; those are the two it pulls in.
+- The mirror script will be made general (`scripts/build.sh` in each
+  CJS package works today for sdk-node-cjs and event-bus-cjs; the
+  build.sh does NOT exist for sdk-browser-cjs in current state? It
+  does, but the mirror imports `@spanexx/backend-runtime` which has no
+  CJS sibling — that build is broken by design and stays broken).
+- The mirror-cjs-versions.mjs helper in packages/agentide/scripts/
+  is updated to bump versions to align with their ESM counterparts
+  instead of being a no-op.
+
+Why:
+- Fixing every CJS chain to a CJS-sibling of every internal package
+  is a separate, multi-week pack. This pack is the minimum that
+  unblocks the example.
+- Recording the sdk-browser-cjs and agentide-cjs gaps as drift keeps
+  the larger fix visible (see D-75 below).
+
+5. What versions do the CJS packages bump to on this pack?
+Answer:
+- sdk-node-cjs: 0.0.1 → 0.1.0 (aligns with ESM sdk-node 0.1.0 family).
+- event-bus-cjs: 0.0.1 → 0.1.0 (aligns with ESM event-bus 0.1.0).
+- release-please-manifest.json updated to match.
+- The other two CJS packages stay at their pinned versions (sdk-
+  browser-cjs 0.0.1, agentide-cjs 0.0.3).
+
+Why:
+- The CJS siblings' `^X.Y.Z` semver in the example's package.json
+  allows the bump with no example change.
+- The 0.0.1 → 0.1.0 jump is justified by the breaking wire-protocol
+  change (sdk.auth → n) since the last published CJS. Aligned with
+  ESM family.
+
+6. Does the example app source need to change?
+Answer:
+- No source change. platform.agent.ts uses the current createSdk
+  shape (createSdk({gateway, app, manifest, handlers, observability}))
+  which matches the current sdk-node.
+- Only `.env` content: PLATFORM_TOKEN, PLATFORM_GATEWAY_URL
+  (PLATFORM_APP_ID stays as-is).
+- BUILDING-WITH-AGENTIDE.md and README.md get doc rewrites only.
+- pnpm-workspace.yaml gets cleaned up: the `minimumReleaseAgeExclude`
+  entries for the four cjs packages get removed (the new versions
+  are no longer "fresh-out-of-publish"); the example can drop the
+  excludes once the new versions are aged.
+
+Why:
+- Per user direction: "the example works as written."
+- Source: `example/src/platform/platform.agent.ts:1-102` (current API
+  usage), `example/.env` (broken paste artifact), `example/README.md`
+  (known issue section).
+
+7. What about the EXM --port-sdk flag UX details?
+Answer:
+- `--port-sdk` (default: 7350). Pass with no value to use the default;
+  pass with an integer to override.
+- The flag is parsed in start.ts alongside the existing --port-mcp
+  flag. Validation: Number.parseInt on the value, finite check, error
+  on collision with --port-mcp or 7300 (operator collision check).
+- The help output replaces the bind description with the new flags.
+
+Why:
+- Mirrors the existing --port-mcp flag pattern (start.ts:45-62).
+- "Default ON when flag present" is the cleanest opt-in shape; the
+  backward-compat regression test still passes because the flag is
+  opt-in.
+- 7300 collision check is defensive — the adapter-websocket door is
+  fixed at 7300 in v1 (start.ts:49-55 rejects --port-ws already).
+
+No remaining open questions
