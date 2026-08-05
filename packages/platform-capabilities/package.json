@@ -50,6 +50,6 @@
     "registry": "https://registry.npmjs.org/"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   }
 }

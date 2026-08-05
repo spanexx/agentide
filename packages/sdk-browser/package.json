@@ -48,5 +48,8 @@
     "@typescript-eslint/parser": "^8.65.0",
     "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@spanexx/backend-runtime": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22.12"
   }
 }
