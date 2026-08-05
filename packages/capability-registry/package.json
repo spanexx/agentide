@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/capability-registry",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": false,
   "description": "Capability catalog — registration, lookup, version resolution, filter-by-owner/tier. The registry is queried by the gateway for routing and by adapters for MCP tools/* discovery.",
   "type": "module",

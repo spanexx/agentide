@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/origin",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "private": false,
   "description": "Single primitive: matches incoming Origin header against expectedOrigins claim. RFC 6125 wildcard support.",
   "type": "module",

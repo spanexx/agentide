@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/event-bus",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "In-process pub/sub event bus for Agentide platform components.",
   "type": "module",
   "license": "MIT",
