@@ -116,37 +116,66 @@
 
   <h2 id="what">1. What is Agentide</h2>
   <p>
-    Agentide is a runtime platform that connects agents to your backend code.
-    You expose <b>capabilities</b> (think "remote functions") from your app;
-    agents call them via MCP, WebSocket, or the CLI. The gateway sits in the
-    middle handling auth, rate limits, audit logs, and session bookkeeping.
+    Agentide is an <b>operating system for AI agents</b>. Instead of exposing raw
+    REST endpoints or wiring applications to a single agent protocol, you expose
+    <b>capabilities</b> — named, typed, permission-scoped actions that any
+    compatible AI agent can discover and invoke through any of the platform's
+    adapters.
   </p>
+  <p>
+    The architecture splits into two planes:
+  </p>
+  <ul>
+    <li><b>Control Plane</b> — the Gateway, Session Manager, Capability Registry, and Plugin Manager. Decides <i>what</i> should happen and <i>whether it's allowed</i>. It does not execute capabilities.</li>
+    <li><b>Execution Plane</b> — the runtimes (Backend Runtime, Browser Runtime, future Docker/Git/File/Kubernetes/Database runtimes). Executes the work, owns the resources.</li>
+  </ul>
+  <p>
+    Adapters are pure protocol translators at the edge — MCP, WebSocket, CLI,
+    REST — they contain no business logic. <b>MCP is one adapter, not the
+    foundation.</b> The Capability Registry is the central surface; applications
+    register capabilities (the way you expose functionality to agents), and
+    runtimes execute them. Sessions are <i>execution contexts</i> that own
+    runtime resources — not chat history — and clean up automatically on
+    destroy.
+  </p>
+  <p>
+    Instead of:
+  </p>
+<pre><code>GET /customers
+POST /orders
+DELETE /products</code></pre>
+  <p>applications expose:</p>
+<pre><code>customer.read
+customer.create
+order.submit
+inventory.update</code></pre>
+  <p>The gateway decides <i>how</i> those capabilities are executed. Agents interact with capabilities, never directly with APIs.</p>
 
   <h2 id="install">2. Install</h2>
 
   <div class="diagram">
 <pre class="ascii">                  ┌───────────────────────────┐
-                  │  you (operator / dev)     │
-                  └─────────────┬─────────────┘
-                                │  npm install -g
-                                ▼
-                  ┌───────────────────────────┐
-                  │  agentide  (CLI binary)   │
-                  │  on your $PATH            │
-                  └─────────────┬─────────────┘
-                                │  agentide start
-                                ▼
-                  ┌───────────────────────────┐
-                  │  gateway (your laptop)    │
-                  │   :7100  mcp              │
-                  │   :7300  websocket /ws    │
-                  └─────────────┬─────────────┘
-                                │  ws://... + JWT
-                                ▼
-                  ┌───────────────────────────┐
-                  │  your backend SDK         │
-                  │  (nest / express / etc)   │
-                  └───────────────────────────┘</pre>
+                   │  you (operator / dev)     │
+                   └─────────────┬─────────────┘
+                                 │  npm install -g
+                                 ▼
+                   ┌───────────────────────────┐
+                   │  agentide  (CLI binary)   │
+                   │  on your $PATH            │
+                   └─────────────┬─────────────┘
+                                 │  agentide start
+                                 ▼
+                   ┌───────────────────────────┐
+                   │  gateway (your laptop)    │
+                   │   :7100  mcp              │
+                   │   :7300  websocket /ws    │
+                   └─────────────┬─────────────┘
+                                 │  ws://... + JWT
+                                 ▼
+                   ┌───────────────────────────┐
+                   │  your backend SDK         │
+                   │  (node / browser / etc)   │
+                   └───────────────────────────┘</pre>
   </div>
 
   <h3>One-liner (recommended)</h3>
@@ -154,18 +183,20 @@
 <pre><code>npm install -g @spanexx/agentide</code></pre>
 
   <p>You should now have <code>agentide</code> on your PATH. Verify:</p>
-<pre><code>agentide --help</code></pre>
+<pre><code>agentide --version       # should be 0.1.1
+agentide --help</code></pre>
 
   <h3>Alternative: install.sh</h3>
   <p>Detects your OS and installs the right binary (or Docker image, or npx fallback). Hosted on GitHub raw:</p>
 <pre><code>curl -fsSL https://raw.githubusercontent.com/spanexx/agentide/main/packages/agentide/install.sh | bash</code></pre>
   <p>(requires the <code>spanexx/agentide</code> repo to be public — if you fork or self-host, change the URL.)</p>
 
-  <h3>Two consumers you might want too</h3>
-  <p>For nestjs / express backends (most node apps), also install the CJS sibling:</p>
-<pre><code>npm install @spanexx/sdk-node-cjs</code></pre>
-  <p>For browser apps (react/vue/svelte):</p>
-<pre><code>npm install @spanexx/sdk-browser-cjs</code></pre>
+  <h3>Backend SDKs</h3>
+  <p>For a node/TypeScript backend (covers most node apps), install the SDK:</p>
+<pre><code>npm install @spanexx/sdk-node</code></pre>
+  <p>For a browser app (react/vue/svelte):</p>
+<pre><code>npm install @spanexx/sdk-browser</code></pre>
+  <p class="warn-tag">CJS variants (<code>@spanexx/sdk-node-cjs</code>, <code>@spanexx/sdk-browser-cjs</code>, <code>@spanexx/event-bus-cjs</code>, <code>@spanexx/agentide-cjs</code>) currently publish at 0.0.x — their build pipeline is broken (mirrored source has undeclared deps). Use the ESM packages on the right-hand side. The CJS variants will refresh in a follow-up pack.</p>
 
   <h2 id="gateway">3. Start the gateway</h2>
 
@@ -176,7 +207,7 @@
     <tr><td><code>7300</code></td><td>WebSocket at <code>/ws</code></td><td>SDKs (sdk-node, sdk-browser), the CLI</td></tr>
   </table>
 
-  <p><strong>v0.0.2:</strong> <code>agentide start</code> detaches by default (background daemon). It returns immediately and writes the child PID to <code>--pid-file</code> (default <code>/tmp/agentide.pid</code>) and logs to <code>--log-file</code> (default <code>/tmp/agentide.log</code>). Both files live under <code>/tmp</code> so reboots wipe them automatically — no stale state.</p>
+  <p><code>agentide start</code> detaches by default (background daemon). It returns immediately and writes the child PID to <code>--pid-file</code> (default <code>/tmp/agentide.pid</code>) and logs to <code>--log-file</code> (default <code>/tmp/agentide.log</code>). Both files live under <code>/tmp</code> so reboots wipe them automatically — no stale state.</p>
 
   <h3>First run</h3>
   <p>Pick a data dir (defaults to <code>~/.agentide/data</code>) and start:</p>
@@ -206,6 +237,8 @@ agentide start  --data-dir ~/.agentide/data --default-tenant acme</code></pre>
     <tr><td><code>--pid-file &lt;path&gt;</code></td><td><code>/tmp/agentide.pid</code></td><td>where <code>start</code> writes the child PID</td></tr>
     <tr><td><code>--log-file &lt;path&gt;</code></td><td><code>/tmp/agentide.log</code></td><td>where the daemon writes its output</td></tr>
     <tr><td><code>--foreground</code></td><td>off</td><td>run in the current terminal (blocks)</td></tr>
+    <tr><td><code>--enable-oidc</code></td><td>off</td><td>expose the OIDC dev-stub on the MCP adapter (see <a href="#credentials">§8</a>)</td></tr>
+    <tr><td><code>--no-tls</code></td><td>off</td><td>disable TLS enforcement on the OAuth token endpoint (localhost dev only)</td></tr>
   </table>
 
   <details>
@@ -214,11 +247,11 @@ agentide start  --data-dir ~/.agentide/data --default-tenant acme</code></pre>
       <li><code>gateway-secret</code> — HS256 signing key for tokens. generated on first run.</li>
       <li><code>tenants.json</code> — list of tenants the gateway knows about.</li>
       <li><code>audit.log</code> — append-only log of every capability invocation.</li>
+      <li><code>clients/</code> — per-client directory holding <code>.secret-&lt;id&gt;.txt</code> (mode 0600) at create time (see <a href="#credentials">§8</a>).</li>
     </ul>
   </details>
 
   <h2 id="tokens">4. Mint a token</h2>
-
   <p>The gateway mints JWTs. Tokens are how callers prove they're allowed to
   invoke caps. Two flavors:</p>
 
@@ -228,9 +261,9 @@ agentide start  --data-dir ~/.agentide/data --default-tenant acme</code></pre>
     <tr><td>consumer token</td><td>same command, narrow scope</td><td>your backend SDK, agent harnesses</td></tr>
   </table>
 
-  <p><strong>Security note (v0.0.2):</strong> <code>agentide init</code> prints the bootstrap token to stdout inside an ANSI reverse-video block. It auto-clears (overwrites scrollback with a blank screen) when you press <strong>Enter</strong>, or after <strong>30 seconds</strong>, whichever comes first. The token is not written to any file. In a non-TTY (CI, pipe, redirect) the print-and-clear step is skipped.</p>
+  <p><code>agentide init</code> prints the bootstrap token to stdout inside an ANSI reverse-video block. It auto-clears (overwrites scrollback with a blank screen) when you press <strong>Enter</strong>, or after <strong>30 seconds</strong> (constant <code>TOKEN_CLEAR_MS = 30_000</code> in <code>packages/agentide/src/lifecycle.ts</code>), whichever comes first. The token is not written to any file. In a non-TTY (CI, pipe, redirect) the print-and-clear step is skipped.</p>
 
-  <h3>Example: minimal admin token for the nest SDK</h3>
+  <h3>Example: minimal admin token for the SDK</h3>
 <pre><code>agentide token issue \
   --tenant acme \
   --caller nest-app \
@@ -238,104 +271,99 @@ agentide start  --data-dir ~/.agentide/data --default-tenant acme</code></pre>
 
   <p>Output is a single JWT line. Copy it.</p>
 
-  <h3>Example: narrow token for a read-only agent</h3>
+  <h3>Example: narrow token for a browser-bound SDK</h3>
+  <p>Browser clients must carry an <code>expectedOrigins</code> claim; the server enforces exact-match on the upgrade <code>Origin</code> header (deny-by-default for browsers, Node bypass). Repeat <code>--origin</code> for multiple URLs, or use <code>--origins</code> for a comma list:</p>
 <pre><code>agentide token issue \
   --tenant acme \
   --caller product-reader-agent \
-  --scope 'product.read'
-</code></pre>
+  --scope 'product.read' \
+  --origin http://localhost:7200 \
+  --origin http://127.0.0.1:7200</code></pre>
 
-  <p>This token can only call <code>product.*</code> caps with a <code>read</code> tier.</p>
+  <p>This token can only call <code>product.*</code> caps with a <code>read</code> tier, and only from those origins.</p>
 
   <h2 id="sdk">5. Wire your backend SDK</h2>
+  <p>The SDK is <code>@spanexx/sdk-node</code>. It's a single function: <code>createSdk(config)</code> with a manifest + handlers map. The SDK connects to the gateway over WebSocket, registers the capabilities, and dispatches inbound invocations to your handlers. No NestJS adapter, no forRoot, no module — just a function.</p>
 
-  <p>Three SDKs available on npm:</p>
   <table>
     <tr><th>env</th><th>package</th><th>use case</th></tr>
-    <tr><td>server (CJS)</td><td><a href="https://www.npmjs.com/package/@spanexx/sdk-node-cjs"><code>@spanexx/sdk-node-cjs</code></a></td><td>nest, express, fastify, koa, most node</td></tr>
     <tr><td>server (ESM)</td><td><a href="https://www.npmjs.com/package/@spanexx/sdk-node"><code>@spanexx/sdk-node</code></a></td><td>ts-node, deno, modern module-only</td></tr>
-    <tr><td>browser (CJS)</td><td><a href="https://www.npmjs.com/package/@spanexx/sdk-browser-cjs"><code>@spanexx/sdk-browser-cjs</code></a></td><td>webpack/vite legacy bundles</td></tr>
     <tr><td>browser (ESM)</td><td><a href="https://www.npmjs.com/package/@spanexx/sdk-browser"><code>@spanexx/sdk-browser</code></a></td><td>esbuild/vite/rollup ESM</td></tr>
   </table>
+  <p class="warn-tag">Avoid the <code>-cjs</code> siblings for now — they publish at 0.0.x while the build bug is fixed.</p>
 
-  <h3>Example: a nest backend that exposes product + user caps</h3>
+  <h3>Example: a Node backend that exposes product + user caps</h3>
+  <p>TypeScript (the SDK is shipped as ESM with full types):</p>
 
-<pre><code>import { Module } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { PlatformAgentModule, createPlatformAgent } from '@spanexx/agentide-cjs';
-import { sdkLogger } from '@spanexx/sdk-node-cjs';
+<pre><code>import { createSdk } from "@spanexx/sdk-node";
 
-@Module({
-  imports: [
-    PlatformAgentModule.forRoot({
-      url: 'ws://127.0.0.1:7300/ws',
-      token: process.env.PLATFORM_TOKEN!,
-      capabilities: {
-        app: 'nestjs-ecommerce',
-        capabilities: [
-          { name: 'product.list',  version: '1.0.0', tier: 'read',  permissions: ['*'] },
-          { name: 'product.create', version: '1.0.0', tier: 'write', permissions: ['*'] },
-          { name: 'user.register',  version: '1.0.0', tier: 'write', permissions: ['*'] },
-        ],
-      },
-      handlers: {
-        'product.list': async () =&gt; ({
-          items: await db.product.find({ active: true }),
-          count: 0,
-        }),
-        'product.create': async (input: { sku: string; name: string }) =&gt; {
-          return db.product.insert(input);
-        },
-        'user.register': async (input: { email: string; password: string }) =&gt; {
-          return db.user.insert({ ...input, passwordHash: await hash(input.password) });
-        },
-      } as any,
-      observability: { logger: sdkLogger },
-    }),
+// Two minimal caps: a read and a write.
+const manifest = {
+  app: "node-ecommerce",
+  capabilities: [
+    { name: "product.list",  version: "1.0.0", tier: "read",  permissions: ["*"] },
+    { name: "product.create", version: "1.0.0", tier: "write", permissions: ["*"] },
+    { name: "user.register",  version: "1.0.0", tier: "write", permissions: ["*"] },
   ],
-})
-class AppModule {}
+};
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  await app.listen(3000);
-}
-bootstrap();</code></pre>
+const handlers = {
+  "product.list": async () => {
+    const items = await db.product.find({ active: true });
+    return { items, count: items.length };
+  },
+  "product.create": async (input: { sku: string; name: string }) => {
+    return db.product.insert(input);
+  },
+  "user.register": async (input: { email: string; password: string }) => {
+    return db.user.insert({ ...input, passwordHash: await hash(input.password) });
+  },
+};
 
-  <p>The two <strong>mandatory</strong> pieces of every manifest:</p>
+const sdk = createSdk({
+  gateway: { url: "ws://127.0.0.1:7300/ws", token: process.env.PLATFORM_TOKEN! },
+  app:     { id: "node-ecommerce", name: "node-ecommerce" },
+  manifest,
+  handlers,
+  observability: { logger: createSdk.logger() },
+});
+
+await sdk.connect();</code></pre>
+
+  <p>Inside Express, Fastify, NestJS, or any other framework: call <code>await sdk.connect()</code> on boot — the SDK opens a WebSocket, registers the manifest, and stays connected. Each invocation arrives as a function call to the matching handler.</p>
+
+  <p>The two mandatory fields of every manifest:</p>
   <ul>
     <li><code>app</code> — a non-empty string identifying your app.</li>
-    <li><code>capabilities</code> — an array. <strong>each entry must have a non-empty <code>permissions</code> array</strong> (use <code>['*']</code> for dev, granular strings for prod).</li>
+    <li><code>capabilities</code> — an array. Each entry must declare <code>name</code>, <code>version</code>, <code>tier</code> (<code>read</code> / <code>act</code> / <code>destructive</code> for runtime caps; <code>read</code> / <code>write</code> for platform caps; omit for business caps), and <code>permissions</code> (use <code>["*"]</code> for dev, granular strings for prod).</li>
   </ul>
 
-  <p>On boot the SDK sends the manifest to the gateway via WebSocket. The
-  gateway registers them as callable capabilities.</p>
-
   <h2 id="browser">6. Wire your browser SDK</h2>
-
   <p>The browser SDK is annotation-driven: tag DOM elements with
   <code>data-sdk-cap="&lt;capability.name&gt;"</code>, the SDK observes them via
   <code>MutationObserver</code>, registers them with the gateway, and the page's
   UI becomes a thin client to the backend caps.</p>
 
-<pre><code>import { initBrowserSdk } from '@spanexx/sdk-browser-cjs';
+<pre><code>import { createSdk } from "@spanexx/sdk-browser";
 
-initBrowserSdk({
-  url: 'wss://gateway.example.com/ws',
-  token: '&lt;jwt-from-server&gt;',
-  app: 'web-storefront',
+const sdk = createSdk({
+  gateway: { url: "wss://gateway.example.com/ws", token: "&lt;jwt-from-server&gt;" },
+  app:     { id: "web-storefront", name: "web-storefront" },
+  defaultTier: "act",
+  defaultVersion: "1.0.0",
 });
-
+await sdk.connect();
 // anywhere in your HTML:
 // &lt;button data-sdk-cap="cart.add" data-sdk-args='{"sku":"ABC123"}'&gt;add to cart&lt;/button&gt;</code></pre>
 
   <p>The server-rendered page mints a per-user token (with HTTP-only cookie
   binding the session), ships the token in the HTML, and the SDK connects on
-  page load. Optional runtime handler overrides let you pre-fill
-  <code>data-sdk-*</code> values before dispatch.</p>
+  page load. For browser clients, the token must carry an <code>expectedOrigins</code>
+  claim — the server enforces exact-match on the upgrade <code>Origin</code> header
+  (deny-by-default for browsers, pass-through for Node). Mint this server-side
+  with <code>agentide token issue --origin &lt;url&gt;</code>.</p>
 
   <h2 id="call">7. Call a capability</h2>
-
   <p>Three ways to invoke a registered capability.</p>
 
   <h3>a) from an MCP-compatible agent (Claude Desktop, MCP-CLI)</h3>
@@ -350,33 +378,37 @@ agentide invoke product.create '{"sku":"ABC123","name":"widget"}' \
   <p>Use <code>--json</code> for machine-readable output, omit for human tables.</p>
 
   <h3>c) from another backend via the SDK</h3>
-<pre><code>import { invoke } from '@spanexx/sdk-node-cjs';
-
-const result = await invoke('product.list', { userId: 'u_42' });</code></pre>
+<pre><code>const sdk = createSdk({ gateway: { url: "ws://127.0.0.1:7300/ws", token: "..." }, ... });
+const result = await sdk.invoke("product.list", { userId: "u_42" });</code></pre>
 
   <h2 id="credentials">8. Client credentials (machine identity)</h2>
-
-  <p>Unattended backends (NestJS apps, workers, CI jobs) shouldn't paste a
+  <p>Unattended backends (Node apps, workers, CI jobs) shouldn't paste a
   human-minted JWT into <code>.env</code>. Instead, register a <b>client</b> —
   a machine identity — and let the SDK mint + refresh its own tokens via the
   OAuth <code>client_credentials</code> grant. The gateway stores only a
-  salted hash of the secret; the plaintext is shown exactly once, at creation.</p>
+  salted hash of the secret; the plaintext is shown exactly once at creation.</p>
 
   <h3>a) create a client (operator)</h3>
-<pre><code>agentide client create --tenant acme --name nest-app --scope 'product.*'</code></pre>
-  <p>Prints the client id + the path to the secret file
+<pre><code>agentide client create --tenant acme --name node-app --scope 'product.*'</code></pre>
+  <p>Prints the client id and the path to the secret file
   (<code>&lt;data-dir&gt;/clients/.secret-&lt;id&gt;.txt</code>, mode 0600). Copy the
   secret into the app's <code>.env</code> — the gateway cannot show it again.
-  Rate limit: 5 creates per operator per hour.</p>
+  Rate limit: 5 creates per operator per hour (constant
+  <code>CREATE_RATE_LIMIT_MAX = 5</code> in
+  <code>packages/gateway-core/src/client-service.ts:42</code>).</p>
 
   <h3>b) SDK mints + refreshes its own tokens</h3>
-<pre><code>const sdk = createSdk({
-  gateway: { url: 'ws://127.0.0.1:7300/ws' },   // no token needed here
-  app:     { id: 'nest-app', name: 'nest-app' },
-  manifest: 'manifest.json',
-  oauthUrl:    'http://127.0.0.1:7100',
-  clientId:    'cli_xxx',
+<pre><code>import { createSdk } from "@spanexx/sdk-node";
+
+const sdk = createSdk({
+  gateway: { url: "ws://127.0.0.1:7300/ws" },   // no token here — SDK will mint one
+  app:     { id: "node-app", name: "node-app" },
+  manifest: "manifest.json",                       // or inline: { app, capabilities: [...] }
+  handlers: handlers,
+  oauthUrl:    "http://127.0.0.1:7100",           // base for POST /oauth/token
+  clientId:    "cli_xxx",
   clientSecret: process.env.PLATFORM_CLIENT_SECRET,
+  onRevoked: () => { console.error("client revoked, exiting"); process.exit(1); },
 });
 await sdk.connect();   // POSTs client_credentials, stores the JWT, connects</code></pre>
   <p>Environment variables <code>PLATFORM_CLIENT_ID</code> and
@@ -388,7 +420,7 @@ await sdk.connect();   // POSTs client_credentials, stores the JWT, connects</co
 
   <h3>c) offline handoff: registration codes</h3>
   <p>No secret to paste? Grant a one-time code, redeem it on first boot:</p>
-<pre><code>agentide client grant --tenant acme --name nest-app --scope 'product.*'
+<pre><code>agentide client grant --tenant acme --name node-app --scope 'product.*'
 # → code: rc_xxx  (valid 5 min, one-time use)
 agentide client redeem --code rc_xxx
 # → client_id + client_secret — save these into config.toml</code></pre>
@@ -399,10 +431,11 @@ agentide client rotate --client-id cli_xxx   # new secret; old one valid 5 min g
 
   <h3>e) humans: OIDC auth-code grant (dev stub)</h3>
   <p>Start the gateway with <code>--enable-oidc</code> to expose
-  <code>GET /oauth/authorize</code> + <code>GET /oauth/callback</code> — a
-  dev-stub approval page issues a JWT via the auth-code flow (one-shot codes).
-  Off by default; swap the stub for a real IdP (Auth0, Keycloak) in
-  <code>oauth-token-handler.ts:handleAuthorize</code> for production.</p>
+  <code>GET /oauth/authorize</code> + <code>GET /oauth/callback</code> on the MCP
+  adapter — a dev-stub approval page issues a JWT via the auth-code flow
+  (one-shot codes). Off by default; swap the stub for a real IdP (Auth0,
+  Keycloak) in production. <code>--no-tls</code> disables TLS enforcement on the
+  token endpoint (localhost dev only).</p>
 
   <h2 id="commands">9. All commands</h2>
 
@@ -412,10 +445,11 @@ agentide client rotate --client-id cli_xxx   # new secret; old one valid 5 min g
     <tr><td><code>agentide init</code></td><td>bootstrap a data dir + mint a bootstrap token (auto-clears in 30s)</td></tr>
     <tr><td><code>agentide start</code></td><td>launch the gateway as a detached daemon (returns PID + log path)</td></tr>
     <tr><td><code>agentide stop</code></td><td>SIGTERM the daemon (10s grace, SIGKILL fallback)</td></tr>
-    <tr><td><code>agentide status</code></td><td>show uptime, tenants, audit log size, daemon PID</td></tr>
+    <tr><td><code>agentide status</code></td><td>in-process when no remote config; <code>gateway.status</code> when <code>--url</code> given</td></tr>
     <tr><td><code>agentide tenant create --id &lt;id&gt; --name &lt;n&gt;</code></td><td>add a tenant</td></tr>
-    <tr><td><code>agentide token issue --tenant ...</code></td><td>mint a JWT</td></tr>
+    <tr><td><code>agentide token issue --tenant ...</code></td><td>mint a JWT (supports <code>--origin</code> / <code>--origins</code> for browser tokens)</td></tr>
     <tr><td><code>agentide capability list</code></td><td>list registered cap names (in-process)</td></tr>
+    <tr><td><code>agentide capability describe --name &lt;n&gt;</code></td><td>show one cap's record (in-process)</td></tr>
     <tr><td><code>agentide plugin list</code></td><td>installed plugins (runtime, service, observer)</td></tr>
     <tr><td><code>agentide client create --tenant &lt;id&gt; --name &lt;n&gt; [--scope '&lt;s&gt;']</code></td><td>register a machine identity (see <a href="#credentials">§8</a>)</td></tr>
     <tr><td><code>agentide client grant/redeem</code></td><td>one-time registration-code handoff (offline-friendly)</td></tr>
@@ -423,14 +457,15 @@ agentide client rotate --client-id cli_xxx   # new secret; old one valid 5 min g
   </table>
 
   <h3>Consumer (call against a running gateway)</h3>
+  <p>These commands run against a remote gateway. They require <code>--url</code>, <code>PLATFORM_GATEWAY_URL</code>, or a config file to point at the WebSocket. They're aliases for the underlying capability calls.</p>
   <table>
     <tr><th>command</th><th>what it does</th></tr>
     <tr><td><code>agentide capabilities</code></td><td>list caps on the gateway (alias for <code>capability.list</code>)</td></tr>
     <tr><td><code>agentide sessions</code></td><td>list active sessions</td></tr>
     <tr><td><code>agentide plugins</code></td><td>list runtime-installed plugin caps</td></tr>
-    <tr><td><code>agentide status</code></td><td>gateway uptime, plugin count, etc.</td></tr>
+    <tr><td><code>agentide status</code></td><td>gateway uptime, plugin count, etc. (remote <code>gateway.status</code>)</td></tr>
     <tr><td><code>agentide health</code></td><td><code>{"status":"ok"}</code> ping</td></tr>
-    <tr><td><code>agentide invoke &lt;cap&gt; [--args '&lt;json&gt;'] [--session &lt;id&gt;]</code></td><td>universal pull</td></tr>
+    <tr><td><code>agentide invoke &lt;cap&gt; [--args '&lt;json&gt;'] [--session &lt;id&gt;] [--mode call|stream]</code></td><td>universal pull</td></tr>
     <tr><td><code>agentide watch &lt;alias&gt; [--topic &lt;pattern&gt;]</code></td><td>live event stream (NDJSON, Ctrl-C to exit)</td></tr>
   </table>
 
@@ -445,13 +480,19 @@ agentide client rotate --client-id cli_xxx   # new secret; old one valid 5 min g
   <details>
     <summary><span class="err-tag">error: port 7100 already in use (is another gateway running?)</span></summary>
     <p>Either kill the other process or move the new one:</p>
-<pre><code>agentide start --port-mcp 17100 --port-ws 17300</code></pre>
+<pre><code>agentide start --port-mcp 17100</code></pre>
+    <p>(The WebSocket port is fixed at 7300 in v1; see <code>packages/agentide/src/start.ts:54</code> for the rejection.)</p>
+  </details>
+
+  <details>
+    <summary><span class="err-tag">error: --port-ws is not supported yet</span></summary>
+    <p>v1 hardcodes the WS port at <code>7300</code>. The platform factory has no <code>adapterWsPort</code> field — only <code>wsPort</code> on <code>CreatePlatformConfig</code> (consumed at factory-time, not from the CLI). The <code>start</code> command rejects <code>--port-ws</code> at parse time. To change the port today, set <code>wsPort</code> programmatically in <code>createPlatform({ ... })</code> or wait for the future schema field.</p>
   </details>
 
   <details>
     <summary><span class="err-tag">error: token required (--token, PLATFORM_TOKEN, or config file)</span></summary>
     <p>Consumer commands need auth. Either pass <code>--token</code>, set
-    <code>PLATFORM_TOKEN</code>, or create <code>~/.config/platform/config.toml</code>:</p>
+    <code>PLATFORM_TOKEN</code>, or create <code>&lt;os-config-dir&gt;/platform/config.toml</code>:</p>
 <pre><code>gateway_url = "ws://127.0.0.1:7300/ws"
 token       = "&lt;jwt&gt;"</code></pre>
   </details>
@@ -461,8 +502,13 @@ token       = "&lt;jwt&gt;"</code></pre>
     <p>The JWT signature doesn't match the gateway's secret. Two main causes:</p>
     <ol>
       <li>the secret changed (wiped <code>~/.agentide/data/gateway-secret</code>) since the token was minted — re-mint.</li>
-      <li>wrong gateway — the token was minted for a different tenant/scope. check <code>--tenant</code> and <code>--scope</code> on the <code>token issue</code>.</li>
+      <li>wrong gateway — the token was minted for a different tenant/scope. Check <code>--tenant</code> and <code>--scope</code> on the <code>token issue</code>.</li>
     </ol>
+  </details>
+
+  <details>
+    <summary><span class="err-tag">error: auth.error "origin mismatch" (websocket adapter)</span></summary>
+    <p>The browser client sent an <code>Origin</code> header that doesn't match the token's <code>expectedOrigins</code> claim. Either mint the token with the correct origin (server-side, before the page loads) or relax the mismatch in dev. The server enforces exact-match on the upgrade <code>Origin</code> header — no prefix or wildcard.</p>
   </details>
 
   <details>
@@ -476,16 +522,7 @@ token       = "&lt;jwt&gt;"</code></pre>
   <details>
     <summary><span class="warn-tag">GATEWAY_SESSION_REQUIRED on invoke</span></summary>
     <p>The cap requires a session and none was attached. Pass <code>--session &lt;id&gt;</code> or
-    call against the consumer <code>sessions</code> handle. Pre-existing platforms
-    spawn a session automatically; existing SDKs use <code>'*'</code> for unscoped.</p>
-  </details>
-
-  <details>
-    <summary><span class="warn-tag">ws adapter won't bind to 0.0.0.0</span></summary>
-    <p>v1 hardcodes the WS port at <code>7300</code>. <code>--port-ws</code> is rejected
-    today (the platform factory has no <code>adapterWsPort</code> field). Tracked
-    in <code>docs/features/agentide-cli-consumer/future.md</code>. To change the WS port today, edit
-    <code>packages/agentide/src/factory.ts</code> directly.</p>
+    the consumer's <code>sessions</code> handle. Some plugins auto-spawn a session; business caps can be invoked without one when scoped appropriately.</p>
   </details>
 
   <hr style="margin-top:56px;border-color:var(--border)">
@@ -494,7 +531,7 @@ token       = "&lt;jwt&gt;"</code></pre>
   <div class="two">
     <div class="card">
       <h4>On your laptop / server</h4>
-      <p>You install <code>agentide</code> once. You start it once. It binds two ports and writes three files under <code>~/.agentide/data</code>. It doesn't do anything interesting by itself.</p>
+      <p>You install <code>agentide</code> once. You start it once. It binds two ports and writes a few files under <code>~/.agentide/data</code> (the gateway secret, tenants, audit log, plus <code>clients/</code> for machine identities). It doesn't do anything interesting by itself.</p>
     </div>
     <div class="card">
       <h4>In your backend</h4>
@@ -503,7 +540,7 @@ token       = "&lt;jwt&gt;"</code></pre>
   </div>
 
   <p class="footnote">
-    Agentide <code>v0.0.2</code> on npm (<a href="https://www.npmjs.com/package/@spanexx/agentide">@spanexx/agentide</a>) + 11 supporting packages. Generated 2026-08-04. The full install script (docker image, binary download, npx fallback) lives at <code>packages/agentide/install.sh</code> and is served from GitHub raw. Reference architecture in <code>docs/architecture/Agentide.md</code>.
+    Agentide <code>v0.1.1</code> on npm (<a href="https://www.npmjs.com/package/@spanexx/agentide">@spanexx/agentide</a>) + 17 supporting packages (4 CJS variants excluded from the count — they publish at 0.0.x pending a build-deps fix). Updated 2026-08-05. The full install script (docker image, binary download, npx fallback) lives at <code>packages/agentide/install.sh</code> and is served from GitHub raw. Reference architecture in <code>docs/architecture/Agentide.md</code>. Drift log: <code>docs/drift.md</code> (D-70 client-credentials audit row open as of 2026-08-05).
   </p>
 
 </div>

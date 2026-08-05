@@ -1,0 +1,180 @@
+Drop CJS Siblings - Grill Notes
+
+Status: Phase 0 locked
+Date: 2026-08-05
+Source: user direction — "drop CJS siblings entirely; bump engines to Node ≥ 22.12;
+        zero consumers today, no deprecation stub needed."
+
+What this feature is about
+
+- The four `*-cjs/` workspace trees (`sdk-node-cjs`, `event-bus-cjs`,
+  `sdk-browser-cjs`, `agentide-cjs`) get deleted from source control.
+- The mirror script chain (`scripts/build.sh` per package +
+  `mirror-cjs-versions.mjs` in the publish job) gets deleted from the
+  repository.
+- The publish workflow drops the `--filter './packages/*-cjs'`
+  patterns from build + publish.
+- `engines.node` gets bumped from `>=20` to `>=22.12` in all 14 ESM
+  packages so the documented reason ("consumers on Node ≥ 22.12 can
+  `require(esm)` natively") holds for every published package.
+
+What this feature does NOT do
+
+- Does not introduce a deprecation stub on npm — there are zero
+  consumers.
+- Does not modify `agentide/docs/HOWTOAGENTIDE.html` (already covers
+  the two-door model post-cjs-sdk-bootstrap).
+- Does not rewrite any tests inside `sdk-node-cjs/src/__tests__/` —
+  the whole tree disappears with its parent.
+- Does not bump Node on GitHub Actions runners — CI already runs
+  Node 22.13.1 per `.nvmrc`; nothing to align.
+
+Questions and answers locked so far
+
+1. What's the exact scope of the drop?
+Answer:
+- Delete four directories: `packages/sdk-node-cjs`, `packages/event-bus-cjs`,
+  `packages/sdk-browser-cjs`, `packages/agentide-cjs`.
+- Delete `packages/agentide/scripts/mirror-cjs-versions.mjs`.
+- Delete per-package `scripts/build.sh` references from the CJS
+  trees (those die with the directories).
+- Delete `mirror-cjs-versions.mjs` import sites in `.github/workflows/
+  release.yml` and any test that imported it as a fixture.
+- Drop the four `*-cjs` entries from `.github/release-please-config.json`'s
+  `packages:` block AND from `.github/release-please-manifest.json`.
+- Drop `--filter './packages/*-cjs'` from both build and publish steps
+  in `.github/workflows/release.yml`.
+- Bump `engines.node` from `">=20"` to `">=22.12"` in all 14 currently
+  published ESM packages.
+
+Why:
+- The user statement rules out deprecation stubs ("deprecation
+  means we can safely remove").
+- The CJS siblings were architectural hygiene for hypothetical
+  future consumers who never showed up. No reason to keep the
+  cost after we just spent a session debugging mirror drift.
+- The `engines` bump is the documented reason the drop is safe —
+  `require(esm)` is stable on Node ≥ 22.12. Bumping engines
+  documents the new floor for every published package.
+
+2. The example app imports from `@spanexx/sdk-node-cjs` today. What
+   happens to that?
+Answer:
+- `example/package.json`: change `@spanexx/sdk-node-cjs` to
+  `@spanexx/sdk-node` in dependencies. Same version (^0.1.0).
+- `example/src/platform/platform.agent.ts`: change
+  `from '@spanexx/sdk-node-cjs'` to `from '@spanexx/sdk-node'`.
+- Re-run `pnpm install` in the example repo. Re-run `pnpm run build`
+  + `pnpm run serve` to confirm the registration flow still works
+  end-to-end against the ESM package. The createSdk API is unchanged
+  (the CJS sibling was a mirror, not a wrapper).
+
+Why:
+- The example is the integration target. Its `pnpm install` will
+  fail without this change (the `-cjs` package is gone from npm
+  after publish + unpublish).
+- The cjs-sdk-bootstrap pack already verified the example works
+  end-to-end against a working SDK; dropping the -cjs suffix is
+  the only delta.
+
+3. Are there any test files inside the CJS trees that need migrating
+   to the ESM packages?
+Answer:
+- No migration. Each `*-cjs/src/__tests__/` covers the same behavior
+  as the corresponding ESM package's tests:
+  - `sdk-node-cjs/src/__tests__/{client,lifecycle,register,invoke,
+    events}.test.ts` — duplicates of `sdk-node/src/__tests__/`
+  - `sdk-browser-cjs/src/__tests__/events.test.ts` — duplicate of
+    `sdk-browser/src/__tests__/events.test.ts`
+- After deletion, the ESM test counts increase (or stay equal if
+  vitest's per-package test counting skipped shared files). Either
+  way the test surface covers the same behavior.
+- The `cjs-mirror-build.test.ts` test in agentide/src pins the mirror
+  script contract — that test dies with the deletion of the
+  mirror-cjs-versions.mjs script + the CJS trees it depended on.
+  We replace it with a no-op test or delete it; no real behavior
+  loses coverage because the script itself is being deleted.
+
+Why:
+- The mirror is going away. The tests for the mirror go with it.
+  Keeping them around as historical coverage would be misleading
+  (they'd never run unless someone re-introduced the CJS siblings).
+
+4. Should we bump the version of any package as part of this drop?
+Answer:
+- No version bumps in this pack. The publish-pipeline version bumps
+  happen via release-please after the drop lands on main.
+- All 14 published ESM packages currently sit at their post-cjs-sdk-bootstrap
+  versions (0.0.4 / 0.1.0 / 0.1.1). If release-please finds no feat/fix
+  commits between this drop and the last tag, no version bump
+  happens. That's fine — engines changes are not a release-worthy
+  signal per the existing release-please-config (no conventional
+  prefix triggers a minor for an engines field bump).
+
+Why:
+- Bumping engines is a metadata change, not a behavior change. Mixing
+  it with the CJS drop would make it harder to bisect if a consumer
+  complains.
+- release-please will pick up real version bumps naturally as
+  future feat/fix commits land.
+
+5. Does `engines.node: ">=22.12"` need a matching CLI/runtime check,
+   or is the field enough?
+Answer:
+- The field is enough for v1. The npm/pnpm ecosystem respects
+  `engines` and refuses install with a hard error when the host
+  doesn't satisfy it. That's the gate; no CLI shim needed.
+- GitHub Actions runners already run Node 22.13.1 (per `.nvmrc`) —
+  CI installs without complaint.
+
+Why:
+- Adding a CLI verify step ("if Node < 22.12, exit with a message")
+  would be redundant with what npm/pnpm already does.
+- The CI runner's 22.13.1 is already on the side of the bump; no
+  CI change required.
+
+6. Any docs updates?
+Answer:
+- `docs/operations/release-process.md`: drop the `mirror-cjs` step
+  mention; update "publish filter" wording (16 packages → 14).
+- `.agents/skills/ci-cd-agentide/SKILL.md`: drop the CJS Versions
+  table rows; mark Discovered bugs #1 (D-75, D-76) and #5 (D-77)
+  as closed/resolved; update "16 packages published" to "14
+  packages published, no CJS siblings"; drop the `mirror-cjs-versions`
+  toolkit row.
+- `.agents/skills/release-agentide/SKILL.md`: drop any CJS-specific
+  talk.
+- `docs/drift.md`: D-75 / D-76 — close them ("no longer relevant —
+  CJS siblings dropped per drop-cjs-siblings pack"); D-77 — already
+  closed, leave alone.
+- `agentide/docs/HOWTOAGENTIDE.html` — last touched pre-pack, no
+  change needed (already reflects post-cjs-sdk-bootstrap world).
+- No README change for the example (the Quick start there still
+  applies; the only delta is the import line, which is example
+  source not example docs).
+
+Why:
+- The CI/CD skill is operator-facing. An out-of-date skill loses
+  hours per future agent that trusts it.
+- The drift log is the long-running divergence record. Closing
+  D-75 / D-76 there is the canonical way to mark the CJS-broken-build
+  problem retired.
+- HOWTOAGENTIDE.html predates this pack and is consistent with the
+  post-drop world already.
+
+7. After the drop, what's left in `*`-cjs in the repo?
+Answer:
+- Nothing in working-tree code. All four CJS trees are deleted. The
+  `mirror-cjs-versions.mjs` script is deleted. The release.yml
+  mirrors no CJS. The CJS entries are out of the release-please
+  config + manifest.
+- `pnpm-lock.yaml` regenerates without `-cjs` entries after a fresh
+  install.
+- Two CI/CD operator skills may contain stale CJS text. Those get
+  the targeted updates from Q6.
+
+Why:
+- "Zero CJS residue" is the goal. Future agents looking at the
+  repo shouldn't even know CJS siblings ever existed here.
+
+No remaining open questions

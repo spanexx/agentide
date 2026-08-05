@@ -202,43 +202,6 @@ importers:
         specifier: ^8.21.1
         version: 8.21.1
 
-  packages/agentide-cjs:
-    dependencies:
-      '@spanexx/adapter-mcp':
-        specifier: workspace:*
-        version: link:../adapter-mcp
-      '@spanexx/adapter-websocket':
-        specifier: workspace:*
-        version: link:../adapter-websocket
-      '@spanexx/agentide':
-        specifier: workspace:*
-        version: link:../agentide
-      '@spanexx/backend-runtime':
-        specifier: workspace:*
-        version: link:../backend-runtime
-      '@spanexx/capability-registry':
-        specifier: workspace:*
-        version: link:../capability-registry
-      '@spanexx/event-bus':
-        specifier: workspace:*
-        version: link:../event-bus
-      '@spanexx/gateway-core':
-        specifier: workspace:*
-        version: link:../gateway-core
-      '@spanexx/plugin-manager':
-        specifier: workspace:*
-        version: link:../plugin-manager
-      '@spanexx/session-manager':
-        specifier: workspace:*
-        version: link:../session-manager
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.20.1
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
   packages/application:
     dependencies:
       ulid:
@@ -393,12 +356,6 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(yaml@2.9.0))
 
-  packages/event-bus-cjs:
-    dependencies:
-      '@spanexx/event-bus':
-        specifier: ^0.0.1
-        version: 0.0.1
-
   packages/gateway-core:
     dependencies:
       '@spanexx/backend-runtime':
@@ -550,19 +507,6 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(yaml@2.9.0))
 
-  packages/sdk-browser-cjs:
-    dependencies:
-      '@spanexx/event-bus-cjs':
-        specifier: ^0.0.1
-        version: 0.0.1
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.20.1
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
   packages/sdk-node:
     dependencies:
       '@spanexx/event-bus':
@@ -596,28 +540,6 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(yaml@2.9.0))
-
-  packages/sdk-node-cjs:
-    dependencies:
-      '@spanexx/event-bus-cjs':
-        specifier: ^0.0.1
-        version: 0.0.1
-      ws:
-        specifier: ^8.18.0
-        version: 8.21.1
-      yaml:
-        specifier: ^2.6.0
-        version: 2.9.0
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.20.1
-      '@types/ws':
-        specifier: ^8.5.13
-        version: 8.18.1
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/session-manager:
     dependencies:
@@ -1044,10 +966,6 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
-
-  '@spanexx/event-bus-cjs@0.0.1':
-    resolution: {integrity: sha512-0NoXRa7Q/GTWSUvKgdUWCj9sqqZnJeR7a7PbkdFA4SLenb4c7vHa8RZ5aZR09Ayq6xIv1AYosnG/miJab1J7ng==}
-    engines: {node: '>=20'}
 
   '@spanexx/event-bus@0.0.1':
     resolution: {integrity: sha512-khaYWT7G3uHTQSTpe0amH5V0/qY5gEzPXNTz79G0WEXByeatxUJEGJ+t8KfTrFstKIPOAFxhy12EqbvtT/7dLQ==}
@@ -2391,10 +2309,6 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
-
-  '@spanexx/event-bus-cjs@0.0.1':
-    dependencies:
-      '@spanexx/event-bus': 0.0.1
 
   '@spanexx/event-bus@0.0.1': {}
 
