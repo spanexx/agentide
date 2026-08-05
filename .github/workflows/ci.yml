@@ -20,6 +20,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: corepack enable
+      - run: corepack prepare pnpm@11.10.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: npm run precommit
 
@@ -57,5 +58,6 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: corepack enable
+      - run: corepack prepare pnpm@11.10.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build

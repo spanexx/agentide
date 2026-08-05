@@ -40,6 +40,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: corepack enable
+      - run: corepack prepare pnpm@11.10.0 --activate
       - run: pnpm install --frozen-lockfile
       - name: Mirror CJS variants to ESM versions
         run: node packages/agentide/scripts/mirror-cjs-versions.mjs
