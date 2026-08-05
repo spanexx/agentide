@@ -364,3 +364,77 @@ describe("CLI remote dispatch (--url)", () => {
     expect(r.stdout).toBe('{"name":"product.list"}');
   });
 });
+
+// CID:cli-002..007 - Phase 5 (BI[29]) client subcommand tests
+
+describe("CLI client subcommand", () => {
+  it("`client create` writes the secret to a file and prints only the path", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli(
+      ["client", "create", "--tenant", "acme", "--name", "nightly-build", "--data-dir", "/data"],
+      { fs },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/created/i);
+    expect(r.stdout).toMatch(/secret_at: \/data\/clients\/.secret-cli_/);
+    // The plaintext secret must NOT be printed unless --print is given.
+    expect(r.stdout).not.toMatch(/eyJ/);
+    // The secret file was actually written.
+    const written = [...fs.files.keys()].find((p) => p.startsWith("/data/clients/.secret-cli_"));
+    expect(written).toBeDefined();
+  });
+
+  it("`client create --print` prints the plaintext secret", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli(
+      ["client", "create", "--tenant", "acme", "--name", "debug-helper", "--print", "--data-dir", "/data"],
+      { fs },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/plaintext_secret:/);
+  });
+
+  it("`client list --tenant` shows id + name for created clients", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["client", "create", "--tenant", "acme", "--name", "n1", "--data-dir", "/data"], { fs });
+    await runCli(["client", "create", "--tenant", "beta", "--name", "n2", "--data-dir", "/data"], { fs });
+    const r = await runCli(["client", "list", "--tenant", "acme", "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/cli_/);
+    expect(r.stdout).toMatch(/n1/);
+    expect(r.stdout).not.toMatch(/n2/);
+  });
+
+  it("`client grant` issues a registration code with an expiry", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli(
+      ["client", "grant", "--tenant", "acme", "--name", "storefront", "--data-dir", "/data"],
+      { fs },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/rc_/);
+    expect(r.stdout).toMatch(/expires_at/);
+  });
+
+  it("`client revoke` flips the client to revoked (visible in list)", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["client", "create", "--tenant", "acme", "--name", "leaky", "--data-dir", "/data"], { fs });
+    const listBefore = await runCli(["client", "list", "--tenant", "acme", "--data-dir", "/data"], { fs });
+    expect(listBefore.stdout).toMatch(/revoked: false/);
+    const clientId = listBefore.stdout.match(/cli_[A-Za-z0-9_-]+/)?.[0] ?? "";
+    const r = await runCli(["client", "revoke", "--client-id", clientId, "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    const listAfter = await runCli(["client", "list", "--tenant", "acme", "--data-dir", "/data"], { fs });
+    expect(listAfter.stdout).toMatch(/revoked.+true/);
+  });
+
+  it("`client rotate` issues a new secret and prints rotated", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["client", "create", "--tenant", "acme", "--name", "rotator", "--data-dir", "/data"], { fs });
+    const list = await runCli(["client", "list", "--tenant", "acme", "--data-dir", "/data"], { fs });
+    const clientId = list.stdout.match(/cli_[A-Za-z0-9_-]+/)?.[0] ?? "";
+    const r = await runCli(["client", "rotate", "--client-id", clientId, "--data-dir", "/data"], { fs });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/rotated/);
+  });
+});

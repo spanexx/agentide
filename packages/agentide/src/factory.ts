@@ -113,6 +113,9 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     auditLogPath,
     tenantsPath,
     secretPath,
+    // BI[29]: client store must live under the operator's dataDir, not the
+    // gateway-core default (/data). The CLI client subcommand reads/writes it.
+    clientDataDir: config.dataDir,
     ...(backendRuntime !== undefined ? { backendRuntime } : {}),
   });
 

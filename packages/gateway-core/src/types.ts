@@ -217,6 +217,11 @@ export interface Gateway {
   //   grants). Present when the gateway is created with client identity support;
   //   adapters route /oauth/token to it when defined.
   readonly oauthTokenHandler?: import("./oauth-token-handler.js").OAuthTokenHandler;
+  // CID:types-022 - clientService
+  // Purpose: direct ClientService access for operator tooling (CLI client
+  //   subcommand). The gateway always owns one (created in factory.ts); exposing
+  //   it lets the CLI issue/revoke/rotate/grant without a session+token dance.
+  readonly clientService: import("./client-service.js").ClientService;
 }
 // CID:types-018 - ClientRecord
 // Durable record for a service/app identity. Stored in clients.json.

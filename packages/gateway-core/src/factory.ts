@@ -257,6 +257,7 @@ export async function createGateway(
     },
 
     oauthTokenHandler,
+    clientService: clientSvc,
 
     status: async (): Promise<GatewayStatus> => {
       const uptimeMs = clock.now() - startedAt;

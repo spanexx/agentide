@@ -46,6 +46,7 @@ Usage:
   agentide status  [--data-dir <path>] [--pid-file <path>] [--url ...] [--token ...] [--json] [remote-only if --url given]  (remote gateway.status)
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
   agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--origin <url> ...] [--origins <csv>] [--data-dir <path>]
+  agentide client  {create|list|grant|revoke|rotate|redeem} [--tenant <id>] [--name <name>] [--scope <csv>] [--client-id <id>] [--code <rc_...>] [--ttl-min <n>] [--print] [--data-dir <path>]
   agentide capability {list|describe --name <name>} [--owner <string>] [--tier <read|write|act|destructive>] [--data-dir <path>]
   agentide plugin  {list} [--data-dir <path>]
 
@@ -153,6 +154,8 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
         return await runTenant(positional.slice(1), dataDir, flags, opts);
       case "token":
         return await runToken(positional.slice(1), dataDir, flags, opts);
+      case "client":
+        return await runClient(positional.slice(1), dataDir, flags, opts);
       case "capability":
         // `capability list` is remote when --url/env/config supplies a URL
         if (positional[1] === "list" && (await hasUrlSource(argv, process.env))) {
@@ -317,6 +320,111 @@ async function runToken(
   } finally {
     await platform.stop();
   }
+}
+
+// CID:cli-001 - runClient
+// Purpose: operator management of machine identities (BI[29] client_credentials).
+//   create/grant/revoke/rotate/redeem talk to the gateway's ClientService
+//   directly (no session+token dance — this is operator tooling, same trust
+//   level as `tenant create`).
+// discovery/issues: the plaintext secret is written to <dataDir>/clients/
+//   .secret-<id>.txt with 0600 permissions and is only echoed to stdout with
+//   --print. Real-fs runs retry the write after mkdir (InMemoryFs never fails).
+async function runClient(
+  subArgs: readonly string[],
+  dataDir: string,
+  flags: Record<string, string | boolean | string[]>,
+  opts: CliOptions,
+): Promise<CliResult> {
+  const sub = subArgs[0];
+  const platform = await createPlatform({
+    fs: opts.fs,
+    dataDir,
+    adapterMcp: false,
+    adapterWs: false,
+  });
+  try {
+    const svc = platform.gateway.clientService;
+    if (sub === "create") {
+      const tenantId = getFlag(flags, "tenant", "");
+      const name = getFlag(flags, "name", "");
+      if (!tenantId || !name) return result("", "client create requires --tenant and --name\n", 1);
+      const scope = getFlag(flags, "scope", "*").split(",").map((s) => s.trim()).filter(Boolean);
+      const { record, plaintextSecret } = await svc.createClient({ tenantId, name, defaultScope: scope });
+      const secretPath = await writeClientSecret(dataDir, record.id, plaintextSecret, opts.fs);
+      if (flags["print"] === true) {
+        return result(
+          `# Created client\nid: ${record.id}\nname: ${record.name}\nplaintext_secret: ${plaintextSecret}\nsecret_at: ${secretPath}\n`,
+        );
+      }
+      return result(`# Created client\nid: ${record.id}\nname: ${record.name}\ncreated_at: ${record.createdAt}\nsecret_at: ${secretPath}\n`);
+    }
+    if (sub === "list") {
+      const tenantId = getFlag(flags, "tenant", "");
+      const clients = tenantId ? await svc.listClients(tenantId) : await svc.listClients();
+      const lines = clients.map(
+        (c) => `- ${c.id}\t${c.name}\tcreatedAt: ${c.createdAt}\trevoked: ${c.revoked}\tlastUsedAt: ${c.lastUsedAt ?? "-"}`,
+      );
+      return result(lines.join("\n") + "\n");
+    }
+    if (sub === "grant") {
+      const tenantId = getFlag(flags, "tenant", "");
+      const name = getFlag(flags, "name", "");
+      if (!tenantId || !name) return result("", "client grant requires --tenant and --name\n", 1);
+      const scope = getFlag(flags, "scope", "*").split(",").map((s) => s.trim()).filter(Boolean);
+      const ttlMin = Number.parseInt(getFlag(flags, "ttl-min", "5"), 10);
+      const { code, expiresAt } = await svc.createRegistrationCode({
+        tenantId,
+        defaultScope: scope,
+        ttlMs: Number.isFinite(ttlMin) && ttlMin > 0 ? ttlMin * 60_000 : 5 * 60_000,
+      });
+      return result(`# Registration code\ncode: ${code}\nexpires_at: ${expiresAt}\n`);
+    }
+    if (sub === "revoke") {
+      const clientId = getFlag(flags, "client-id", "");
+      if (!clientId) return result("", "client revoke requires --client-id\n", 1);
+      await svc.revokeClient({ clientId });
+      return result(`# Revoked client\nid: ${clientId}\nrevoked: true\n`);
+    }
+    if (sub === "rotate") {
+      const clientId = getFlag(flags, "client-id", "");
+      if (!clientId) return result("", "client rotate requires --client-id\n", 1);
+      const { plaintextSecret } = await svc.rotateClient({ clientId });
+      const secretPath = await writeClientSecret(dataDir, clientId, plaintextSecret, opts.fs);
+      return result(`# Rotated client\nid: ${clientId}\nrotated: true\nsecret_at: ${secretPath}\n`);
+    }
+    if (sub === "redeem") {
+      const code = getFlag(flags, "code", "");
+      if (!code) return result("", "client redeem requires --code\n", 1);
+      const redeemed = await svc.redeemRegistrationCode({ code });
+      if (redeemed === null) return result("", "client redeem: invalid or expired registration code\n", 1);
+      return result(`# Redeemed registration code\nclient_id: ${redeemed.clientId}\nclient_secret: ${redeemed.plaintextSecret}\n`);
+    }
+    return result("", `unknown client subcommand: ${sub ?? ""}\n`, 1);
+  } finally {
+    await platform.stop();
+  }
+}
+
+// CID:cli-008 - writeClientSecret
+// Purpose: persist the plaintext secret to <dataDir>/clients/.secret-<id>.txt
+//   (0600). Retries once after mkdir for real filesystems; InMemoryFs never
+//   hits the fallback.
+async function writeClientSecret(
+  dataDir: string,
+  clientId: string,
+  plaintextSecret: string,
+  fs: CliOptions["fs"],
+): Promise<string> {
+  const secretPath = `${dataDir}/clients/.secret-${clientId}.txt`;
+  try {
+    await fs.writeFile(secretPath, plaintextSecret, 0o600);
+  } catch {
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(`${dataDir}/clients`, { recursive: true });
+    await fs.writeFile(secretPath, plaintextSecret, 0o600);
+  }
+  return secretPath;
 }
 
 async function runCapability(

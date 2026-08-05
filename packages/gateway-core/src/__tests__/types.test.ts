@@ -102,6 +102,7 @@ describe("gateway-core types", () => {
       suspendTenant: async (_id) => tenant,
       deleteTenant: async (_id) => {},
       status: async () => ({ uptimeMs: 0, tenantCount: 1, pluginCount: 0, auditLogBytes: 0 }),
+      clientService: undefined as never,
     };
 
     expect(invocation.caller?.tenantId).toBe("acme");

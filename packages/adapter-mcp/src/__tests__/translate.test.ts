@@ -50,6 +50,7 @@ function mockGateway(responses: Readonly<Record<string, CanonicalResponse>>): Mo
     suspendTenant: vi.fn(async () => ({ id: "t1", name: "T1", createdAt: 0, suspended: true })),
     deleteTenant: vi.fn(async () => undefined),
     status: vi.fn(async () => ({ uptimeMs: 0, tenantCount: 0, pluginCount: 0, auditLogBytes: 0 })),
+    clientService: undefined as never,
   };
 }
 
