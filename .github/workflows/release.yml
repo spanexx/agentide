@@ -33,9 +33,10 @@ jobs:
 
   publish:
     name: pnpm -r publish
-    needs: release-please
-    if: github.event_name == 'push' && (startsWith(github.event.ref, 'refs/tags/') || needs.release-please.outputs.release_created) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags/')) ||
+      github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
         with:
