@@ -23,7 +23,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
-import type { OAuthTokenHandler } from "@spanexx/gateway-core";
+import type { OAuthTokenHandler, OidcResponse } from "@spanexx/gateway-core";
 import type { RequestCtx } from "./types.js";
 
 // CID:server-001 - McpHttpServerHandle
@@ -91,6 +91,17 @@ export async function startMcpHttpServer(
     readonly host: string;
     readonly port: number;
     readonly oauth?: OAuthTokenHandler;
+    // BI[29] Phase 7: OIDC auth-code grant routes (GET /oauth/authorize + /oauth/callback).
+    // Wired when the gateway is started with --enable-oidc. Handlers are
+    // closures over the gateway's codes map / secret / clock (see factory.ts).
+    readonly oidc?: {
+      readonly authorize: (env: {
+        readonly query: { client_id?: string; redirect_uri?: string; scope?: string; response_type?: string };
+      }) => Promise<OidcResponse>;
+      readonly callback: (env: {
+        readonly query: { code?: string; redirect_uri?: string };
+      }) => Promise<OidcResponse>;
+    };
   },
 ): Promise<McpHttpServerHandle> {
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -106,6 +117,22 @@ export async function startMcpHttpServer(
     if (req.method === "POST" && req.url === "/oauth/token" && config.oauth !== undefined) {
       void handleOAuthTokenRoute(req, res, config.oauth);
       return;
+    }
+    // CID:server-005 - OIDC routes (BI[29] Phase 7): GET /oauth/authorize and
+    // GET /oauth/callback. Both delegate to the gateway's OIDC handlers; the
+    // dev-stub-approve page itself is served by the gateway CLI, not here.
+    if (req.method === "GET" && config.oidc !== undefined) {
+      const url = new URL(req.url ?? "/", `http://${config.host}:${config.port}`);
+      if (url.pathname === "/oauth/authorize") {
+        const query = Object.fromEntries(url.searchParams.entries());
+        void writeOidcResponse(res, config.oidc.authorize({ query }));
+        return;
+      }
+      if (url.pathname === "/oauth/callback") {
+        const query = Object.fromEntries(url.searchParams.entries());
+        void writeOidcResponse(res, config.oidc.callback({ query }));
+        return;
+      }
     }
     if (req.url !== "/mcp") {
       res.writeHead(404, { "Content-Type": "application/json" });
@@ -183,6 +210,23 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
   });
+}
+
+// CID:server-006 - writeOidcResponse
+// Purpose: write an OIDC handler result (302 redirect with Location header,
+//   or a JSON error body) to the HTTP response. Never throws.
+// Used by: startMcpHttpServer (GET /oauth/authorize + GET /oauth/callback)
+async function writeOidcResponse(res: ServerResponse, result: Promise<OidcResponse>): Promise<void> {
+  try {
+    const r = await result;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (r.headers?.Location !== undefined) headers.Location = r.headers.Location;
+    res.writeHead(r.status, headers);
+    res.end(JSON.stringify(r.body ?? {}));
+  } catch {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "internal_error", error_description: "oidc handler failed" }));
+  }
 }
 
 async function handleTransportRequest(

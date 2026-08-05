@@ -41,7 +41,7 @@ const HELP = `agentide (v${CLI_VERSION}) — Agent Runtime Platform operator CLI
 
 Usage:
   agentide init    [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]
-  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>] [--pid-file <path>] [--log-file <path>] [--foreground]
+  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>] [--pid-file <path>] [--log-file <path>] [--foreground] [--enable-oidc]
   agentide stop    [--pid-file <path>]
   agentide status  [--data-dir <path>] [--pid-file <path>] [--url ...] [--token ...] [--json] [remote-only if --url given]  (remote gateway.status)
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]

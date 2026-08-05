@@ -93,6 +93,12 @@ export async function runStart(
   const adapterMcpEnabled = !noMcp;
   const adapterWsEnabled = !noWs;
 
+  // CID:start-010 - --enable-oidc (BI[29] Phase 7)
+  // Turns on the OIDC auth-code grant dev stub (GET /oauth/authorize +
+  // /oauth/callback). Off by default; the baseUrl defaults to the MCP
+  // adapter's own address in the platform factory.
+  const enableOidc = flags["enable-oidc"] === true;
+
   // CID:start-005 - createPlatform errors → exit 2, not the catch-all's exit 1.
   let platform;
   try {
@@ -105,6 +111,7 @@ export async function runStart(
       adapterMcpPort: portMcp,
       adapterWs: adapterWsEnabled,
       adapterWsHost: bind,
+      ...(enableOidc ? { enableOidc: true } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

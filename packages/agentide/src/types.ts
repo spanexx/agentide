@@ -109,6 +109,16 @@ export interface CreatePlatformConfig {
   readonly adapterWs?: boolean;
   readonly wsPort?: number;
   readonly adapterWsHost?: string;
+
+  /**
+   * CID:platform-types-010 - enableOidc
+   * BI[29] Phase 7: when true, the gateway exposes the OIDC auth-code grant
+   * dev stub (GET /oauth/authorize + GET /oauth/callback on the MCP adapter).
+   * Default false. oidcBaseUrl is where the gateway lives (used for the
+   * dev-stub-approve redirect); defaults to http://127.0.0.1:{adapterMcpPort}.
+   */
+  readonly enableOidc?: boolean;
+  readonly oidcBaseUrl?: string;
 }
 
 // CID:platform-types-002 - Platform

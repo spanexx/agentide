@@ -157,6 +157,10 @@ export interface GatewayConfig {
   readonly secretPath?: string;
   readonly clientDataDir?: string; // dir for clients.json + registration-codes.json (default /data)
   readonly requireTls?: boolean; // POST /oauth/token rejects plain HTTP when true (default true)
+  // BI[29] Phase 7: OIDC auth-code grant (dev stub). When enabled, the gateway
+  // exposes GET /oauth/authorize + GET /oauth/callback handlers for adapters.
+  readonly enableOidc?: boolean;
+  readonly oidcBaseUrl?: string; // where the gateway lives (dev-stub-approve redirect target)
   readonly cleanupTimeoutMs?: number;
   readonly rateLimit?: RateLimitBucketConfig;
   readonly handlerTimeoutMs?: number;
@@ -217,6 +221,19 @@ export interface Gateway {
   //   grants). Present when the gateway is created with client identity support;
   //   adapters route /oauth/token to it when defined.
   readonly oauthTokenHandler?: import("./oauth-token-handler.js").OAuthTokenHandler;
+  // CID:types-023 - oidc
+  // Purpose: OIDC auth-code grant handlers (BI[29] Phase 7). Present when the
+  //   gateway is created with enableOidc=true; adapters route GET
+  //   /oauth/authorize + /oauth/callback to them when defined. The handlers
+  //   are closures over the gateway's codes map / secret / clock.
+  readonly oidc?: {
+    readonly authorize: (env: {
+      readonly query: { client_id?: string; redirect_uri?: string; scope?: string; response_type?: string };
+    }) => Promise<import("./oauth-token-handler.js").OidcResponse>;
+    readonly callback: (env: {
+      readonly query: { code?: string; redirect_uri?: string };
+    }) => Promise<import("./oauth-token-handler.js").OidcResponse>;
+  };
   // CID:types-022 - clientService
   // Purpose: direct ClientService access for operator tooling (CLI client
   //   subcommand). The gateway always owns one (created in factory.ts); exposing

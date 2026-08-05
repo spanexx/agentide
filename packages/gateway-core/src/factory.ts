@@ -27,7 +27,7 @@ import { checkAuthz } from "./authz.js";
 import { issueToken } from "./auth.js";
 import { ClientService } from "./client-service.js";
 import { FileSystemClientStore } from "./client-store.js";
-import { handleTokenRequest, TokenRequestRateLimiter, type OAuthTokenHandler } from "./oauth-token-handler.js";
+import { handleTokenRequest, TokenRequestRateLimiter, type OAuthTokenHandler, handleAuthorize, handleCallback } from "./oauth-token-handler.js";
 import { handleInvocation } from "./handle-invocation.js";
 import { type DispatchHandlers } from "./dispatch.js";
 import { RateLimiter } from "./rate-limit.js";
@@ -144,6 +144,30 @@ export async function createGateway(
       rateLimiter: tokenRateLimiter,
     });
 
+  // BI[29] Phase 7: OIDC auth-code grant (dev stub). Only wired when
+  // enableOidc=true. The codes map lives per-gateway-instance (one-shot auth
+  // codes for the dev-stub-approve flow); handlers close over secret + clock
+  // so adapters never see them. Adapters route GET /oauth/authorize +
+  // /oauth/callback to these when `oidc` is present on the Gateway.
+  const oidcCodes = new Map<string, { clientId: string; tenantId: string; scope: string[] }>();
+  const oidc = config.enableOidc === true
+    ? {
+        authorize: (env: { query: { client_id?: string; redirect_uri?: string; scope?: string; response_type?: string } }) =>
+          handleAuthorize({
+            query: env.query,
+            enableOidc: config.enableOidc ?? false,
+            baseUrl: config.oidcBaseUrl ?? "http://localhost:7100",
+          }),
+        callback: (env: { query: { code?: string; redirect_uri?: string } }) =>
+          handleCallback({
+            query: env.query,
+            codes: oidcCodes,
+            secret,
+            clock: () => clock.now(),
+          }),
+      }
+    : undefined;
+
   const startedAt = clock.now();
   const handlers = buildGatewayHandlers({
     tenantStore,
@@ -258,6 +282,7 @@ export async function createGateway(
 
     oauthTokenHandler,
     clientService: clientSvc,
+    oidc,
 
     status: async (): Promise<GatewayStatus> => {
       const uptimeMs = clock.now() - startedAt;

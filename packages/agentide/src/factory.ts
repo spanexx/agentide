@@ -116,6 +116,12 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     // BI[29]: client store must live under the operator's dataDir, not the
     // gateway-core default (/data). The CLI client subcommand reads/writes it.
     clientDataDir: config.dataDir,
+    ...(config.enableOidc === true
+      ? {
+          enableOidc: true,
+          oidcBaseUrl: config.oidcBaseUrl ?? `http://${config.adapterMcpHost ?? DEFAULT_ADAPTER_MCP_HOST}:${config.adapterMcpPort ?? DEFAULT_ADAPTER_MCP_PORT}`,
+        }
+      : {}),
     ...(backendRuntime !== undefined ? { backendRuntime } : {}),
   });
 
@@ -148,6 +154,7 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
       host: config.adapterMcpHost ?? DEFAULT_ADAPTER_MCP_HOST,
       port: config.adapterMcpPort ?? DEFAULT_ADAPTER_MCP_PORT,
       ...(gateway.oauthTokenHandler !== undefined ? { oauth: gateway.oauthTokenHandler } : {}),
+      ...(gateway.oidc !== undefined ? { oidc: gateway.oidc } : {}),
     });
     await mcpAdapter.start();
   }

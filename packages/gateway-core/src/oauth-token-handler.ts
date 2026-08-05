@@ -131,3 +131,93 @@ export class TokenRequestRateLimiter {
     return true;
   }
 }
+
+// ── OIDC auth-code grant (BI[29] Phase 7) ────────────────────────────────
+// Dev-oriented flow, gated by --enable-oidc on `agentide start`:
+//   1. GET /oauth/authorize?client_id=..&redirect_uri=..&scope=..&response_type=code
+//      -> 302 to {baseUrl}/oauth/dev-stub-approve?...  (a real IdP would own this page)
+//   2. dev-stub-approve auto-approves in dev: stores an auth code in the shared
+//      Map and 302s back to redirect_uri?code=rc_<random>
+//   3. GET /oauth/callback?code=..&redirect_uri=.. -> consumes the code, mints a
+//      JWT via issueToken (same path as client_credentials), 302s to
+//      redirect_uri?code=<jwt>
+// enableOidc=false short-circuits authorize to 403 {error:"oidc_disabled"}.
+
+export interface OidcResponse {
+  readonly status: number;
+  readonly headers?: Record<string, string>;
+  readonly body?: YamlValue;
+}
+
+// CID:oidc-001 - handleAuthorize
+// Purpose: entry point for GET /oauth/authorize. With OIDC enabled, redirect
+//   to the dev stub approval page; otherwise 403. Never throws.
+export async function handleAuthorize(env: {
+  readonly query: { client_id?: string; redirect_uri?: string; scope?: string; response_type?: string };
+  readonly enableOidc: boolean;
+  readonly baseUrl: string;
+}): Promise<OidcResponse> {
+  if (!env.enableOidc) {
+    return { status: 403, body: { error: "oidc_disabled", error_description: "start the gateway with --enable-oidc" } };
+  }
+  const q = new URLSearchParams();
+  if (env.query.client_id !== undefined) q.set("client_id", env.query.client_id);
+  if (env.query.redirect_uri !== undefined) q.set("redirect_uri", env.query.redirect_uri);
+  if (env.query.scope !== undefined) q.set("scope", env.query.scope);
+  q.set("response_type", env.query.response_type ?? "code");
+  return {
+    status: 302,
+    headers: { Location: `${env.baseUrl.replace(/\/$/, "")}/oauth/dev-stub-approve?${q.toString()}` },
+  };
+}
+
+// CID:oidc-003 - devStubApproval
+// Purpose: dev-only auto-approve page. In production this would be an IdP
+//   login+consent screen; here it mints an auth code and redirects straight
+//   back. The codes map is the gateway-owned store shared with handleCallback.
+export async function devStubApproval(env: {
+  readonly query: { client_id?: string; redirect_uri?: string; scope?: string; tenant_id?: string };
+  readonly codes: Map<string, { clientId: string; tenantId: string; scope: string[] }>;
+  readonly random?: () => number;
+}): Promise<OidcResponse> {
+  const code = `rc_${(env.random ?? Math.random)().toString(36).slice(2, 10)}`;
+  const scope = (env.query.scope ?? "*").split(" ").filter((s) => s !== "");
+  env.codes.set(code, {
+    clientId: env.query.client_id ?? "",
+    tenantId: env.query.tenant_id ?? "default",
+    scope,
+  });
+  const redirectUri = env.query.redirect_uri ?? "";
+  const sep = redirectUri.includes("?") ? "&" : "?";
+  return { status: 302, headers: { Location: `${redirectUri}${sep}code=${code}` } };
+}
+
+// CID:oidc-002 - handleCallback
+// Purpose: consume an auth code and exchange it for a JWT. One-shot: the
+//   code is deleted from the store, so a second callback with the same code
+//   gets 401. Never throws.
+export async function handleCallback(env: {
+  readonly query: { code?: string; redirect_uri?: string };
+  readonly codes: Map<string, { clientId: string; tenantId: string; scope: string[] }>;
+  readonly secret: Uint8Array;
+  readonly clock: () => number;
+}): Promise<OidcResponse> {
+  const code = env.query.code ?? "";
+  const entry = env.codes.get(code);
+  if (!entry) {
+    return { status: 401, body: { error: "invalid_grant", error_description: "authorization code not found, already consumed, or expired" } };
+  }
+  env.codes.delete(code); // one-shot
+  const now = env.clock();
+  const claims = {
+    sub: { tenantId: entry.tenantId, callerId: entry.clientId },
+    scope: entry.scope,
+    iat: now,
+    exp: now + 3_600_000, // epoch ms, matching client_credentials
+  };
+  const clock: Clock = { now: () => now, setTimeout: () => 0, clearTimeout: () => {} };
+  const token = issueToken(claims, env.secret, clock);
+  const redirectUri = env.query.redirect_uri ?? "";
+  const sep = redirectUri.includes("?") ? "&" : "?";
+  return { status: 302, headers: { Location: `${redirectUri}${sep}code=${token}` } };
+}
