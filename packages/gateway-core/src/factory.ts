@@ -25,6 +25,8 @@ import type { PluginManager } from "@spanexx/plugin-manager";
 import { AuditWriter } from "./audit.js";
 import { checkAuthz } from "./authz.js";
 import { issueToken } from "./auth.js";
+import { ClientService } from "./client-service.js";
+import { FileSystemClientStore } from "./client-store.js";
 import { handleInvocation } from "./handle-invocation.js";
 import { type DispatchHandlers } from "./dispatch.js";
 import { RateLimiter } from "./rate-limit.js";
@@ -47,6 +49,7 @@ import type {
 const DEFAULT_AUDIT_LOG_PATH = "/data/audit.log";
 const DEFAULT_TENANTS_PATH = "/data/tenants.json";
 const DEFAULT_SECRET_PATH = "/data/gateway-secret";
+const DEFAULT_CLIENT_DATA_DIR = "/data";
 const DEFAULT_HANDLER_TIMEOUT_MS = 30000;
 const DEFAULT_RATE_LIMIT_CAPACITY = 100;
 const DEFAULT_RATE_LIMIT_TOKENS_PER_SECOND = 10;
@@ -112,6 +115,15 @@ export async function createGateway(
   const secret = await loadOrCreateSecret(secretPath, fs);
   const backendRuntime = config.backendRuntime;
 
+  // BI[29]: client identity store + service. Salt is derived from the install
+  // secret so hashes are stable per data dir without a second secret file.
+  const clientStore = new FileSystemClientStore(config.clientDataDir ?? DEFAULT_CLIENT_DATA_DIR, fs);
+  const clientSvc = new ClientService(
+    clientStore,
+    () => Buffer.from(secret).toString("hex"),
+    () => clock.now(),
+  );
+
   const startedAt = clock.now();
   const handlers = buildGatewayHandlers({
     tenantStore,
@@ -124,6 +136,7 @@ export async function createGateway(
     auditLogPath,
     startedAt,
     fs,
+    clientSvc,
   });
 
   await registerPlatformCapabilities(registry);
@@ -250,6 +263,7 @@ interface BuildHandlersCtx {
   readonly auditLogPath: string;
   readonly startedAt: number;
   readonly fs: FileSystem;
+  readonly clientSvc: ClientService;
 }
 
 function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
@@ -385,6 +399,54 @@ function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
       ctx.tenantStore.delete(i.id);
       void persistTenantsNow();
       return { deleted: true };
+    }),
+
+    // === client (BI[29] CID:cap-001..004) ===
+    "client.create": wrap(async (input) => {
+      const i = input as { tenantId?: string; name?: string; defaultScope?: readonly string[] };
+      if (typeof i.tenantId !== "string" || typeof i.name !== "string" || !Array.isArray(i.defaultScope)) {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "client.create requires {tenantId, name, defaultScope}", {}, false);
+      }
+      try {
+        return await ctx.clientSvc.createClient({
+          tenantId: i.tenantId,
+          name: i.name,
+          defaultScope: i.defaultScope as readonly string[],
+        });
+      } catch (err) {
+        if (err instanceof Error && /^rate_limited/.test(err.message)) {
+          throw new GatewayError(ERROR_CODES.RATE_LIMIT_EXCEEDED, err.message, {}, false);
+        }
+        throw err;
+      }
+    }),
+    "client.list": wrap(async (input) => {
+      const i = (input ?? {}) as { tenantId?: string };
+      return typeof i.tenantId === "string"
+        ? await ctx.clientSvc.listClients(i.tenantId)
+        : await ctx.clientSvc.listClients();
+    }),
+    "client.revoke": wrap(async (input) => {
+      const i = input as { clientId?: string };
+      if (typeof i.clientId !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "client.revoke requires {clientId}", {}, false);
+      }
+      await ctx.clientSvc.revokeClient({ clientId: i.clientId });
+      return { revoked: true };
+    }),
+    "client.rotate": wrap(async (input) => {
+      const i = input as { clientId?: string };
+      if (typeof i.clientId !== "string") {
+        throw new GatewayError(ERROR_CODES.INVALID_REQUEST, "client.rotate requires {clientId}", {}, false);
+      }
+      try {
+        return await ctx.clientSvc.rotateClient({ clientId: i.clientId });
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("client not found")) {
+          throw new GatewayError(ERROR_CODES.INVALID_REQUEST, err.message, {}, false);
+        }
+        throw err;
+      }
     }),
 
     // === capability discovery ===

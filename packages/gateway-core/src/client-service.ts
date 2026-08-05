@@ -10,6 +10,7 @@
  * CID:cs-004 -> randomClientId
  * CID:cs-005 -> randomSecret
  * CID:cs-006 -> randomRegistrationCode
+ * CID:cs-007 -> listClients
  *
  * Quick lookup: rg -n "CID:cs-" packages/gateway-core/src/client-service.ts
  */
@@ -93,6 +94,12 @@ export class ClientService {
     const records = await this.store.load();
     await this.store.save([...records, record]);
     return { record, plaintextSecret };
+  }
+
+  // CID:cs-007 - listClients
+  async listClients(tenantId?: string): Promise<readonly ClientRecord[]> {
+    const records = await this.store.load();
+    return tenantId === undefined ? records : records.filter((r) => r.tenantId === tenantId);
   }
 
   async verifyClient(req: VerifyRequest): Promise<ClientRecord | null> {

@@ -37,15 +37,15 @@ describe("registerPlatformCapabilities — fresh install", () => {
     ({ registry } = setup());
   });
 
-  it("registers 25 caps total", async () => {
+  it("registers 29 caps total", async () => {
     await registerPlatformCapabilities(registry);
-    expect(registry.list().length).toBe(25);
+    expect(registry.list().length).toBe(29);
   });
 
-  it("places 12 caps under owner=\"gateway\"", async () => {
+  it("places 16 caps under owner=\"gateway\"", async () => {
     await registerPlatformCapabilities(registry);
     const under = recordsUnder(registry, "gateway");
-    expect(under.length).toBe(12);
+    expect(under.length).toBe(16);
   });
 
   it("places 5 caps under owner=\"session-manager\"", async () => {
@@ -182,12 +182,12 @@ describe("registerPlatformCapabilities — upgrade from pre-BI[6]", () => {
     // Run the migration.
     await registerPlatformCapabilities(registry);
 
-    // After migration: 25 caps under correct owners.
-    expect(registry.list().length).toBe(25);
+    // After migration: 29 caps under correct owners.
+    expect(registry.list().length).toBe(29);
     expect(recordsUnder(registry, "session-manager").length).toBe(5);
     expect(recordsUnder(registry, "capability-registry").length).toBe(2);
     expect(recordsUnder(registry, "plugin-manager").length).toBe(6);
-    expect(recordsUnder(registry, "gateway").length).toBe(12);
+    expect(recordsUnder(registry, "gateway").length).toBe(16);
 
     // session.* should NOT be under gateway anymore.
     const session = registry.describe("session.create").capability;
@@ -207,8 +207,8 @@ describe("registerPlatformCapabilities — idempotency", () => {
     const first = registry.list().length;
     await registerPlatformCapabilities(registry);
     const second = registry.list().length;
-    expect(first).toBe(25);
-    expect(second).toBe(25);
+    expect(first).toBe(29);
+    expect(second).toBe(29);
   });
 
   it("calling twice produces an empty diff on the second call", async () => {

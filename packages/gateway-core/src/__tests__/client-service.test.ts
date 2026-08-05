@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
 import { ClientService } from "../client-service.js";
 import type { ClientRecord, RegistrationCode } from "../types.js";
 
@@ -26,6 +27,14 @@ describe("ClientService", () => {
     expect(plaintextSecret.length).toBeGreaterThan(20);
     expect(record.hashedSecret).not.toBe(plaintextSecret);
     expect(record.hashedSecret).toMatch(/^sha256:/);
+  });
+  it("createClient hashes with salt + secret, not just secret", async () => {
+    const { store } = memStore();
+    const salt = "fixed-salt";
+    const svc = new ClientService(store, () => salt, () => 1000);
+    const { record, plaintextSecret } = await svc.createClient({ tenantId: "acme", name: "n", defaultScope: ["*"] });
+    const digest = createHash("sha256").update(salt + plaintextSecret).digest("hex");
+    expect(record.hashedSecret).toBe(`sha256:${salt}:${digest}`);
   });
   it("createClient rate-limits at 5 per hour (6th in 1h -> 429)", async () => {
     const { store } = memStore();

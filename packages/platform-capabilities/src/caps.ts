@@ -1,6 +1,6 @@
 /*
- * Code Map: 25 platform-capability records
- * - GATEWAY_CAPS: 12 caps under owner="gateway" (4 tenant.* + 3 gateway.* + 2 auth.token.* + 3 system.*)
+ * Code Map: 29 platform-capability records
+ * - GATEWAY_CAPS: 16 caps under owner="gateway" (4 tenant.* + 4 client.* + 3 gateway.* + 2 auth.token.* + 3 system.*)
  * - SESSION_CAPS: 5 caps under owner="session-manager"
  * - CAPABILITY_CAPS: 2 caps under owner="capability-registry"
  * - PLUGIN_CAPS: 6 caps under owner="plugin-manager"
@@ -40,12 +40,22 @@ function cap(
 }
 
 // CID:caps-001 - GATEWAY_CAPS
-// 12 caps under owner="gateway": 4 tenant.* + 3 gateway.* + 2 auth.token.* + 3 system.*
+// 16 caps under owner="gateway": 4 tenant.* + 4 client.* + 3 gateway.* + 2 auth.token.* + 3 system.*
+// client.* (BI[29] CID:cap-001..004): operator-facing service/app identity lifecycle
+//   — create/revoke/rotate are write-tier; list is read-tier (BI[7] tier convention).
 export const GATEWAY_CAPS: readonly CapabilityRecord[] = [
   cap("tenant.create", "gateway", ["platform.tenant.write"], "Create a tenant and bootstrap token", "write"),
   cap("tenant.list", "gateway", ["platform.tenant.read"], "List tenants visible to the caller", "read"),
   cap("tenant.suspend", "gateway", ["platform.tenant.write"], "Suspend a tenant (block new calls)", "write"),
   cap("tenant.delete", "gateway", ["platform.tenant.write"], "Delete a tenant (purge records)", "write"),
+  // CID:cap-001 -> client.create
+  cap("client.create", "gateway", ["platform.client.write"], "Create a client and return its secret once (5/hour per operator)", "write"),
+  // CID:cap-002 -> client.list
+  cap("client.list", "gateway", ["platform.client.read"], "List clients in the caller's tenant", "read"),
+  // CID:cap-003 -> client.revoke
+  cap("client.revoke", "gateway", ["platform.client.write"], "Revoke a client (blocks future token minting)", "write"),
+  // CID:cap-004 -> client.rotate
+  cap("client.rotate", "gateway", ["platform.client.write"], "Rotate a client secret (old secret valid for 5 min grace)", "write"),
   cap("gateway.status", "gateway", ["platform.gateway.read"], "Gateway runtime status", "read"),
   cap("gateway.metrics", "gateway", ["platform.gateway.read"], "Gateway counters and metrics", "read"),
   cap("gateway.configuration", "gateway", ["platform.gateway.read"], "Effective configuration (with secrets redacted)", "read"),
