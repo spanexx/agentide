@@ -5,6 +5,7 @@ describe("client types", () => {
   it("ClientRecord has the required fields", () => {
     const rec: ClientRecord = {
       id: "cli_abc", tenantId: "acme", name: "n", hashedSecret: "sha256:xx",
+      previousHashedSecrets: [],
       defaultScope: ["*"], revoked: false, createdAt: 1,
       lastUsedAt: null, lastRotatedAt: null, gracePeriodEndsAt: null,
     };

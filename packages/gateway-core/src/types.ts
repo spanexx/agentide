@@ -220,6 +220,7 @@ export interface ClientRecord {
   readonly tenantId: string;
   readonly name: string;
   readonly hashedSecret: string;          // "sha256:<salt-hex>:<digest-hex>"
+  readonly previousHashedSecrets: readonly string[]; // hashes accepted during rotation grace
   readonly defaultScope: readonly string[];
   readonly revoked: boolean;
   readonly createdAt: number;             // UTC epoch ms

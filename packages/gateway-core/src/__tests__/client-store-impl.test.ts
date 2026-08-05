@@ -16,7 +16,8 @@ describe("FileSystemClientStore", () => {
       exists: async (p: string) => p in stored,
     };
     const store = new FileSystemClientStore("/data", fs);
-    const rec = { id: "cli_1", tenantId: "acme", name: "a", hashedSecret: "sha256:x", defaultScope: ["*"] as readonly string[], revoked: false, createdAt: 1, lastUsedAt: null, lastRotatedAt: null, gracePeriodEndsAt: null };
+    const rec = { id: "cli_1", tenantId: "acme", name: "a", hashedSecret: "sha256:x",
+      previousHashedSecrets: [], defaultScope: ["*"] as readonly string[], revoked: false, createdAt: 1, lastUsedAt: null, lastRotatedAt: null, gracePeriodEndsAt: null };
     await store.save([rec]);
     expect(await store.load()).toEqual([rec]);
   });

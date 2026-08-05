@@ -18,3 +18,4 @@ export * from "./factory.js";export type {
   ClientStore,
 } from "./types.js";
 export { FileSystemClientStore } from "./client-store.js";
+export { ClientService } from "./client-service.js";
