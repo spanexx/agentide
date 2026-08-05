@@ -61,5 +61,5 @@ jobs:
       - name: Publish to npm (ESM only — CJS variants skipped due to broken build)
         run: |
           pnpm -r --filter './packages/errors' --filter './packages/event-bus' --filter './packages/origin' --filter './packages/session-manager' --filter './packages/capability-registry' --filter './packages/plugin-manager' --filter './packages/backend-runtime' --filter './packages/platform-capabilities' --filter './packages/gateway-core' --filter './packages/sdk-node' --filter './packages/sdk-browser' --filter './packages/adapter-mcp' --filter './packages/adapter-websocket' --filter './packages/agentide' publish --access public --no-git-checks
-      - name: Revert prepare-publish.sh mutation
-        run: git checkout -- packages/agentide/package.json
+      - name: Revert prepare-publish.sh mutations (all packages)
+        run: git checkout -- packages/*/package.json || true
