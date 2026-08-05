@@ -22,7 +22,12 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const MONOREPO_ROOT = resolve(__dirname, "..", "..", "..");
+// CID:cjs-sdk-bootstrap-002 - mirror-cjs-versions.mjs is testable.
+// In production, MONOREPO_ROOT is the agentide repo root (parent of packages/agentide).
+// Tests override via AGENTIDE_REPO_ROOT env var to point at a fixtures directory.
+const MONOREPO_ROOT = process.env["AGENTIDE_REPO_ROOT"]
+  ? resolve(process.env["AGENTIDE_REPO_ROOT"])
+  : resolve(__dirname, "..", "..", "..");
 
 const PAIRS = [
   ["sdk-node", "sdk-node-cjs"],
@@ -64,8 +69,14 @@ function main() {
   for (const [esmName, cjsName] of PAIRS) {
     const esmKey = `packages/${esmName}`;
     const cjsKey = `packages/${cjsName}`;
-    const esmVersion = manifest[esmKey]?.version;
-    const cjsVersion = manifest[cjsKey]?.version;
+    // CID:cjs-sdk-bootstrap-003 - manifest is flat-string form
+    // (release-please 16+ emits `{ "packages/<name>": "x.y.z" }` not
+    // `{ "packages/<name>": { "version": "x.y.z" } }`). Accept both for
+    // forward-compat.
+    const esmEntry = manifest[esmKey];
+    const cjsEntry = manifest[cjsKey];
+    const esmVersion = typeof esmEntry === "string" ? esmEntry : esmEntry?.version;
+    const cjsVersion = typeof cjsEntry === "string" ? cjsEntry : cjsEntry?.version;
     if (!esmVersion) {
       console.warn(`[mirror-cjs] no manifest entry for ${esmKey} — skipping pair (${esmName}, ${cjsName})`);
       continue;
@@ -74,11 +85,12 @@ function main() {
     let { pkg: cjsPkg, pkgPath } = readPackageVersion(cjsName);
     let changed = false;
 
-    if (cjsVersion !== esmVersion) {
+    if (cjsPkg.version !== esmVersion) {
       console.log(`[mirror-cjs] ${cjsName}: ${cjsPkg.version} -> ${esmVersion}`);
       cjsPkg.version = esmVersion;
       writeJson(pkgPath, cjsPkg);
-      manifest[cjsKey] = { ...manifest[cjsKey], version: esmVersion };
+      // Update manifest in flat form
+      manifest[cjsKey] = esmVersion;
       changed = true;
     } else {
       console.log(`[mirror-cjs] ${cjsName}: already at ${esmVersion}`);
