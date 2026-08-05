@@ -65,7 +65,7 @@ export interface WsClientConfig {
 
 export class WsClient {
   private readonly url: string;
-  private readonly token: string;
+  private token: string;
   private readonly maxBackoffMs: number;
   private readonly baseBackoffMs: number;
   private readonly jitterRatio: number;
@@ -89,6 +89,15 @@ export class WsClient {
     const rawJitter = config.jitterRatio ?? 0.2;
     this.jitterRatio = Math.max(0, Math.min(1, rawJitter));
     this.random = config.random ?? Math.random;
+  }
+
+  /**
+   * Swap the JWT used for the auth handshake / reconnect. Called by the SDK
+   * after a client_credentials refresh (BI[29]) so the next reconnect
+   * authenticates with the fresh token.
+   */
+  updateToken(token: string): void {
+    this.token = token;
   }
 
   /**

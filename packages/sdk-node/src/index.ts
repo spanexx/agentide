@@ -25,6 +25,7 @@ import type {
   Handler,
 } from "./types.js";
 import { WsClient } from "./client.js";
+import { TokenRefresher, type FetchImpl } from "./refresher.js";
 import { resolveManifest, resolveHandlers, matchCapabilities } from "./register.js";
 import {
   dispatchIncoming,
@@ -48,8 +49,21 @@ import { SdkEventPublisher } from "./events.js";
  */
 export function createSdk(config: SdkConfig): SdkInstance {
   // Validate config shape early — fail fast on bad input.
-  if (!config.gateway?.url || !config.gateway?.token) {
-    throw new Error("sdk-node: config.gateway must include both url and token");
+  // BI[29]: gateway.token OR clientId+clientSecret; clientId wins when both.
+  const hasClientCreds = config.clientId !== undefined || config.clientSecret !== undefined;
+  if (hasClientCreds) {
+    if (!config.clientId || !config.clientSecret) {
+      throw new Error("sdk-node: clientId and clientSecret must be provided together");
+    }
+    if (!config.oauthUrl) {
+      throw new Error("sdk-node: oauthUrl is required when clientId is set");
+    }
+  }
+  if (!config.gateway?.url) {
+    throw new Error("sdk-node: config.gateway.url is required");
+  }
+  if (!hasClientCreds && !config.gateway?.token) {
+    throw new Error("sdk-node: config.gateway.token (or clientId+clientSecret) is required");
   }
   if (!config.app?.id || !config.app?.name) {
     throw new Error("sdk-node: config.app must include both id and name");
@@ -62,6 +76,42 @@ export function createSdk(config: SdkConfig): SdkInstance {
   }
 
   const logger = makeLogger(false);
+
+  // BI[29]: client_credentials token lifecycle. Created when clientId is set;
+  // the initial mint kicks off immediately so the first connect() is fast.
+  const refresher: TokenRefresher | null = hasClientCreds
+    ? new TokenRefresher({
+        oauthUrl: config.oauthUrl as string,
+        clientId: config.clientId as string,
+        clientSecret: config.clientSecret as string,
+        fetchImpl: config.fetchImpl as FetchImpl | undefined,
+        clock: config.clock,
+        random: config.random,
+        backoffBaseMs: config.backoffBaseMs,
+        backoffMaxMs: config.backoffMaxMs,
+        maxAttempts: config.maxAttempts,
+        onRevoked: () => {
+          // Revocation: close the ws cleanly and never reconnect. Errors
+          // surface through the user's onRevoked callback (PRD S4).
+          config.onRevoked?.();
+          void sdkInternal.client?.close();
+        },
+      })
+    : null;
+  if (refresher !== null) {
+    // Fire-and-forget: connect()/refreshIfNeeded() await the same in-flight
+    // promise, so failures still surface deterministically there.
+    void refresher.ensureToken().catch(() => {});
+  }
+
+  /** The JWT used for the auth handshake: refreshed token wins over static. */
+  function currentToken(): string {
+    if (refresher !== null) {
+      const t = refresher.token();
+      if (t !== null) return t;
+    }
+    return config.gateway.token ?? "";
+  }
 
   // Mutable internal state — kept private.
   const phase: { value: Phase } = { value: "init" };
@@ -107,7 +157,7 @@ export function createSdk(config: SdkConfig): SdkInstance {
           await dispatchIncoming(
             c,
             handlers,
-            { app: config.app, token: config.gateway.token },
+            { app: config.app, token: currentToken() },
             msg,
             logger,
             publisher,
@@ -119,9 +169,20 @@ export function createSdk(config: SdkConfig): SdkInstance {
 
   const sdk: SdkInstance & { client: WsClient | null } = {
     async connect(): Promise<void> {
+      if (refresher !== null) {
+        // Mint (or refresh) before opening — the ws auth handshake needs a
+        // live JWT. Throws when the mint failed after backoff exhaustion;
+        // onRevoked already fired for client_revoked.
+        const t = await refresher.ensureToken();
+        if (t === null) {
+          throw new Error("sdk-node: client revoked; reconnect blocked");
+        }
+      }
       if (sdkInternal.client === null) {
-        sdkInternal.client = new WsClient({ url: config.gateway.url, token: config.gateway.token });
+        sdkInternal.client = new WsClient({ url: config.gateway.url, token: currentToken() });
         attachLifecycleToClient(sdkInternal.client);
+      } else {
+        sdkInternal.client.updateToken(currentToken());
       }
       await sdkInternal.client.open();
       // Phase is set by the 'open' lifecycle handler. If registered.size > 0,
@@ -210,6 +271,11 @@ export function createSdk(config: SdkConfig): SdkInstance {
       }
       return { phase: phase.value, capabilities: caps };
     },
+    // CID:sdk-002 - token lifecycle (BI[29]): refreshed JWT wins over static.
+    token: (): string | null => (refresher !== null ? refresher.token() : (config.gateway.token ?? null)),
+    async refreshIfNeeded(): Promise<void> {
+      if (refresher !== null) await refresher.refreshIfNeeded();
+    },
     // Exposed for tests so they can dispatch inbound messages against
     // the same WsClient the lifecycle uses. Not part of the public API.
     client: null,
@@ -242,6 +308,7 @@ export {
 } from "./types.js";
 
 export { WsClient } from "./client.js";
+export { TokenRefresher, type FetchImpl } from "./refresher.js";
 
 export {
   SdkEventPublisher,
