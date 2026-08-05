@@ -22,6 +22,7 @@
  * CID:drop-cjs-residue-002 -> mirror-cjs-versions.mjs is gone
  * CID:drop-cjs-residue-003 -> release.yml has no --filter './packages/*-cjs'
  * CID:drop-cjs-residue-004 -> release-please-manifest has no *-cjs entries
+ * CID:drop-cjs-residue-005 -> release-please-config has no *-cjs entries
  */
 
 import { describe, it, expect } from "vitest";
@@ -66,6 +67,14 @@ describe("no CJS residue (drop-cjs-siblings)", () => {
     const txt = fs.readFileSync(p, "utf-8");
     for (const key of CJS_MANIFEST_KEYS) {
       expect(txt, `manifest must not contain ${key}`).not.toContain(`"${key}":`);
+    }
+  });
+
+  it("CID:drop-cjs-residue-005 — release-please-config has no *-cjs entries", () => {
+    const p = path.join(DOCS_WORKFLOWS, "release-please-config.json");
+    const txt = fs.readFileSync(p, "utf-8");
+    for (const key of CJS_MANIFEST_KEYS) {
+      expect(txt, `config must not contain ${key}`).not.toContain(`"${key}":`);
     }
   });
 });

@@ -50,4 +50,4 @@ pong                                  // heartbeat reply
 
 ## integration
 
-depends on gateway-core + event-bus + errors + origin. wired into `@platform/agentide` via `adapterWs` config. `sdk-node-cjs` / `sdk-node` are the canonical consumers.
+depends on gateway-core + event-bus + errors + origin. wired into `@platform/agentide` via `adapterWs` config. `sdk-node` is the canonical consumer.

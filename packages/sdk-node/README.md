@@ -8,7 +8,7 @@ Backend SDK. Register business capabilities with the gateway, execute handlers l
 npm install @spanexx/sdk-node @spanexx/event-bus
 ```
 
-ESM-only. For CJS consumers (nest, most node apps), use `@spanexx/sdk-node-cjs` instead.
+ESM-only, but works from CJS-compiled apps on Node >= 22.12 (`require(esm)` is stable there; this package ships a `require` condition). No `-cjs` sibling exists.
 
 ## usage
 

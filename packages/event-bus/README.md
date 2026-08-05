@@ -8,7 +8,7 @@ In-process pub/sub for Agentide components. Custom (not EventEmitter) — sync d
 npm install @spanexx/event-bus
 ```
 
-ESM-only. For CJS consumers (nest, most node apps), use `@spanexx/event-bus-cjs`.
+ESM-only, but requires Node >= 22.12 where `require(esm)` is stable — so CJS consumers can `require('@spanexx/event-bus')` directly (no separate `-cjs` package exists).
 
 ## usage
 

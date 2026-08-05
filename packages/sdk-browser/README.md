@@ -8,7 +8,7 @@ Browser SDK. The DOM is the manifest: annotate elements with `data-sdk-cap="<cap
 npm install @spanexx/sdk-browser
 ```
 
-ESM-only. (CJS browser doesn't really exist — bundlers handle this. The CJS sibling `@spanexx/sdk-browser-cjs` is for SSR/Node-only consumers.)
+ESM-only. Bundlers resolve the `import`/`require` conditions. No `-cjs` sibling exists — server-side consumers use Node >= 22.12 `require(esm)`.
 
 ## usage
 

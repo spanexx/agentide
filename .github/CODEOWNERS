@@ -18,15 +18,11 @@
 
 # CLI
 /packages/agentide/                 @spanexx/cli-maintainers
-/packages/agentide-cjs/             @spanexx/cli-maintainers
 
 # SDKs
 /packages/sdk-node/                 @spanexx/sdk-maintainers
-/packages/sdk-node-cjs/             @spanexx/sdk-maintainers
 /packages/sdk-browser/              @spanexx/sdk-maintainers
-/packages/sdk-browser-cjs/          @spanexx/sdk-maintainers
 /packages/event-bus/                @spanexx/sdk-maintainers
-/packages/event-bus-cjs/            @spanexx/sdk-maintainers
 
 # Adapters
 /packages/adapter-mcp/              @spanexx/adapter-maintainers
