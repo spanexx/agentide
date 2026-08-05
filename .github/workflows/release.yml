@@ -3,7 +3,9 @@ name: release
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags:
+      - 'v*'
+      - '*-v*'
 
 permissions:
   contents: write
@@ -14,9 +16,9 @@ jobs:
   release-please:
     name: release-please
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/heads/')
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
-      upload_url: ${{ steps.rp.outputs.upload_url }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,7 +33,7 @@ jobs:
   publish:
     name: pnpm -r publish
     needs: release-please
-    if: needs.release-please.outputs.release_created != 'true'
+    if: github.event_name == 'push' && (startsWith(github.event.ref, 'refs/tags/') || needs.release-please.outputs.release_created)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,22 +46,11 @@ jobs:
         with:
           version: 11.10.0
       - run: pnpm install --frozen-lockfile
-      - name: Check if manifest changed (release-ready)
-        id: manifest_changed
-        run: |
-          if git diff --quiet HEAD~1 HEAD -- .github/release-please-manifest.json 2>/dev/null; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
       - name: Mirror CJS variants to ESM versions
-        if: steps.manifest_changed.outputs.changed == 'true'
         run: node packages/agentide/scripts/mirror-cjs-versions.mjs
       - name: Publish to npm
-        if: steps.manifest_changed.outputs.changed == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: pnpm -r publish --access public --no-git-checks
       - name: Revert prepare-publish.sh mutation
-        if: steps.manifest_changed.outputs.changed == 'true'
         run: git checkout -- packages/agentide/package.json
