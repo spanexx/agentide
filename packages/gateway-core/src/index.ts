@@ -12,4 +12,8 @@ export * from "./tenant-store.js";
 export * from "./authz.js";
 export * from "./dispatch.js";
 export * from "./handle-invocation.js";
-export * from "./factory.js";
+export * from "./factory.js";export type {
+  ClientRecord,
+  RegistrationCode,
+  ClientStore,
+} from "./types.js";

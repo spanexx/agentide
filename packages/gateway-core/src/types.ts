@@ -211,3 +211,40 @@ export interface Gateway {
   deleteTenant(id: string): Promise<void>;
   status(): Promise<GatewayStatus>;
 }
+// CID:types-018 - ClientRecord
+// Durable record for a service/app identity. Stored in clients.json.
+// The hashedSecret is sha256(salt + secret): never plaintext. Recovery is
+// "operator rotates" — issue a new client_id + revoke the old one.
+export interface ClientRecord {
+  readonly id: string;                  // "cli_<random>"
+  readonly tenantId: string;
+  readonly name: string;
+  readonly hashedSecret: string;          // "sha256:<salt-hex>:<digest-hex>"
+  readonly defaultScope: readonly string[];
+  readonly revoked: boolean;
+  readonly createdAt: number;             // UTC epoch ms
+  readonly lastUsedAt: number | null;
+  readonly lastRotatedAt: number | null;
+  readonly gracePeriodEndsAt: number | null;  // epoch ms; old secret valid until then
+}
+
+// CID:types-019 - RegistrationCode
+// One-time code the operator hands to an app for offline-friendly onboarding.
+// 5 min TTL. consumed=true after the first successful redeem.
+export interface RegistrationCode {
+  readonly code: string;                  // "rc_<random>"
+  readonly tenantId: string;
+  readonly defaultScope: readonly string[];
+  readonly expiresAt: number;             // UTC epoch ms
+  readonly consumed: boolean;
+}
+
+// CID:types-020 - ClientStore
+// Durable store for clients + registration codes. Default impl:
+// FileSystemClientStore at <dataDir>/clients.json + registration-codes.json.
+export interface ClientStore {
+  load(): Promise<readonly ClientRecord[]>;
+  save(records: readonly ClientRecord[]): Promise<void>;
+  loadCodes(): Promise<readonly RegistrationCode[]>;
+  saveCodes(codes: readonly RegistrationCode[]): Promise<void>;
+}
