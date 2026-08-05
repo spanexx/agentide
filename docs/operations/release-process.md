@@ -27,10 +27,11 @@ truth, `release-please` syncs the CLI string.
 
 Source: this repo, audited 2026-08-05.
 
-- 21 packages under `packages/`. 14 are public (`@spanexx/*`), 2 are private
-  (`application`, `browser-runtime`), 4 are CJS variants
-  (`event-bus-cjs`, `sdk-browser-cjs`, `sdk-node-cjs`, `agentide-cjs`).
-- pnpm workspace, Node ≥ 20, vitest 988/989, ESLint flat, `tsc --build`.
+- 14 public packages under `packages/` (`@spanexx/*`), all ESM, single surface
+  (the four `*-cjs` variants were deleted by the drop-cjs-siblings pack on
+  2026-08-05; `application` and `browser-runtime` are private).
+- pnpm workspace, Node ≥ 22.12 (engines bumped by drop-cjs-siblings Phase 3),
+  vitest, ESLint flat, `tsc --build`.
 - Per-package semver (0.0.0 .. 0.0.6). Last manual release was
   `833a8de chore(release): bump to 0.0.6` (2026-08-04).
 - Only **one tag** in the repo: `v0.0.3`. Code is at 0.0.6. Tags and code
@@ -79,7 +80,7 @@ The push of a tag is the entire release. The button does:
 | Fork | Decision | Why |
 |---|---|---|
 | Tooling | **`release-please`** (vs `changesets`) | Pure bot — no `npx changeset` step per PR. Conventional commits already in use. `changesets` is more control but every PR adds a file; for the "one central button" goal it's the wrong shape. |
-| CJS variants | CJS variants (`*-cjs`) stay **public** for now (`event-bus-cjs`, `sdk-browser-cjs`, `sdk-node-cjs`, `agentide-cjs`) | Confirmed: each has a real `dist/` and external consumers (`@platform/adapter-mcp` historically consumed `@spanexx/event-bus-cjs`). Marking them private would break published dependents. Re-evaluate after one release cycle. |
+| CJS variants | CJS variants (`*-cjs`) were **deleted** by the drop-cjs-siblings pack (2026-08-05, D-75/D-76/D-77 resolved) | The four `*-cjs` trees had broken build chains and stale versions; the 14 ESM packages now ship a `require` condition and require Node ≥ 22.12 (`require(esm)` stable there) — one ESM surface covers CJS consumers. No consumers warranted keeping them. |
 | v0.0.3 → v0.0.6 gap | **Retro-tag** `v0.0.6` on commit `833a8de` after the first CI run is green; the next release is `v0.0.7` | Makes the tag = code reality. A "Backfilled" note would record the gap forever; a retro-tag erases it. Precondition: CI must be green before the tag is created. |
 
 ---
@@ -102,21 +103,17 @@ The push of a tag is the entire release. The button does:
     "packages/agentide": { "package-name": "@spanexx/agentide" },
     "packages/gateway-core": { "package-name": "@spanexx/gateway-core" },
     "packages/sdk-node": { "package-name": "@spanexx/sdk-node" },
-    "packages/sdk-node-cjs": { "package-name": "@spanexx/sdk-node-cjs" },
     "packages/sdk-browser": { "package-name": "@spanexx/sdk-browser" },
-    "packages/sdk-browser-cjs": { "package-name": "@spanexx/sdk-browser-cjs" },
     "packages/adapter-mcp": { "package-name": "@spanexx/adapter-mcp" },
     "packages/adapter-websocket": { "package-name": "@spanexx/adapter-websocket" },
     "packages/backend-runtime": { "package-name": "@spanexx/backend-runtime" },
     "packages/capability-registry": { "package-name": "@spanexx/capability-registry" },
     "packages/event-bus": { "package-name": "@spanexx/event-bus" },
-    "packages/event-bus-cjs": { "package-name": "@spanexx/event-bus-cjs" },
     "packages/origin": { "package-name": "@spanexx/origin" },
     "packages/errors": { "package-name": "@spanexx/errors" },
     "packages/platform-capabilities": { "package-name": "@spanexx/platform-capabilities" },
     "packages/plugin-manager": { "package-name": "@spanexx/plugin-manager" },
-    "packages/session-manager": { "package-name": "@spanexx/session-manager" },
-    "packages/agentide-cjs": { "package-name": "@spanexx/agentide-cjs" }
+    "packages/session-manager": { "package-name": "@spanexx/session-manager" }
   },
   "release-type": "node",
   "changelog-sections": [
@@ -253,9 +250,9 @@ GRILL → PRD-TRD → IMPL → Implement → Drift Review loop. The pack's scope
 - **Multi-tenancy of releases.** All packages release on the same tag cadence
   for now. If a package needs independent cadence, add it as a separate
   release-please config block later.
-- **CJS variants drift.** The `*-cjs` packages are public but have no
-  independent version pressure in the current monorepo. Re-evaluate after the
-  first full release cycle.
+- **CJS variants drift.** Resolved 2026-08-05 by the drop-cjs-siblings pack —
+  the four `*-cjs` packages were deleted; the 14 ESM packages (with `require`
+  conditions, Node ≥ 22.12) are the single publish surface.
 
 ---
 
