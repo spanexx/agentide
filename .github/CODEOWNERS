@@ -1,0 +1,36 @@
+# CODEOWNERS — repo-area-to-team mapping.
+# Forward-pointing: teams can be created later. The owner-review path is
+# advisory in v1; branch protection is the hard gate (PR1-3 required checks).
+# Hierarchy: later rules win — keep the most-specific match last.
+
+# Default owners
+*                                  @spanexx/agentide-maintainers
+
+# Gateway / control plane
+/packages/gateway-core/              @spanexx/gateway-core-maintainers
+/packages/backend-runtime/          @spanexx/gateway-core-maintainers
+/packages/platform-capabilities/    @spanexx/gateway-core-maintainers
+/packages/session-manager/          @spanexx/gateway-core-maintainers
+/packages/capability-registry/      @spanexx/gateway-core-maintainers
+/packages/plugin-manager/           @spanexx/gateway-core-maintainers
+/packages/origin/                   @spanexx/gateway-core-maintainers
+/packages/errors/                   @spanexx/gateway-core-maintainers
+
+# CLI
+/packages/agentide/                 @spanexx/cli-maintainers
+/packages/agentide-cjs/             @spanexx/cli-maintainers
+
+# SDKs
+/packages/sdk-node/                 @spanexx/sdk-maintainers
+/packages/sdk-node-cjs/             @spanexx/sdk-maintainers
+/packages/sdk-browser/              @spanexx/sdk-maintainers
+/packages/sdk-browser-cjs/          @spanexx/sdk-maintainers
+/packages/event-bus/                @spanexx/sdk-maintainers
+/packages/event-bus-cjs/            @spanexx/sdk-maintainers
+
+# Adapters
+/packages/adapter-mcp/              @spanexx/adapter-maintainers
+/packages/adapter-websocket/        @spanexx/adapter-maintainers
+
+# CI
+/.github/                           @spanexx/agentide-maintainers

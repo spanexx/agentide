@@ -1,0 +1,823 @@
+Release Process - Grill Notes
+
+Status: Phase 0 grilling in progress
+Date: 2026-08-05
+Source: docs/operations/release-process.md (the operational plan this GRILL pins down)
+
+What this feature is about
+
+- A "one central button" release flow: `git tag v0.0.7 && git push --tags` is the
+  whole release. CI runs the precommit gate, `release-please` opens a Release PR
+  with version bumps + per-package CHANGELOGs, merging the PR publishes to npm
+  and attaches a GitHub Release.
+- Three GitHub Actions workflows: `ci.yml` (PR + push-to-main, precommit gate),
+  `sim.yml` (PR, post-impl simulations, non-blocking initially), `release.yml`
+  (tag push, the publish path).
+- Convention: tag = version, conventional commits drive the bump, per-package
+  semver (current shape — confirmed already-set in the plan).
+- The pack IS the implementation. No behavioral code changes to the platform.
+
+What this feature does NOT do
+
+- No container/CD (no Dockerfile exists yet).
+- No new npm packages (the four `*-cjs` variants stay public; the two
+  `application`/`browser-runtime` packages stay private).
+- No breaking-change to the public API surfaces.
+- No force-push, no auto-merge for feature PRs.
+- No security scanning in v1 (defer to follow-up).
+
+Questions and answers locked so far
+
+(decisions from docs/operations/release-process.md are locked — restated here for the decision record)
+
+[Q from the plan] Tooling: release-please vs changesets?
+Answer:
+- release-please.
+- Pure bot — no `npx changeset` step per PR. Conventional commits already in use
+  across the repo (every commit since the BI[29] work follows `feat(scope):` /
+  `fix(scope):` / `docs:`). `changesets` would require every contributor to add
+  a file per PR; release-please reads the commit log directly.
+
+Why:
+- "One central button" is the goal. `changesets` decentralizes the decision (every
+  PR author edits the changeset); `release-please` centralizes it (the bot reads
+  commits).
+- Cited: docs/operations/release-process.md#decisions, plan approved 2026-08-05.
+
+[Q from the plan] CJS variants (`*-cjs`): public or private?
+Answer:
+- Stay public for the v0.0.7 release cycle.
+- The four CJS variants (`event-bus-cjs`, `sdk-browser-cjs`, `sdk-node-cjs`,
+  `agentide-cjs`) have real `dist/` directories and historical published
+  dependents. Marking them private would break anyone who installed them.
+
+Why:
+- Demoting them would be a silent breaking change to external consumers.
+- Re-evaluate after one full release cycle (i.e., after v0.0.7 ships and the
+  publish cadence is proven) — if no consumer depends on them, demote to
+  private in a follow-up pack.
+- Cited: docs/operations/release-process.md#decisions.
+
+[Q from the plan] v0.0.3 → v0.0.6 tag gap: retro-tag or backfilled note?
+Answer:
+- Retro-tag `v0.0.6` on commit `833a8de` (the last manual release,
+  `chore(release): bump to 0.0.6`).
+- The next release is `v0.0.7`.
+
+Why:
+- A "Backfilled" note would record the gap forever in every CHANGELOG. A
+  retro-tag erases it.
+- Precondition: CI must be green before the tag is created, so the retro-tag
+  lands AFTER the first green CI run.
+- Cited: docs/operations/release-process.md#decisions.
+
+[Q from the plan] Branching model?
+Answer:
+- `main` is the release branch. `feature/<slug>` branches PR into `main`.
+- The Release PR is the only thing that merges to `main` without a human PR
+  review (it's still merged by a human, just no feature-PR review).
+- Squash-merge for feature PRs (keeps `main` linear + one commit per feature).
+
+Why:
+- Mirrors the existing `git-flow` skill convention used for the
+  `agentide-client-credentials` pack (commit `2546d0f docs: ship
+  agentide-client-credentials` is a squash of the 9 phase commits).
+- Cited: docs/operations/release-process.md#branching-model.
+
+[Q from the plan] Versioning model?
+Answer:
+- Per-package semver. `release-please` reads `feat`/`fix`/`feat!` since the last
+  release of each package and bumps accordingly.
+- `fix:` → patch, `feat:` → minor, `feat!:` or `BREAKING CHANGE:` footer →
+  major. `chore:`/`docs:`/`refactor:` → no bump.
+- Private packages (`application`, `browser-runtime`) are NOT in the
+  release-please config — they publish only when something else publishes them.
+
+Why:
+- Matches the current per-package version mapping (0.0.0..0.0.6 across packages).
+- CJS variants are in the config (public, per Q above).
+- Cited: docs/operations/release-process.md#versioning-model.
+
+[Q1] Migration order — atomic one-PR land + retro-tag + v0.0.7 in a single change, or phased (PR1: workflow infra, PR2: retro-tag + first release)?
+Answer:
+- Phased. Two PRs.
+- PR1 adds the infra (workflows, release-please config, PR template, badge,
+  CLI_VERSION sync script). Lands on `main`. CI runs against this PR as the
+  first verification.
+- PR2 is the actual retro-tag + first release (cut `v0.0.6` on `833a8de`, then
+  `v0.0.7` on the current HEAD — see Q3 for the order).
+- PR3 is the safeguard: if v0.0.7 publish fails or the GitHub Release gets bad
+  notes, the pack has a clean revert path (revert PR1, the repo is back to the
+  pre-pack state minus the manual `833a8de` bump).
+
+Why:
+- A single mega-PR that touches `package.json`, `CLI_VERSION`, workflow files,
+  retro-tags, and publishes is one blast-radius away from breaking the npm
+  registry surface (the same failure mode `2c92594 chore: restore workspace
+  deps after publish drift` patched). Spreading the risk across PRs means a
+  broken workflow is a code fix, not a `npm unpublish`.
+- The PR template (PR1) makes PR2's PR-require-fields enforceable, so PR2 is
+  itself a validation of the gate.
+- Cited: `commit 2c92594` is the canonical failure mode. Release-please's bot
+  PR replaces the manual `chore(release):` commit, but only after the workflow
+  is proven.
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: phased = slower first release (one extra PR cycle). Atomic = one
+  shot, but a miss means `npm unpublish`.
+
+[Q2] Tag history from v0.0.3 → HEAD — how much do we retro-tag?
+Answer:
+- Two retro-tags: `v0.0.4` on `944deff` (the `chore(release): bump to 0.0.4
+  --version flag ship` commit), `v0.0.6` on `833a8de` (the last manual release).
+- Skip v0.0.5 — no bump commit exists; agentide went 0.0.4 → 0.0.6 directly.
+- `release-please` then picks up from v0.0.6 → HEAD and generates an accurate
+  v0.0.7 CHANGELOG covering only the 14 commits since `833a8de` (the
+  `agentide-client-credentials` pack + the D-74 post-impl sim closure).
+
+Why:
+- One retro-tag (v0.0.6 only) would force release-please to summarize 2+ months
+  of commits into a single v0.0.7 release. The CHANGELOG would say "shipped
+  SDK auto-refresh, OIDC, client credentials, post-impl sim fix" — true but
+  unhelpfully compressed. Anyone debugging "what changed between v0.0.5 and
+  v0.0.6?" gets nothing.
+- Three retro-tags (v0.0.4, v0.0.5, v0.0.6) is more accurate but v0.0.5 is
+  fictional — no commit bumped the version. Lies in the tag history.
+- Two retro-tags matches the actual commit history. CHANGELOGs get accurate
+  release notes. The v0.0.5 gap is reflected in the v0.0.6 CHANGELOG section
+  "Since v0.0.4" which is what the diff actually shows.
+- Cited: `git log -- packages/agentide/package.json` confirms 944deff (0.0.4
+  bump) and 833a8de (0.0.6 bump) are the two real version-bump commits since
+  v0.0.3.
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: two retro-tags = slightly more release-notes archaeology work,
+  but the CHANGELOG surfaces the right information when someone needs it.
+
+[Q3] `CLI_VERSION` is hardcoded at `packages/agentide/src/cli.ts:39` plus `package.json` — single source of truth?
+Answer:
+- Esbuild `--define` at bundle time. `package.json` version is the single source.
+- The `bundle` script becomes:
+  ```
+  esbuild src/bin.ts --bundle --platform=node --target=node20 --format=cjs \
+    --outfile=dist/bin.bundled.cjs \
+    --define:CLI_VERSION=\"$(node -p 'require(\"./package.json\").version')\" \
+    --banner:js='#!/usr/bin/env node' && chmod +x dist/bin.bundled.cjs
+  ```
+- `cli.ts` changes from `const CLI_VERSION = "0.0.6"` to `declare const CLI_VERSION: string;`
+  (TypeScript-only, erased by esbuild). The line is preserved at the top of the
+  file as a build-time injection point.
+
+Why:
+- Option (a) `--define` at bundle time — single source = `package.json`. The
+  bundle is self-contained (per `prepare-publish.sh` strategy: zero runtime
+  deps). The version is baked in. No runtime file read. No script that mutates
+  `cli.ts`.
+- Option (b) `prepublishOnly` script that writes `cli.ts` line 39 from
+  `package.json` — adds a step that mutates a source file. Brittle: forget to
+  commit the regenerated file and the version drifts. The current `2c92594
+  chore: restore workspace deps after publish drift` is exactly this class of
+  failure.
+- Option (c) runtime read of `package.json` via `fs.readFileSync(new
+  URL('./package.json', import.meta.url))` — works only if the bundled CLI is
+  shipped with a `package.json` next to it. Esbuild bundles into a single CJS so
+  the URL resolves to the script's location, which is in `dist/` — the
+  package.json is at the package root, not `dist/`. Adapter needed.
+- Option (a) rules out: the drift between `package.json` and `cli.ts:39` is the
+  manual sync the whole pack is removing. `--define` is the only option that
+  survives "build once, read once from the source of truth."
+- Cited: `packages/agentide/src/cli.ts:39` (current source), `script "bundle"`
+  in `packages/agentide/package.json:29` (injection site).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: `cli.ts` becomes non-self-contained (the const is a build-time
+  injection). The current code is self-contained. This is the right trade —
+  the whole repo has already decoupled `package.json` as the source of truth.
+
+[Q4] Retro-tagged releases (v0.0.4, v0.0.6) — hand-write CHANGELOG entries, or let v0.0.7 cover them?
+Answer:
+- Hand-write the GitHub Release body for v0.0.4 and v0.0.6 via the tag
+  annotation. Skip CHANGELOG.md entries for those tags.
+- `git tag -a v0.0.4 -m "v0.0.4: --version flag shipped"` and `git tag -a
+  v0.0.6 -m "v0.0.6: workspace deps restored, pub pipeline hardened"`.
+- `CHANGELOG.md` per package only gets an entry for v0.0.7 (the first release
+  that goes through release-please's auto-generation).
+
+Why:
+- Option (a) hand-write CHANGELOG entries for v0.0.4 + v0.0.6 — most accurate to
+  a future reader. But the diff between v0.0.3 → v0.0.4 is 2 commits (one is
+  the version bump), and v0.0.4 → v0.0.6 is 4 commits (3 are publish fixes +
+  the bump). The CHANGELOG would say "v0.0.4: --version flag" and "v0.0.6: dep
+  restoration, prepublish hygiene" — duplicates of the tag annotation. Two
+  sources of truth.
+- Option (b) let v0.0.7 cover everything since v0.0.6 — auto-generated CHANGELOG
+  covers the 13 commits. Operators reading "what changed in v0.0.7?" get the
+  13-commit summary. The v0.0.4 / v0.0.6 tags do nothing useful (no CHANGELOG
+  entries, no releases).
+- Option (c) tag annotations carry the message, CHANGELOG only for v0.0.7 +
+  Single source = the tag itself. GitHub Release uses the annotation. CHANGELOG
+  only gets injected from release-please's auto-gen. Cleanest separation: tag =
+  the bookkeeping, CHANGELOG = the auto-generated future.
+- Cited: `git log v0.0.3..v0.0.4` (2 commits), `git log v0.0.4..v0.0.6` (4
+  commits), `git log v0.0.6..HEAD` (13 commits).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: tag annotations are minor ceremony at retro-tag time. CHANGELOG
+  entries would be cleaner but require re-deriving the diff from conventional
+  commits.
+
+[Q5] PR template — what fields, and is the badge "checkboxes" enforced by humans or CI?
+Answer:
+- Four required fields, three CI-enforced, one human-enforced.
+- Fields:
+  1. **What** — one-line description (free text).
+  2. **BI link** — `docs/Feature_Backlog.md#<slug>` or `N/A` (free text).
+  3. **Drift status** — `feature-pipeline-review` verdict + link to
+     `.reports/*.md` (or `N/A` for non-feature PRs).
+  4. **Sim status** — `n/m` plus sim output (or `N/A`).
+- Enforcement:
+  - First three **CI-enforced** via a `pr-template` job in `ci.yml`. The job
+    checks the PR body matches regexes for `^## What`, `^## BI link`, `^##
+    Drift status` headings. Missing → failing check.
+  - Fourth (sim status) **human-enforced** — reviewer verifies. No CI check.
+- A separate `labeler.yml` workflow auto-applies labels (`feature`, `chore`,
+  `fix`, `docs`) based on the PR title's conventional-prefix, so the backlog
+  UI can filter by tier.
+
+Why:
+- CI-enforced fields = the fields you don't want to forget. `What` (so the
+  PR is searchable), `BI link` (so the backlog stays authoritative), `Drift
+  status` (so the feature-pipeline-review loop is visible).
+- Human-enforced sim = the field that requires judgment. Sim output is short
+  and contextual; the reviewer can check it without a regex.
+- No auto-apply for the big fields — failure should be a clear "you forgot to
+  fill in the Drift status, edit your PR description" message, not a silent
+  label.
+- Labels are cheap, useful for the backlog UI; do them as a separate
+  auto-labeler workflow so the main CI stays focused.
+- Cited: docs/operations/release-process.md#architecture (the badge +
+  workflows).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: CI-enforced fields = ~30 lines of regex YAML in `ci.yml`.
+  Brittle if the PR template gets rewritten. But the regex is a contract
+  contributors learn once.
+
+[Q6] npm publish auth — how does the GitHub Action authenticate to npm?
+Answer:
+- `NPM_TOKEN` GitHub secret, scoped to a per-bot npm account with
+  publish-only access to the `@spanexx` scope.
+- Generated as a **Granular Access Token** at https://www.npmjs.com/settings/YOUR_ORG_OR_USER/tokens/granular-access-tokens/new
+  (the modern replacement for the legacy "Automation" token — npm deprecated
+  the old type in 2023). Settings:
+  - Token name: `agentide-bot-publish`
+  - Description: `release-please bot publishes @spanexx/* from GitHub Actions`
+  - Bypass 2FA: ✅ (the CI runs from GitHub Actions, no 2FA device)
+  - Allowed IP ranges: SKIP (GitHub Actions uses dynamic IPs that change
+    weekly; a static allowlist locks you out intermittently. The token is
+    scoped instead.)
+  - Packages and scopes: scope = `@spanexx`, permissions = `Read and publish`,
+    packages = all 18 in the `@spanexx` scope.
+- Stored as `NPM_TOKEN` in GitHub repo Settings → Secrets and variables →
+  Actions.
+- The `release.yml` workflow reads `secrets.NPM_TOKEN` on the publish job
+  and runs `pnpm -r publish --access public --no-git-checks` (the `--access
+  public` flag is redundant given `publishConfig.access: "public"` is already
+  in each `package.json`, but kept as belt-and-suspenders).
+- The token is set up BEFORE PR-1 lands. PR-1's CI doesn't publish, but the
+  secret check at startup validates the wiring (the workflow has a
+  `secrets.NPM_TOKEN` reference; if the secret is missing, the workflow fails
+  fast at validation time, not at publish time).
+
+Why:
+- **Automation token** (legacy `npm token create --automation-type=publish`) —
+  modern npm does not show this in the UI anymore. The Granular Token is the
+  replacement. Same effect (CI-friendly, no 2FA, persistent).
+- **Publish token** (legacy `npm token create`) — works but requires 2FA every
+  90 days. The release fails when the token expires mid-cycle.
+- **Trusted publishing** (OIDC) — newer, no static token. Requires npm + GitHub
+  OIDC handshake. Not recommended for v1 — adds an npm-side setup step + a
+  GitHub-side OIDC config that we'd need to validate. The static token is
+  simpler. Migration to OIDC is a follow-up pack.
+- **Per-bot account** — principle of least privilege. The npm account that
+  owns the token can't be used to delete packages, unpublish, or change
+  billing. The repo owner can revoke the token if compromised.
+- Cited: https://docs.npmjs.com/creating-and-viewing-access-tokens (npm docs).
+- Locked by user on 2026-08-05 (token setup acknowledged; page screenshot
+  confirms the right path).
+- Trade-off: static token = a single secret to manage. OIDC = zero secrets but
+  more setup. The static token is the right move for v1; OIDC is a follow-up.
+
+[Q6.1] GitHub secret storage path?
+Answer:
+- `github.com/<your-org>/<repo> → Settings (top tab) → Secrets and variables
+  → Actions (left sidebar) → New repository secret`.
+- Name: `NPM_TOKEN` (verbatim — the workflow reads `secrets.NPM_TOKEN`).
+- Secret value: paste the npm Granular Token.
+- Scope: Repository secret (the default at the path above). Organization
+  secret is for org-wide key sharing; not needed here.
+- Cited: github.com → repo → Settings → Secrets and variables → Actions.
+- Locked by user on 2026-08-05 (path confirmed).
+- The publishing repo is the inner `agentide` monorepo
+  (`github.com/spanexx/agentide`), not the outer `Agent-Bridge-SDK` stub.
+  Confirm explicitly in the IMPL.
+
+[Q7] `sim.yml` non-blocking at start — when does it become required?
+Answer:
+- Non-blocking through v0.0.7 (the first release via the new pipeline).
+- After v0.0.7 ships, wait one sprint (2 weeks). Track how often the post-impl
+  sim caught a regression that PR review missed.
+- At the retro: if the sim has caught ≥1 regression, flip `sim.yml` to
+  **required** for PRs that touch a package with a `simulate-*.mjs`. If zero
+  regressions, keep it non-blocking — the human review is doing the work.
+- PR-1 sets `sim.yml` with `continue-on-error: true` on the sim job. Posts a
+  PR comment with the count (`n/m PASS`). Reviewer sees count, no merge block.
+
+Why:
+- Required from day one is the most aggressive stance. Risk: the sim suite
+  is currently 7 scripts (simulate-client-credentials, simulate-mcp-adapter,
+  simulate-websocket-adapter, simulate-gateway-plugin-dispatch,
+  simulate-gateway-sdk-dispatch, simulate-sdk-browser, simulate-cli-consumer).
+  Each is ~100ms-1s. The total is < 10s. Cheap. But if a sim has a flaky
+  assertion (e.g., the browser-runtime flaky test pattern), every PR is a
+  coinflip, and the team learns to ignore the check.
+- Non-blocking forever is the other extreme. The PR template still asks for
+  `## Sim status` so the reviewer sees it. If the reviewer never looks, the
+  sim is decoration.
+- Non-blocking → re-evaluate after one sprint is the middle path. The metric
+  (regressions caught) is real, not opinion. The decision is data-driven.
+- Cited: ci.yml existing precommit gate (current behavior). Filing-to-bite:
+  a hypothetical regression in `client-credentials` rate limit that the unit
+  tests don't catch because they only test the function in isolation, but the
+  sim catches because it runs the full POST /oauth/token + dismiss + retry
+  sequence.
+- Locked by user on 2026-08-05 (decision: non-blocking now, re-evaluate post-v0.0.7).
+- Trade-off: non-blocking = one sprint of "sim is decoration" for the
+  touched-package sims. Required = one PR cycle of "WHY IS THIS RED" if a sim
+  is flaky. The one-sprint re-evaluate is the safer path.
+
+[Q8] Release PR merge — human gate, or auto-merge?
+Answer:
+- Human gate. The Release PR is merged by a human reviewer (the same way every
+  other PR is merged), and the merge triggers the publish workflow.
+- `release-please` opens the Release PR with version bumps + CHANGELOGs.
+- The PR is labeled `autorelease: pending` (release-please's default label).
+- A human (the repo owner or anyone with main write permission) reviews the
+  diff: package versions, CHANGELOG content, commit list.
+- The reviewer edits if needed (e.g., override a version bump from minor →
+  major for a breaking change a contributor missed).
+- The reviewer merges. The merge to `main` triggers the `release.yml`
+  workflow, which publishes to npm.
+
+Why:
+- Auto-merge is the "zero button" version. Every release PR gets merged
+  automatically. Risk: a contributor ships a `feat:` that should be `fix:`,
+  release-please bumps minor when it should patch, somebody else has a bad
+  release. The review is the safety net.
+- Human gate is the "one button" version. The reviewer reads the diff, clicks
+  merge. The review is short (it's a release-please PR, the diff is
+  version-bumps + CHANGELOGs + a tag push). 30 seconds of attention per
+  release.
+- Trusted-only human (e.g., CODEOWNERS requires a specific reviewer)
+  over-constrains. Lock-in risk: if the trusted reviewer is on vacation,
+  releases queue up.
+- Cited: docs/operations/release-process.md#branching-model (only the release
+  PR is the special merge).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: human gate = one extra step per release. Auto-merge = one less
+  step, but a bad release can't be caught in 30s of review.
+
+[Q9] `release-please` config file location — `.github/release-please-config.json` or repo root?
+Answer:
+- Two files in `.github/`:
+  - `.github/release-please-config.json` — the package list + per-package
+    config.
+  - `.github/release-please-manifest.json` — the lock file that tracks
+    release-please's view of "what version is each package at now."
+- The agentide monorepo doesn't yet have a `.github/` folder at the inner-repo
+  level. PR-1 creates it (alongside the workflow files).
+
+Why:
+- `.github/` is the standard for GitHub-specific config in this repo. The
+  outer Agent-Bridge-SDK repo has `.github/hooks/` and `.github/instructions/`;
+  the inner `agentide` repo gets `.github/workflows/`, `.github/hooks/`,
+  `.github/instructions/`, etc. Putting release-please config there keeps all
+  CI/release plumbing in one place.
+- Repo root (`release-please-config.json`) is also a valid release-please
+  convention. Slightly more discoverable for someone running release-please
+  locally. But splits CI config across two locations.
+- Monorepo subdir (`packages/agentide/.release-please-config.json`) doesn't
+  fit — release-please is repo-wide, bumps every package, not just one.
+- Cited: `.github/hooks/` and `.github/instructions/` already exist at the
+  outer Agent-Bridge-SDK repo (analog convention).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: `.github/` keeps CI/release tooling together. Root is more
+  discoverable. The hidden `.github/` directory is the convention for "things
+  GitHub itself reads" — semantically right.
+
+[Q10] pnpm version drift — pin via `packageManager` field or trust the lockfile?
+Answer:
+- Pin via the `packageManager` field in TWO files:
+  - The inner monorepo root `package.json` (the one at
+    `/home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/package.json`).
+  - The `packages/agentide/package.json` (the CLI meta-package).
+- The value is the pnpm version currently in `pnpm-lock.yaml` (read once via
+  `pnpm --version` after `corepack enable`).
+- Each CI job runs `corepack enable` before `pnpm install`. Local
+  contributors get the same version (no `npm install -g pnpm@9` confusion).
+
+Why:
+- Pin via `packageManager` (corepack) — Corepack reads the field, ensures the
+  right pnpm version is downloaded on demand. CI runs `corepack enable`
+  before `pnpm install`. Local contributors get the right version too.
+- Trust the lockfile — `pnpm-lock.yaml` already pins versions transitively.
+  But corepack/skew can still happen. A contributor on pnpm 8.6 vs CI on
+  pnpm 9.x can produce a lockfile diff. The `packageManager` field closes
+  the gap.
+- Cited: `pnpm-lock.yaml:1` (`lockfileVersion: '9.0'`), `package.json:7`
+  (`"engines": { "node": ">=20" }`).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: `packageManager` is one extra line per package.json. Corepack
+  downloads pnpm on first use (a few seconds, cached after). The lockfile
+  churn risk is the alternative — that's the cost.
+
+[Q11] Node version — pin via `.nvmrc` or keep `engines.node` only?
+Answer:
+- Both. `.nvmrc` (exact version) at the inner monorepo root + `engines.node`
+  field in every package.json.
+- `.nvmrc` value: `22.10.0` (the current LTS line, matches what
+  `pnpm-lock.yaml` pulls in via `@types/node: ^22.10.0`).
+- CI runs `actions/setup-node@v4` with `node-version-file: .nvmrc`.
+- Local devs: `nvm use` (or `fnm use`, or `volta`) picks up the file.
+- `engines.node: ">=20"` stays in every package.json — the *minimum* contract
+  for consumers; `.nvmrc` is the *exact* pin for contributors and CI.
+
+Why:
+- `.nvmrc` only — CI agrees, local devs agree, but consumers of the published
+  packages get no signal about which Node version the package was tested
+  against. The `engines` field is the user-facing contract.
+- `engines.node` only — gives a minimum to consumers, but CI can drift. A
+  contributor on Node 23 features that engines says >=20 fine, but tests
+  pass on 23 and break on 22. The exact pin is the CI guarantee.
+- Both — the minimum is the contract, the exact pin is the engineering
+  discipline. This is the LTS-tooling convention (Node.js docs recommend
+  both).
+- Cited: `package.json:7` (`"engines": { "node": ">=20" }`), `pnpm-lock.yaml`
+  (`@types/node@22.20.1` in the resolved tree).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: `.nvmrc` is one extra file. The existing `engines: { "node":
+  ">=20" }` stays (no removal). Two sources, two purposes.
+- Decision: keep `engines.node: ">=20"` (don't bump to >=22). Consumers on
+  Node 20.18 get a working install. The pin is for contributors, not users.
+
+[Q12] npm publish order — fail-fast `pnpm -r publish`, or topology-aware?
+Answer:
+- `pnpm -r publish --access public --no-git-checks` in `release.yml`.
+- pnpm publishes in topological order (least-depended-on first). `@spanexx/errors`
+  and `@spanexx/event-bus` go first; `@spanexx/agentide` (the meta-package with
+  the most deps) goes last.
+- The `--no-git-checks` flag skips the "is this commit sync'd with the remote?"
+  check — necessary because release-please pushes the tag commit before this
+  workflow runs.
+- On failure of any package: the workflow exits non-zero. Packages published
+  before the failure stay published; packages after don't publish. The Release
+  PR remains merged (no rollback). Manual cleanup required.
+
+Why:
+- Fail-fast `pnpm -r publish` — what we have. Topological order ensures
+  consumers can install the new versions of A → B → C without "B can't find A
+  at the new version" errors. The failure mode is recoverable: re-run the
+  workflow, the already-published packages get skipped (npm rejects duplicate
+  versions), the rest publish.
+- Per-package sequential publish with explicit prerequisites — the maximally
+  safe version. pnpm's `pnpm -r publish` already does this. Adding explicit
+  `pnpm --filter` chains is redundant.
+- All-or-nothing draft publish — the maximally paranoid version. Publish to
+  a tarball first, verify, then publish. Too heavyweight for the v0.0.7
+  cadence.
+- Cited: `packages/agentide/scripts/prepare-publish.sh` (current pre-publish
+  pattern).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: fail-fast = some manual cleanup on partial failure. The simple
+  `pnpm -r publish` is right.
+
+[Q13] Branch protection on `main` — what rules?
+Answer:
+- Three rules. Set in GitHub: Settings → Branches → Add rule for `main`.
+- **Require a pull request before merging** ✅ ON. Dismiss stale approvals when
+  new commits are pushed. Require approvals: 1.
+- **Require status checks to pass before merging** ✅ ON. Required checks:
+  `ci / precommit`, `ci / pr-template`, `ci / build`. (Sim is non-blocking
+  per Q7; not required.)
+- **Do not allow force pushes** ✅ ON. **Do not allow deletions** ✅ ON.
+- Admin can override if needed (e.g., reverting a bad tag), but the everyday
+  workflow is gated.
+
+Why:
+- No PR gate = the "one central button" becomes the "one central panic."
+  Anyone with write permission can push to `main` directly. CI runs but
+  doesn't block. The whole feature-pipeline-review loop rots.
+- Just require reviews (the lightweight version) — gets you human review but
+  no green-CI guarantee. A reviewer can approve a PR with red checks if
+  they're paying attention to the wrong thing.
+- Just require checks (the CI-only version) — green CI but no human review.
+  The release-please PR is the only thing the bot opens; the human gate on it
+  is Q8.
+- All three (PR + checks + approvals) — the standard. PRs get reviewed AND
+  have green CI AND require approval. The Release PR is the only thing that
+  auto-runs after merging (the publish workflow).
+- Cited: `precommit` script in `package.json:13` (the local gate that becomes
+  the remote gate).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: branch protection adds ~5 minutes to "fix a typo in README"
+  (need to open a PR, get a review, wait for CI). The flip side: typo-on-main
+  typos don't get caught by feature-pipeline-review.
+
+[Q7] `sim.yml` non-blocking at start — when does it become required?
+Answer:
+- Non-blocking for the first release cycle (through v0.0.7 cut).
+- Re-evaluate after one sprint post-v0.0.7.
+- Decision criterion (re-evaluate): if the post-impl sim has caught ≥1
+  regression that PR review missed, flip `sim.yml` to required for PRs that
+  touch a package with a `simulate-*.mjs`. If zero regressions, keep it
+  non-blocking — the human review is doing the work.
+
+Why:
+- Required from day one is the most aggressive stance. Risk: the sim suite is
+  currently 7 scripts (each ~100ms-1s). The total is < 10s. Cheap. But if a
+  sim has a flaky assertion (e.g., the browser-runtime flaky test pattern),
+  every PR is a coinflip, and the team learns to ignore the check.
+- Non-blocking forever is the other extreme. The PR template still asks for
+  `## Sim status` so the reviewer sees it. If the reviewer never looks, the
+  sim is decoration.
+- Non-blocking → re-evaluate after one sprint is the middle path. The metric
+  (regressions caught) is real, not opinion. The decision is data-driven.
+- Cited: `packages/agentide/scripts/simulate-*.mjs` (7 sim scripts).
+- Locked by user on 2026-08-05 ("done").
+- Trade-off: non-blocking = one sprint of "sim is decoration" for the
+  touched-package sims. Required = one PR cycle of "WHY IS THIS RED" if a sim
+  is flaky. The one-sprint re-evaluate is the safer path.
+
+[Q14] `prepare-publish.sh` mutates `packages/agentide/package.json` — how does the new release workflow handle this so the mutation never gets committed again?
+Answer:
+- The workflow runs `pnpm -r publish` (Q12). pnpm's `prepublishOnly` hook runs
+  `prepare-publish.sh` for the `agentide` package, which mutates `package.json`
+  (empties `dependencies` because the bundle is self-contained).
+- The mutation happens in the runner's working tree, never in the repo's
+  history.
+- After the publish completes, the workflow runs `git checkout --
+  packages/agentide/package.json` to revert the mutation in the runner.
+- The runner is ephemeral — the next workflow run starts from a fresh
+  checkout.
+
+Why:
+- No revert — the failure mode `2c92594 chore: restore workspace deps after
+  publish drift` already burned us. A contributor ran `npm publish` locally,
+  the mutation got committed, the workspace got broken, a hand-patch followed.
+  We don't want to repeat this.
+- Move the mutation to the workflow — the cleanest version. The mutation only
+  exists in the runner's working tree, never in the source. The repo's
+  `package.json` always has the workspace `*` dependencies. The publish runs
+  against the mutated copy.
+- Split the agentide package out of `pnpm -r publish` — too heavy. The bundle
+  is special, but the workspace publish can still include it. The `--filter`
+  exclude + a separate custom step is more YAML for the same outcome.
+- Pre-commit a "did package.json change in the runner?" check — clever, but
+  the runner is ephemeral. The check wouldn't run.
+- Cited: `packages/agentide/scripts/prepare-publish.sh` (the mutating script),
+  `commit 2c92594` (the failure mode).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: one workflow line (`git checkout -- packages/agentide/package.json`)
+  at the end of the publish job. The alternative (running locally, committing
+  the mutation by mistake) is the failure mode.
+
+[Q15] Drift review on PR — invoke `feature-pipeline-review` in CI as a phase-5 follow-up, or skip it entirely?
+Answer:
+- Skip in v1. Add a no-op stub in PR-1 that says "drift-review — disabled,
+  enable post-v0.0.7 sprint retro".
+- `ci.yml` PR-1 has a `drift` job that is `continue-on-error: true` and posts
+  a no-op comment. Reviewers see the comment, see the future-flag.
+- After v0.0.7 ships and the sprint retro decides, the `drift` job is either
+  enabled (calls into `feature-pipeline-review` as a sub-agent) or removed.
+- The pack's IMPL Phase 5 already flags this as "Out of scope for the initial
+  pack" (per the plan at `docs/operations/release-process.md#migration`).
+
+Why:
+- Full drift review in CI for v1 — the review sub-agent needs to read every
+  doc, every code, every sim. Per PR, that's 2-5 minutes of agent compute.
+  The agent's output is a markdown report. PR authors would learn to ignore
+  it. The CI cost is non-trivial.
+- `feature-pipeline-review` is a manual skill — invoked by an agent session,
+  not by CI. The skill expects a single-doc focus, not a PR diff. Wiring it
+  to CI requires a wrapper that reads the PR's doc-touched files and
+  dispatches a sub-agent. That's a separate pack.
+- No-op stub now, real drift later — minimum viable. The stub costs nothing,
+  signals intent, and is the one-line enable path post-sprint.
+- Cited: docs/operations/release-process.md#migration (Phase 5 — drift-on-PR).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: no-op stub = ~5 lines of YAML now, fully reversible. Full drift
+  review = a separate pack that requires a working CI sub-agent dispatch.
+
+[Q16] `release-please` finds no conventional commits since the last tag — does it open a Release PR, or stay silent?
+Answer:
+- Silent. release-please v3+ open behavior: if no `feat:` / `fix:` / `feat!:`
+  commits are found since the last tag, the bot does NOT open a Release PR.
+- `release-please`'s `determineReleaseTypes` returns `[]` for `chore:` /
+  `docs:` / `refactor:` only. The bot's push to the Release PR branch is
+  gated on having at least one release-worthy change. No noise commits.
+- Edge case: a contributor lands a `feat:` but the bot opens a Release PR
+  that also tries to bump some other package. The reviewer can edit the
+  Release PR to drop the unrelated bump. (Per Q8 human gate.)
+
+Why:
+- Every PR pushes a release — the maximally noisy version. The bot opens a
+  Release PR on every push to `main`. Even docs-only PRs trigger a no-op
+  release. The PR queue fills with "Release v0.0.7" PRs that do nothing.
+  Watch-outs become noise.
+- Silent on no-changes — the standard. release-please analyzes
+  `feat:`/`fix:` from the commit log; if only `chore:`/`docs:`/`refactor:`
+  are present, no Release PR. The backlog of stale PRs stays clean.
+- Always open, even with no bumps — would require a custom config flag. Not
+  supported out of the box, would need a wrapper.
+- Cited: release-please v3 docs (`determineReleaseTypes` behavior).
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: silent = no PR for docs-only/chore-only days. The PR count stays
+  low. The downside is the bot doesn't push on every PR, so if you want a
+  release for any reason, you have to manually tag (rare).
+
+[Q17] `CODEOWNERS` — define ownership for the workspace, or rely on the single-approval rule?
+Answer:
+- Create a `CODEOWNERS` file at the inner-repo root with light ownership (one
+  team per major area). The single-approval rule from Q13 still applies, but
+  `CODEOWNERS` triggers automatic reviewer requests.
+- Branches → teams. The team must exist on GitHub (created via Settings →
+  Teams). The file is a forward-pointing ref; the team can be created later.
+- The single-approval rule (Q13) still applies. `CODEOWNERS` requests the
+  *right* reviewer; the rule enforces "at least one approval has come in."
+
+Named groups:
+- `@spanexx/gateway-core-maintainers` — owns `packages/gateway-core/`.
+- `@spanexx/cli-maintainers` — owns `packages/agentide/` and
+  `packages/agentide-cjs/`.
+- `@spanexx/sdk-maintainers` — owns `packages/sdk-{node,node-cjs,browser,browser-cjs}/`.
+- `@spanexx/adapter-maintainers` — owns `packages/adapter-{mcp,websocket}/`.
+- `@spanexx/agentide-maintainers` — owns everything else (capability-registry,
+  session-manager, plugin-manager, platform-capabilities, event-bus, browser-runtime,
+  application, backend-runtime, origin, errors, docs/, scripts/).
+
+Why:
+- No CODEOWNERS, single approval is enough — anyone can approve anything. A
+  contributor lands a deeply-flawed PR to `plugin-manager`, anyone with main
+  write approves. The single rule is the gate.
+- Full CODEOWNERS, single approval from any owner — every PR auto-requests
+  the right reviewer. The reviewer can self-assign or delegate. The ownership
+  is signaling, not enforcement.
+- Full CODEOWNERS, require approval from the owner — every PR needs the
+  specific owner to approve. If the owner is on vacation, the PR blocks.
+  Heavy-handed for a small team.
+- Cited: github.com → repo → Settings → Code planning → Codeowners.
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: CODEOWNERS is ~30 lines + a few GitHub teams. Living without it
+  means the reviewer assignment is ad-hoc. The team-list is forward-pointing;
+  team creation can lag.
+
+[Q18] Skip-ci label — docs-only PRs bypass the precommit gate, or everyone runs the full pipeline?
+Answer:
+- No skip-ci label in v1. Docs-only PRs run the full pipeline. The PR
+  template's `## What` field asks "is this docs-only?" — if yes, the reviewer
+  can fast-approve without re-reading gate output.
+- `ci.yml` has no `paths-ignore` filter. Every PR runs the full gate.
+- A PR touching only `docs/**/*.md` still runs `precommit`, `lint`, `build`,
+  `test`. The lint job is fast (no TS files affected → ESLint runs on
+  docs-only inputs). The build job runs the full `tsc --build` chain
+  (because the TS source files might import from a docs-listed reference,
+  even if the docs content is unchanged — false positive risk, but rare).
+- A docs-only PR is faster in review (~2 min reviewer time) than in CI
+  (~5 min). The CI time is the cost; reviewer time is the saved time.
+
+Why:
+- Skip-ci label for docs-only — the contributor-controlled shortcut. Risk: a
+  contributor labels a PR docs-only that actually changed code. The label
+  bypasses the gate. The merge goes in. The CI didn't catch it.
+- No skip-ci, run the full pipeline — the strict version. Every PR runs
+  everything. The cost is 5 minutes of CI for a typo fix. The benefit is "you
+  can't bypass the gate by labeling."
+- `paths-ignore` filter — the GitHub-level filter. Risk: a typo in a code
+  file's inline comment (`// fix this later`) that also touches a docs file
+  doesn't get linted. The filter is brittle.
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: no skip-ci = 5 min CI per PR, even for docs-only. The
+  contributor's "did the gate actually run?" answer is always "yes." The
+  label-pr-bypass risk is gone.
+
+[Q19] Workflow runner — `ubuntu-latest` (default), or pin a specific version?
+Answer:
+- `ubuntu-latest` with a `node-version` matrix pinned to `22.10.0` (matching
+  `.nvmrc`). No macOS, no Windows.
+- All three workflows (`ci.yml`, `sim.yml`, `release.yml`) use `runs-on:
+  ubuntu-latest`.
+- `actions/setup-node@v4` reads `node-version-file: .nvmrc` (the `22.10.0`
+  pin).
+- `actions/setup-node` also runs `corepack enable` before `pnpm install`.
+- The Node matrix is single-version (22.10.0) — no 20/22 split. The
+  `engines.node: ">=20"` is the consumer contract; the CI is the contributor
+  pin.
+
+Why:
+- `ubuntu-latest` with pinned Node — the LTS toolchain convention. CI runs on
+  the latest Ubuntu LTS image, but the Node version is locked to `22.10.0`
+  via `.nvmrc`. Reproducible + current.
+- Pin Ubuntu version (e.g., `ubuntu-22.04`) — maximum reproducibility. Risk:
+  GitHub deprecates an Ubuntu image, the workflow breaks. The "latest" LTS is
+  GitHub's contract; pinning to a specific version means you manage the
+  upgrade yourself.
+- Multi-OS matrix (ubuntu + macos + windows) — the maximally paranoid. The
+  agentide packages are Node-only Linux/macOS compatible. Testing on Windows
+  is unnecessary. The matrix lengthens CI time for zero coverage benefit.
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: `ubuntu-latest` = uses GitHub's curated image rotation. Minor
+  risk of a new image breaking something exotic (rare). Pinning a specific
+  Ubuntu version = total control + you manage the upgrade.
+
+[Q20] Tag format — `v0.0.7` (monorepo tag) or `pkg@version` (per-package tag)?
+Answer:
+- Monorepo tag `v0.0.7`. One tag per release, regardless of how many packages
+  are in the release.
+- `v0.0.7` is the next tag. The release-please config produces it.
+- The CHANGELOG per package shows the package-specific version (e.g.,
+  `agentide/package.json` shows `0.0.7`, `gateway-core/package.json` shows
+  `0.0.3`).
+- The GitHub Release for `v0.0.7` aggregates all the per-package CHANGELOGs
+  into one body.
+- `git log --tags --simplify-by-decoration` shows `v0.0.3, v0.0.4, v0.0.6,
+  v0.0.7` — clean.
+
+Why:
+- Monorepo tag (`v0.0.7`) — release-please's default monorepo mode. One tag
+  per release. The release-PR includes all package version bumps in one diff.
+  The GitHub Release is one entry. The CHANGELOG per package shows the
+  package-specific version.
+- Per-package tag (`@spanexx/agentide@0.0.7`) — the independent-cadence
+  version. Each package has its own tag. Release-please supports this via
+  `last-release-sha` config. The benefit is per-package release history. The
+  cost is more tags, more releases, more bookkeeping.
+- Hybrid — a tag per package PLUS a monorepo tag. Doubles the noise without
+  clear benefit.
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: monorepo tag = one tag per release, simpler. Per-package tag =
+  independent cadences, but more bookkeeping. The monorepo tag is the right
+  choice for "one central button."
+
+[Q21] `release-please` GitHub Action — Google's official action or the CLI via npm?
+Answer:
+- `google-github-actions/release-please-action@v4`. The official Google action.
+  The `release.yml` workflow runs it on every push to `main` (the bot opens a
+  Release PR if there are release-worthy commits, else stays silent).
+- The action reads `.github/release-please-config.json` and
+  `.github/release-please-manifest.json` (the manifest file is auto-created
+  on the first run).
+- The action uses the default `GITHUB_TOKEN` for PR creation. If a separate
+  bot account is needed (e.g., for audit), use `RELEASE_PLEASE_TOKEN` secret
+  instead.
+
+Why:
+- `google-github-actions/release-please-action@v4` — the standard. Maintained
+  by Google's release-please team. The action does the PR creation, manifest
+  tracking, and CHANGELOG generation.
+- `npx release-please` CLI in a custom workflow — more control, more YAML.
+  Useful if you need to do something special (e.g., pause for human review at
+  a specific step). For our needs, the action is enough.
+- Custom workflow from scratch — maximum control, maximum maintenance. The
+  whole point of release-please is to avoid this.
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: official action = least amount of YAML, most idiomatic. CLI =
+  more control but more setup. Custom = overkill.
+
+[Q22] CJS variants (`*-cjs`) — share source with ESM counterparts. How does release-please bump them?
+Answer:
+- Add a release-please post-processing step that flips the CJS variant's
+  version any time the ESM counterpart bumps. Same version, same cadence.
+- For each CJS pair: `sdk-node` ↔ `sdk-node-cjs`, `sdk-browser` ↔
+  `sdk-browser-cjs`, `event-bus` ↔ `event-bus-cjs`, `agentide` ↔
+  `agentide-cjs`.
+- The CJS variant's `package.json` version is bumped to match the ESM
+  counterpart's bumped version. The CJS variant's CHANGELOG section is a
+  fork of the ESM variant's CHANGELOG (just the same commits).
+- Mechanism: a `post-bump` job in `release.yml` that runs after the
+  release-please action. The job:
+  1. Reads the latest release-please manifest.
+  2. For each ESM-CJS pair, if the ESM version is bumped, copies the bump
+     to the CJS variant's `package.json` and writes a forked CHANGELOG
+     entry.
+  3. Stages and commits the changes to the release PR branch.
+
+Why:
+- Independent bumps — release-please's default. The CJS variants only get
+  bumped when a commit has their scope. CJS variants share source with ESM
+  counterparts; the trigger scope is rarely their own. Result: CJS variants
+  become stale, drift behind. Bad for consumers.
+- Manual sync — bump CJS variants manually when ESM counterparts bump. The
+  whole point of release-please is no manual sync.
+- Auto-mirror via post-processing — clean. The release-please workflow runs a
+  tiny script that copies the ESM package's version bump to its CJS sibling.
+  The CJS variant's CHANGELOG lists the same commits.
+- Locked by user on 2026-08-05 ("lock it").
+- Trade-off: post-processing = ~30 lines of Node script. Independent = drift.
+  Manual = automation goal fails.
+
+

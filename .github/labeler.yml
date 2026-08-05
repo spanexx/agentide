@@ -1,0 +1,12 @@
+feature:
+  - headings:
+      - '^(feat|feature)(\(.+\))?!?:'
+chore:
+  - headings:
+      - '^chore(\(.+\))?!?:'
+fix:
+  - headings:
+      - '^fix(\(.+\))?!?:'
+docs:
+  - headings:
+      - '^docs(\(.+\))?!?:'

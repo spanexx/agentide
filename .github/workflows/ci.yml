@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  precommit:
+    name: precommit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: npm run precommit
+
+  pr-template:
+    name: pr-template
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required PR fields
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          MISSING=""
+          for field in "## What" "## BI link" "## Drift status"; do
+            if ! printf '%s' "$PR_BODY" | grep -qiF "$field"; then
+              MISSING="$MISSING\n  - $field"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            printf 'PR is missing required template fields:%b\n' "$MISSING" >&2
+            exit 1
+          fi
+          echo "All required fields present."
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build

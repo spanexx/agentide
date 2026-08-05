@@ -1,0 +1,61 @@
+name: sim
+
+on:
+  pull_request:
+    paths:
+      - 'packages/agentide/scripts/simulate-*.mjs'
+      - 'packages/**/src/**'
+      - 'packages/agentide/dist/bin.bundled.cjs'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sim:
+    name: sim
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Run simulate-*.mjs
+        id: run
+        run: |
+          set -u
+          shopt -s nullglob
+          SCRIPTS=(packages/agentide/scripts/simulate-*.mjs)
+          if [ "${#SCRIPTS[@]}" -eq 0 ]; then
+            echo "No simulate-*.mjs files found." >&2
+            exit 0
+          fi
+          PASS=0
+          TOTAL=0
+          SUMMARY=""
+          for s in "${SCRIPTS[@]}"; do
+            TOTAL=$((TOTAL + 1))
+            if node "$s" > "/tmp/sim.$$.out" 2>&1; then
+              PASS=$((PASS + 1))
+              SUMMARY+=$'  - \x60'"$s"$'\x60\n'
+            else
+              echo "::error::$s failed"
+              cat "/tmp/sim.$$.out" || true
+            fi
+          done
+          echo "summary=$PASS/$TOTAL" >> "$GITHUB_OUTPUT"
+          rm -f "/tmp/sim.$$.out"
+          echo -e "$SUMMARY"
+      - name: Post PR comment
+        if: steps.run.outputs.summary
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: sim-summary
+          message: |
+            Sim run: **${{ steps.run.outputs.summary }}** PASS
+            ${{ steps.run.summary }}

@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "description": "Agent Runtime Platform \u2014 monorepo root",
+  "packageManager": "pnpm@11.10.0",
   "scripts": {
     "build": "tsc --build --pretty",
     "test": "vitest run --passWithNoTests",

@@ -1,0 +1,35 @@
+{
+  "packages": {
+    "packages/agentide": { "package-name": "@spanexx/agentide" },
+    "packages/gateway-core": { "package-name": "@spanexx/gateway-core" },
+    "packages/sdk-node": { "package-name": "@spanexx/sdk-node" },
+    "packages/sdk-node-cjs": { "package-name": "@spanexx/sdk-node-cjs" },
+    "packages/sdk-browser": { "package-name": "@spanexx/sdk-browser" },
+    "packages/sdk-browser-cjs": { "package-name": "@spanexx/sdk-browser-cjs" },
+    "packages/adapter-mcp": { "package-name": "@spanexx/adapter-mcp" },
+    "packages/adapter-websocket": { "package-name": "@spanexx/adapter-websocket" },
+    "packages/backend-runtime": { "package-name": "@spanexx/backend-runtime" },
+    "packages/capability-registry": { "package-name": "@spanexx/capability-registry" },
+    "packages/event-bus": { "package-name": "@spanexx/event-bus" },
+    "packages/event-bus-cjs": { "package-name": "@spanexx/event-bus-cjs" },
+    "packages/origin": { "package-name": "@spanexx/origin" },
+    "packages/errors": { "package-name": "@spanexx/errors" },
+    "packages/platform-capabilities": { "package-name": "@spanexx/platform-capabilities" },
+    "packages/plugin-manager": { "package-name": "@spanexx/plugin-manager" },
+    "packages/session-manager": { "package-name": "@spanexx/session-manager" },
+    "packages/agentide-cjs": { "package-name": "@spanexx/agentide-cjs" }
+  },
+  "release-type": "node",
+  "changelog-sections": [
+    { "type": "feat",      "section": "Features" },
+    { "type": "fix",       "section": "Bug Fixes" },
+    { "type": "perf",      "section": "Performance" },
+    { "type": "revert",    "section": "Reverts" },
+    { "type": "docs",      "section": "Documentation", "hidden": true },
+    { "type": "chore",     "section": "Miscellaneous", "hidden": true },
+    { "type": "style",     "section": "Miscellaneous", "hidden": true },
+    { "type": "test",      "section": "Tests",         "hidden": true },
+    { "type": "build",     "section": "Build System",  "hidden": true },
+    { "type": "ci",        "section": "CI/CD",         "hidden": false }
+  ]
+}

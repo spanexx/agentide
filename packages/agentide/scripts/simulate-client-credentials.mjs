@@ -198,6 +198,10 @@ async function main() {
   console.log(`MCP HTTP bound at ${baseUrl}`);
 
   try {
+    // C1's client is reused by C4 (--no-tls) so the sim stays within the
+    // clientService create rate limit (5/hour global, client-service.ts).
+    let c1Creds = null;
+
     // ─── C1 happy path ──────────────────────────────────────────────────
     const c1 = await scenarioPass("C1 happy path: create + /oauth/token 200 + /mcp works", async () => {
       const { record, plaintextSecret } = await platform.gateway.clientService.createClient({
@@ -205,6 +209,7 @@ async function main() {
         name: "happy-path",
         defaultScope: ["*"],
       });
+      c1Creds = { record, plaintextSecret };
       const token = await tokenRequest({
         url: `${baseUrl}/oauth/token`,
         body: {
@@ -293,6 +298,55 @@ async function main() {
     });
     if (!c3.ok) failures++;
 
+    // ─── C4 --no-tls flag ───────────────────────────────────────────────
+    // D-73 (drift 2026-08-05): requireTls default true → plain HTTP
+    // (X-Forwarded-Proto: http) gets 426 tls_required; a second platform
+    // booted with requireTls=false (what --no-tls maps to in start.ts)
+    // accepts the same plain-HTTP token request.
+    const c4 = await scenarioPass("C4 --no-tls: 426 over plain HTTP, 200 when requireTls=false", async () => {
+      if (c1Creds === null) throw new Error("C4 needs C1's client first (rate limit)");
+      const { record, plaintextSecret } = c1Creds;
+      const body = {
+        grant_type: "client_credentials",
+        client_id: record.id,
+        client_secret: plaintextSecret,
+        scope: "*",
+      };
+
+      // 4a — default platform (requireTls=true): plain HTTP must be rejected.
+      const denied = await tokenRequest({ url: `${baseUrl}/oauth/token`, body, forwardedProto: "http" });
+      if (denied.status !== 426) throw new Error(`want 426 got ${denied.status}: ${JSON.stringify(denied.json)}`);
+      if (denied.json?.error !== "tls_required") throw new Error(`want tls_required got ${denied.json?.error}`);
+
+      // 4b — second platform, requireTls=false (the --no-tls equivalent):
+      // plain HTTP must succeed. Same fs/dataDir → same client store + JWT
+      // secret, so the shared client is visible to the second gateway.
+      const platform2 = await createPlatform({
+        fs,
+        dataDir,
+        adapterMcp: true,
+        adapterWs: false,
+        backendRuntimePort: 0,
+        adapterMcpPort: 0,
+        requireTls: false,
+      });
+      try {
+        const port2 = platform2.mcpAdapter?.port;
+        if (typeof port2 !== "number" || port2 <= 0) throw new Error("second platform did not bind a port");
+        const allowed = await tokenRequest({
+          url: `http://127.0.0.1:${port2}/oauth/token`,
+          body,
+          forwardedProto: "http",
+        });
+        if (allowed.status !== 200) throw new Error(`want 200 got ${allowed.status}: ${JSON.stringify(allowed.json)}`);
+        if (typeof allowed.json?.access_token !== "string") throw new Error("missing access_token on --no-tls platform");
+        return `plain-http 426 → requireTls=false plain-http 200 (port ${port2})`;
+      } finally {
+        await platform2.stop();
+      }
+    });
+    if (!c4.ok) failures++;
+
     // ─── C5 rate limit ──────────────────────────────────────────────────
     const c5 = await scenarioPass("C5 rate limit: 11 POSTs → 429 rate_limited", async () => {
       // Use a fresh client so prior scenarios don't burn its quota. The
@@ -375,10 +429,10 @@ async function main() {
 
   console.log("\n─── Summary ───");
   if (failures > 0) {
-    console.error(`${failures} scenario(s) FAILED — drift D-70 closeout regression`);
+    console.error(`${failures} scenario(s) FAILED — drift D-70/D-73 closeout regression`);
     process.exitCode = 1;
   } else {
-    console.log("all scenarios passed — D-70 closeout verified");
+    console.log("all scenarios passed — D-70/D-73 closeout verified");
     mutateState((s) => {
       (s.audit_log ??= []).push({
         ts: new Date().toISOString(),
