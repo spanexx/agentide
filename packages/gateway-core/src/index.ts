@@ -19,3 +19,4 @@ export * from "./factory.js";export type {
 } from "./types.js";
 export { FileSystemClientStore } from "./client-store.js";
 export { ClientService } from "./client-service.js";
+export * from "./oauth-token-handler.js";

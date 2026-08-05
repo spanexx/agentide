@@ -12,12 +12,16 @@
  * Quick lookup: rg -n "CID:types-" packages/adapter-mcp/src/types.ts
  */
 
+import type { OAuthTokenHandler } from "@spanexx/gateway-core";
+
 // CID:types-001 - McpAdapterConfig
 // Purpose: factory config for createMcpAdapter; port/host defaults applied
-//   by the factory when fields are absent.
+//   by the factory when fields are absent. `oauth` enables the POST /oauth/token
+//   route (BI[29] Phase 4) when the gateway exposes its OAuthTokenHandler.
 export interface McpAdapterConfig {
   readonly port?: number; // default 7100
   readonly host?: string; // default "127.0.0.1"
+  readonly oauth?: OAuthTokenHandler;
 }
 
 // CID:types-002 - McpAdapter

@@ -125,7 +125,7 @@ export function createMcpAdapter(gateway: Gateway, config: McpAdapterConfig = {}
         return { content: [...content], structuredContent, isError } as CallToolResult;
       });
 
-      handle = await startMcpHttpServer(server, { host, port });
+      handle = await startMcpHttpServer(server, { host, port, oauth: config.oauth });
     },
     async stop(): Promise<void> {
       if (handle === null) return;

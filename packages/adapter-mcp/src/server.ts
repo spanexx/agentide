@@ -14,6 +14,7 @@
  * CID:server-001 -> McpHttpServerHandle
  * CID:server-002 -> requestCtxStore / getRequestCtx
  * CID:server-003 -> startMcpHttpServer
+ * CID:server-004 -> handleOAuthTokenRoute (POST /oauth/token)
  *
  * Quick lookup: rg -n "CID:server-" packages/adapter-mcp/src/server.ts
  */
@@ -22,6 +23,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
+import type { OAuthTokenHandler } from "@spanexx/gateway-core";
 import type { RequestCtx } from "./types.js";
 
 // CID:server-001 - McpHttpServerHandle
@@ -85,7 +87,11 @@ async function writeWebResponse(res: ServerResponse, web: Response): Promise<voi
 // Used by: index.ts createMcpAdapter start()
 export async function startMcpHttpServer(
   server: McpServer,
-  config: { readonly host: string; readonly port: number },
+  config: {
+    readonly host: string;
+    readonly port: number;
+    readonly oauth?: OAuthTokenHandler;
+  },
 ): Promise<McpHttpServerHandle> {
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
@@ -94,6 +100,13 @@ export async function startMcpHttpServer(
   await server.connect(transport);
 
   const httpServer = createServer((req, res) => {
+    // CID:server-004 - POST /oauth/token route (BI[29] Phase 4)
+    // Enabled when the gateway exposed its oauthTokenHandler. Body may be
+    // JSON or form-encoded; isTls comes from the socket or x-forwarded-proto.
+    if (req.method === "POST" && req.url === "/oauth/token" && config.oauth !== undefined) {
+      void handleOAuthTokenRoute(req, res, config.oauth);
+      return;
+    }
     if (req.url !== "/mcp") {
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "not found" } }));
@@ -123,6 +136,53 @@ export async function startMcpHttpServer(
       await transport.close();
     },
   };
+}
+
+// CID:server-004 - handleOAuthTokenRoute
+// Purpose: read POST /oauth/token body (JSON or form-encoded), resolve isTls,
+//   delegate to the gateway's OAuthTokenHandler, write the JSON response.
+// Used by: startMcpHttpServer (POST /oauth/token branch)
+async function handleOAuthTokenRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  oauth: OAuthTokenHandler,
+): Promise<void> {
+  try {
+    const raw = await readBody(req);
+    let body: Record<string, string>;
+    try {
+      const contentType = req.headers["content-type"] ?? "";
+      if (contentType.includes("application/x-www-form-urlencoded")) {
+        body = Object.fromEntries(new URLSearchParams(raw));
+      } else {
+        body = JSON.parse(raw) as Record<string, string>;
+      }
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "invalid_request", error_description: "body must be JSON or form-encoded" }));
+      return;
+    }
+    const forwardedProto = req.headers["x-forwarded-proto"];
+    const proto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+    const isTls =
+      (req.socket as { encrypted?: boolean }).encrypted === true ||
+      (proto ?? "").toLowerCase() === "https";
+    const result = await oauth({ body, isTls });
+    res.writeHead(result.status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(result.body));
+  } catch {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "internal_error", error_description: "oauth handler failed" }));
+  }
+}
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+    req.on("error", reject);
+  });
 }
 
 async function handleTransportRequest(

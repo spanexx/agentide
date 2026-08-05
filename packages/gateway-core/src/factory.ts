@@ -27,6 +27,7 @@ import { checkAuthz } from "./authz.js";
 import { issueToken } from "./auth.js";
 import { ClientService } from "./client-service.js";
 import { FileSystemClientStore } from "./client-store.js";
+import { handleTokenRequest, TokenRequestRateLimiter, type OAuthTokenHandler } from "./oauth-token-handler.js";
 import { handleInvocation } from "./handle-invocation.js";
 import { type DispatchHandlers } from "./dispatch.js";
 import { RateLimiter } from "./rate-limit.js";
@@ -123,6 +124,25 @@ export async function createGateway(
     () => Buffer.from(secret).toString("hex"),
     () => clock.now(),
   );
+
+  // BI[29] Phase 4: POST /oauth/token handler exposed for adapters. The
+  // adapter passes isTls (socket.encrypted or x-forwarded-proto); the closure
+  // owns requireTls + the client service + the JWT secret.
+  const saltHex = Buffer.from(secret).toString("hex");
+  // One limiter per gateway instance — a fresh limiter per request would never
+  // rate-limit. Shared by every POST /oauth/token call this gateway serves.
+  const tokenRateLimiter = new TokenRequestRateLimiter();
+  const oauthTokenHandler: OAuthTokenHandler = (req) =>
+    handleTokenRequest({
+      body: req.body,
+      clientSvc,
+      secret,
+      salt: saltHex,
+      clock: () => clock.now(),
+      requireTls: config.requireTls ?? true,
+      isTls: req.isTls,
+      rateLimiter: tokenRateLimiter,
+    });
 
   const startedAt = clock.now();
   const handlers = buildGatewayHandlers({
@@ -235,6 +255,8 @@ export async function createGateway(
       tenantStore.delete(id);
       await persistTenants(tenantStore, tenantsPath, fs);
     },
+
+    oauthTokenHandler,
 
     status: async (): Promise<GatewayStatus> => {
       const uptimeMs = clock.now() - startedAt;

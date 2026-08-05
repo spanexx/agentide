@@ -156,6 +156,7 @@ export interface GatewayConfig {
   readonly tenantsPath?: string;
   readonly secretPath?: string;
   readonly clientDataDir?: string; // dir for clients.json + registration-codes.json (default /data)
+  readonly requireTls?: boolean; // POST /oauth/token rejects plain HTTP when true (default true)
   readonly cleanupTimeoutMs?: number;
   readonly rateLimit?: RateLimitBucketConfig;
   readonly handlerTimeoutMs?: number;
@@ -211,6 +212,11 @@ export interface Gateway {
   suspendTenant(id: string): Promise<TenantRecord>;
   deleteTenant(id: string): Promise<void>;
   status(): Promise<GatewayStatus>;
+  // CID:types-021 - oauthTokenHandler
+  // Purpose: POST /oauth/token handler (client_credentials + registration_code
+  //   grants). Present when the gateway is created with client identity support;
+  //   adapters route /oauth/token to it when defined.
+  readonly oauthTokenHandler?: import("./oauth-token-handler.js").OAuthTokenHandler;
 }
 // CID:types-018 - ClientRecord
 // Durable record for a service/app identity. Stored in clients.json.

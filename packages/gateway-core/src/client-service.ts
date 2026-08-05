@@ -11,6 +11,7 @@
  * CID:cs-005 -> randomSecret
  * CID:cs-006 -> randomRegistrationCode
  * CID:cs-007 -> listClients
+ * CID:cs-008 -> findClientById
  *
  * Quick lookup: rg -n "CID:cs-" packages/gateway-core/src/client-service.ts
  */
@@ -100,6 +101,14 @@ export class ClientService {
   async listClients(tenantId?: string): Promise<readonly ClientRecord[]> {
     const records = await this.store.load();
     return tenantId === undefined ? records : records.filter((r) => r.tenantId === tenantId);
+  }
+
+  // CID:cs-008 - findClientById
+  // Purpose: raw lookup used by the OAuth handler to distinguish
+  //   `client_revoked` from `invalid_client` after a failed verifyClient.
+  async findClientById(id: string): Promise<ClientRecord | null> {
+    const records = await this.store.load();
+    return records.find((r) => r.id === id) ?? null;
   }
 
   async verifyClient(req: VerifyRequest): Promise<ClientRecord | null> {

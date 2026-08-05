@@ -144,6 +144,7 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     mcpAdapter = createMcpAdapter(gateway, {
       host: config.adapterMcpHost ?? DEFAULT_ADAPTER_MCP_HOST,
       port: config.adapterMcpPort ?? DEFAULT_ADAPTER_MCP_PORT,
+      ...(gateway.oauthTokenHandler !== undefined ? { oauth: gateway.oauthTokenHandler } : {}),
     });
     await mcpAdapter.start();
   }
