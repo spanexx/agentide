@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0](https://github.com/spanexx/agentide/compare/sdk-node-v0.1.0...sdk-node-v0.2.0) (2026-08-05)
+
+
+### Features
+
+* **engines:** bump all 14 ESM packages + root to Node &gt;=22.12 (Phase 3/5) ([d6323b5](https://github.com/spanexx/agentide/commit/d6323b589ab646aabd70c1613a2b2554cfaac9f2))
+* **release:** drop CJS residue from config, READMEs, CODEOWNERS, workspace (Phase 4/5) ([89ebfb2](https://github.com/spanexx/agentide/commit/89ebfb2404150ecdc49dc9358a79d710ca52310e))
+* **sdk:** add require condition to all 14 ESM exports maps (Phase 1a/5) ([afa3182](https://github.com/spanexx/agentide/commit/afa3182e7cdadc9db80ba86faacc6143ab66123e))
+
 ## [0.1.0](https://github.com/spanexx/agentide/compare/sdk-node-v0.0.2...sdk-node-v0.1.0) (2026-08-05)
 
 

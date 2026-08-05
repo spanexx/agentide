@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/adapter-websocket",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": false,
   "description": "WebSocket adapter — the single door for SDKs (sdk-node, sdk-browser) and the agentide CLI. Push+pull on one socket, JWT-in-first-message, event subscription.",
   "type": "module",

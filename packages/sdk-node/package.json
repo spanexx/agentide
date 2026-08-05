@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/sdk-node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Backend SDK for Agentide — register business capabilities with the Gateway, execute handlers, emit events.",
   "type": "module",
   "license": "MIT",
