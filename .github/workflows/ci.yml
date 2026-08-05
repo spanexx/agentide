@@ -19,7 +19,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: corepack enable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
       - run: pnpm install --frozen-lockfile
       - run: npm run precommit
 
@@ -56,6 +58,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: corepack enable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
