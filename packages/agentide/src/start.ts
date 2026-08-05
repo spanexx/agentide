@@ -99,6 +99,18 @@ export async function runStart(
   // adapter's own address in the platform factory.
   const enableOidc = flags["enable-oidc"] === true;
 
+  // CID:start-011 - --no-tls (BI[29] S8 / drift 2026-08-05)
+  // Disables the TLS requirement on POST /oauth/token. Default is TLS-ON;
+  // localhost dev sets --no-tls to skip the 426. Production gateways must
+  // never set this flag (the CLI exits 0 with a stderr note when the
+  // config is "default" so operators can audit it later).
+  const noTls = flags["no-tls"] === true;
+  if (noTls) {
+    process.stderr.write(
+      "[gateway] WARNING: --no-tls disables TLS on /oauth/token. Production gateways must never use this flag.\n",
+    );
+  }
+
   // CID:start-005 - createPlatform errors → exit 2, not the catch-all's exit 1.
   let platform;
   try {
@@ -112,6 +124,7 @@ export async function runStart(
       adapterWs: adapterWsEnabled,
       adapterWsHost: bind,
       ...(enableOidc ? { enableOidc: true } : {}),
+      requireTls: !noTls,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

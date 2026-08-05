@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-05  **Open:** 11  **Resolved:** 45  **Critical/High:** 2
+**Last updated:** 2026-08-05  **Open:** 13  **Resolved:** 46  **Critical/High:** 2
 
 ## Open
 
@@ -83,6 +83,21 @@
   - To fix: v2 — alias forwards `{scope: callerScope}` (caller's token scope), or gateway treats operator-minted tokens (`callerId` in a reserved set / token claim) as full-catalog. Logged, not fixed in v1 (GRILL Q2 locks the thin alias; changing it mid-pack would violate the locked contract).
   - Verified by: `packages/agentide/scripts/simulate-cli-consumer.mjs` check 3, sim-state.json `observedGaps[0]`.
 
+- **D-72** (High, 2026-08-05, reporter: agentide-client-credentials Phase 8 drift review) — PRD Scenario S4 (active revocation) does not fire in production: `handleInvocation` checks JWT signature/claims but never re-checks the underlying `ClientRecord.revoked` flag. A token minted seconds before `agentide client revoke` still works for its full TTL.
+  - Doc claim: PRD-TRD-agentide-client-credentials.md S4 "after `agentide client revoke`, all live JWTs for that client are rejected within ≤5s" (line 252).
+  - Code reality: `handleInvocation` post-verifyToken path validates JWT signature + expiry but does NOT consult `clientSvc` (`packages/gateway-core/src/handle-invocation.ts:140-170`, the `verifyToken` block runs standalone). The `clientSvc` field exists on `HandleInvocationCtx` in tests (`packages/gateway-core/src/__tests__/handle-invocation.test.ts`) but the factory never wires it.
+  - Why matters: PRD S4 acceptance bar fails — revoke is no-op for in-flight tokens. Compliance gap (revoke-after-compromise scenario).
+  - To fix: extend `HandleInvocationCtx.clientSvc`, pass `clientSvc` from factory.ts, add post-verifyToken block that calls `clientSvc.findClientById(caller.callerId)` and returns 401 `client_revoked` when `record.revoked` is true (gated to `callerId.startsWith("cli_")` to avoid extra lookups on non-client callers).
+  - Related: PRD S4, D-70 (audit gap, same feature pack).
+
+- **D-73** (Low, 2026-08-05, reporter: agentide-client-credentials Phase 8 drift review) — PRD Scenario S8 (`--no-tls` localhost dev escape hatch) has no CLI surface: the config flag is defined in PRD but no `agentide start` flag exists.
+  - Doc claim: PRD-TRD-agentide-client-credentials.md S8 "operator can pass `--no-tls` to disable the TLS requirement on POST /oauth/token for localhost dev" (line 273).
+  - Code reality: `TokenRequestEnv.requireTls` is declared (`packages/gateway-core/src/oauth-token-handler.ts:35`), the factory reads `config.requireTls ?? true` (`packages/gateway-core/src/factory.ts:144`), but `CreatePlatformConfig` (`packages/agentide/src/types.ts`) never exposes a `requireTls` field, so `createPlatform({})` always produces a TLS-required gateway. `runStart` reads `--pid-file`/`--log-file`/`--foreground` but no `--no-tls` flag.
+  - Why matters: localhost dev (curl on plain HTTP) always gets 426 — operator has to set `process.env.NODE_TLS_REJECT_UNAUTHORIZED=0` or run a TLS terminator in front. Friction for the canonical "boot → mint → curl → done" onboarding flow.
+  - To fix: add `requireTls?: boolean` to `CreatePlatformConfig`, wire to `createGateway`, add `--no-tls` flag to `runStart` (with stderr warning), update HELP text.
+  - Related: PRD S8, D-70 (audit gap, same feature pack).
+
+
 - **D-70** (Medium, 2026-08-05, reporter: agentide-client-credentials Phase 8 review) — Client-action audit coverage is partial: cap-based client actions audit, but CLI-path client actions and `token_mint` rows do not.
   - Doc claim: PRD-TRD-agentide-client-credentials.md "Operational signals" lists `audit_emit({action:"client.create",...})`, `audit_emit({action:"client.revoke",...})`, `log("oauth_token request",...)` as shipped behavior (lines 309-315). IMPL Phase 8 line 952 cites "S9 in PRD-TRD says 'all client actions write to audit log'" as close evidence — that citation is wrong (S9 is the brute-force rate-limit scenario, line 271/288; audit is the GRILL S10 topic, GRILL line 94).
   - Code reality: capability-path client actions (`client.create`/`list`/`revoke`/`rotate` via `handleInvocation`) DO write audit rows — factory.ts registers them as wrapped handlers (`packages/gateway-core/src/factory.ts:453-495`) that flow through `auditOk`/`auditError` (`packages/gateway-core/src/handle-invocation.ts:332-375`), verified by `client-capabilities.test.ts`. BUT: (a) `agentide client create/grant/revoke/rotate/redeem` calls `clientService` DIRECTLY, bypassing `handleInvocation` entirely — no audit rows (`packages/agentide/src/cli.ts:333-407`); (b) the `auditEmit` hook on `TokenRequestEnv` (`packages/gateway-core/src/oauth-token-handler.ts:38,94`, `{action:"client_credentials.token_mint"}`) is never wired — factory.ts's `oauthTokenHandler` closure passes no `auditEmit` (`packages/gateway-core/src/factory.ts:135-148`), so no token-mint audit row is ever emitted in production (only the unit test wires it).
@@ -93,6 +108,13 @@
 ---
 
 ## Resolved
+
+- **D-70** (Resolved 2026-08-05, reporter: agentide-client-credentials Phase 8 review) — Client-action audit coverage was partial. Both halves fixed in this commit.
+  - (a) CLI-path audit: `packages/agentide/src/cli.ts` `runClient` now opens an `AuditWriter` to the same `<dataDir>/audit.log` the gateway writes, and emits a row per state-changing subcommand: `client.create` / `client.grant` / `client.revoke` / `client.rotate` / `client.redeem` (denied on null). Row shape matches `AuditRecord` (`schemaVersion: 1, ts, tenantId, caller, capability:{name,version:"1"}, owner:"operator-cli", status:"ok"|"denied", durationMs:0`). `client list` stays read-only per PRD "every state-changing client action" wording.
+  - (b) token_mint audit: `packages/gateway-core/src/factory.ts` `oauthTokenHandler` closure now passes `auditEmit: (row) => { void audit.append({...}); }` into `handleTokenRequest`. Row uses capability `oauth.token.exchange`, owner `gateway-core`. The 401-paths inside `handleClientCredentialsGrant` still skip the row (they didn't mint) — verified by reading the closure.
+  - Verified by: `packages/agentide/scripts/simulate-client-credentials.mjs` C1 + C2 + C7 scenarios — `audit.log` now contains ≥1 `oauth.token.exchange` row after the C1 happy path; revocations emit `client.revoke`; failures emit `denied`. Pre-fix, C7 would have failed with `expected >=1 oauth.token.exchange row, got 0`.
+
+- **D-71** (Resolved 2026-08-05, reporter: agentide-client-credentials Phase 6-7 review) — IMPL prose for the SDK OAuth shape drifted from shipped code in two places; both resolved by documenting code reality.
 
 - **D-71** (Resolved 2026-08-05, reporter: agentide-client-credentials Phase 6-7 review) — IMPL prose for the SDK OAuth shape drifted from shipped code in two places; both resolved by documenting code reality.
   - Doc claim: IMPL-agentide-client-credentials.md Phase 6 describes a flat async `createSdk({url, oauthUrl, clientId, clientSecret, ...})` with a test file `client.test.ts`; Phase 7 prose says `handleCallback` "creates a registration code" (reg-code flow).

@@ -142,6 +142,29 @@ export async function createGateway(
       requireTls: config.requireTls ?? true,
       isTls: req.isTls,
       rateLimiter: tokenRateLimiter,
+      // D-70 closeout (drift 2026-08-05): wire the AuditWriter into the
+      // /oauth/token closure so every successful client_credentials
+      // exchange writes a `client_credentials.token_mint` row. Pre-fix:
+      // auditEmit was declared on TokenRequestEnv and exercised in unit
+      // tests, but the factory closure never passed it, so production
+      // never emitted the row. Now both 401-revoked and 200-success paths
+      // go through audit.append() on this side; the 401 paths inside
+      // handleClientCredentialsGrant stay audit-free (they didn't mint).
+      auditEmit: (row) => {
+        // Best-effort: append failures are already swallowed by AuditWriter
+        // (logs to stderr) — we deliberately do not throw here so a
+        // degraded audit disk never blocks token issuance.
+        void audit.append({
+          schemaVersion: 1,
+          ts: clock.now(),
+          tenantId: row["tenant_id"] ?? "unknown",
+          caller: { id: row["client_id"] ?? "unknown", scope: [] },
+          capability: { name: "oauth.token.exchange", version: "1" },
+          owner: "gateway-core",
+          status: "ok",
+          durationMs: 0,
+        });
+      },
     });
 
   // BI[29] Phase 7: OIDC auth-code grant (dev stub). Only wired when
@@ -200,6 +223,11 @@ export async function createGateway(
         handlerTimeoutMs,
         secret,
         backendRuntime,
+        // BI[29] S4 active revocation: hand the client service to the
+        // pipeline so handleInvocation can re-check `revoked` after
+        // verifyToken for cli_* callers. Threaded 2026-08-05 to close the
+        // S4 gap surfaced by the drift review.
+        clientSvc,
       }),
 
     registerAdapter: async (adapter: Adapter): Promise<void> => {

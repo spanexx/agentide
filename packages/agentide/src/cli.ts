@@ -9,6 +9,7 @@ import { hasUrlSource } from "./config.js";
 import { runConsumer } from "./consumer.js";
 import { runStart, runStop, runDetachedStart } from "./start.js";
 import { printTokenWithClear } from "./lifecycle.js";
+import { AuditWriter } from "@spanexx/gateway-core";
 import type { CliOptions, CliResult } from "./cli-types.js";
 
 let globalHandlersInstalled = false;
@@ -41,7 +42,7 @@ const HELP = `agentide (v${CLI_VERSION}) — Agent Runtime Platform operator CLI
 
 Usage:
   agentide init    [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]
-  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>] [--pid-file <path>] [--log-file <path>] [--foreground] [--enable-oidc]
+  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>] [--pid-file <path>] [--log-file <path>] [--foreground] [--enable-oidc] [--no-tls]
   agentide stop    [--pid-file <path>]
   agentide status  [--data-dir <path>] [--pid-file <path>] [--url ...] [--token ...] [--json] [remote-only if --url given]  (remote gateway.status)
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
@@ -343,6 +344,31 @@ async function runClient(
     adapterMcp: false,
     adapterWs: false,
   });
+  // D-70 closeout (drift 2026-08-05): every state-changing client action
+  // through the CLI writes an audit row. Previously these calls bypassed
+  // handleInvocation, so operators got no trail. We use the same AuditWriter
+  // the gateway uses (same file, same row shape) so operators can grep
+  // audit.log for either path. Failure to write is best-effort (AuditWriter
+  // already swallows I/O errors to stderr).
+  const auditLogPath = `${dataDir.replace(/\/$/, "")}/audit.log`;
+  const audit = new AuditWriter(auditLogPath, opts.fs);
+  const writeAudit = async (
+    action: string,
+    tenantId: string,
+    clientId: string,
+    status: "ok" | "denied" | "error" = "ok",
+  ): Promise<void> => {
+    await audit.append({
+      schemaVersion: 1,
+      ts: Date.now(),
+      tenantId,
+      caller: { id: clientId, scope: [] },
+      capability: { name: action, version: "1" },
+      owner: "operator-cli",
+      status,
+      durationMs: 0,
+    });
+  };
   try {
     const svc = platform.gateway.clientService;
     if (sub === "create") {
@@ -352,6 +378,7 @@ async function runClient(
       const scope = getFlag(flags, "scope", "*").split(",").map((s) => s.trim()).filter(Boolean);
       const { record, plaintextSecret } = await svc.createClient({ tenantId, name, defaultScope: scope });
       const secretPath = await writeClientSecret(dataDir, record.id, plaintextSecret, opts.fs);
+      await writeAudit("client.create", record.tenantId, record.id);
       if (flags["print"] === true) {
         return result(
           `# Created client\nid: ${record.id}\nname: ${record.name}\nplaintext_secret: ${plaintextSecret}\nsecret_at: ${secretPath}\n`,
@@ -365,6 +392,7 @@ async function runClient(
       const lines = clients.map(
         (c) => `- ${c.id}\t${c.name}\tcreatedAt: ${c.createdAt}\trevoked: ${c.revoked}\tlastUsedAt: ${c.lastUsedAt ?? "-"}`,
       );
+      // list is read-only; no audit row per PRD ("every state-changing client action")
       return result(lines.join("\n") + "\n");
     }
     if (sub === "grant") {
@@ -378,26 +406,36 @@ async function runClient(
         defaultScope: scope,
         ttlMs: Number.isFinite(ttlMin) && ttlMin > 0 ? ttlMin * 60_000 : 5 * 60_000,
       });
+      await writeAudit("client.grant", tenantId, code);
       return result(`# Registration code\ncode: ${code}\nexpires_at: ${expiresAt}\n`);
     }
     if (sub === "revoke") {
       const clientId = getFlag(flags, "client-id", "");
       if (!clientId) return result("", "client revoke requires --client-id\n", 1);
+      // Resolve tenantId from the record for the audit row.
+      const rec = await svc.findClientById(clientId);
       await svc.revokeClient({ clientId });
+      await writeAudit("client.revoke", rec?.tenantId ?? "unknown", clientId);
       return result(`# Revoked client\nid: ${clientId}\nrevoked: true\n`);
     }
     if (sub === "rotate") {
       const clientId = getFlag(flags, "client-id", "");
       if (!clientId) return result("", "client rotate requires --client-id\n", 1);
+      const rec = await svc.findClientById(clientId);
       const { plaintextSecret } = await svc.rotateClient({ clientId });
       const secretPath = await writeClientSecret(dataDir, clientId, plaintextSecret, opts.fs);
+      await writeAudit("client.rotate", rec?.tenantId ?? "unknown", clientId);
       return result(`# Rotated client\nid: ${clientId}\nrotated: true\nsecret_at: ${secretPath}\n`);
     }
     if (sub === "redeem") {
       const code = getFlag(flags, "code", "");
       if (!code) return result("", "client redeem requires --code\n", 1);
       const redeemed = await svc.redeemRegistrationCode({ code });
-      if (redeemed === null) return result("", "client redeem: invalid or expired registration code\n", 1);
+      if (redeemed === null) {
+        await writeAudit("client.redeem", "unknown", code, "denied");
+        return result("", "client redeem: invalid or expired registration code\n", 1);
+      }
+      await writeAudit("client.redeem", "unknown", redeemed.clientId);
       return result(`# Redeemed registration code\nclient_id: ${redeemed.clientId}\nclient_secret: ${redeemed.plaintextSecret}\n`);
     }
     return result("", `unknown client subcommand: ${sub ?? ""}\n`, 1);

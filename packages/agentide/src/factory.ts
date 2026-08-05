@@ -116,6 +116,9 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     // BI[29]: client store must live under the operator's dataDir, not the
     // gateway-core default (/data). The CLI client subcommand reads/writes it.
     clientDataDir: config.dataDir,
+    // CID:platform-types-011 - requireTls (drift 2026-08-05): S8 promised
+    // a --no-tls flag; this is the seam. Default true matches GatewayConfig.
+    requireTls: config.requireTls ?? true,
     ...(config.enableOidc === true
       ? {
           enableOidc: true,

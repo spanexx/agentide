@@ -22,6 +22,7 @@ import type { AuditWriter } from "./audit.js";
 import { RateLimiter } from "./rate-limit.js";
 import { validateJsonSchema } from "./json-schema.js";
 import type { TenantStore } from "./tenant-store.js";
+import type { ClientService } from "./client-service.js";
 import type {
   CanonicalInvocation,
   CanonicalResponse,
@@ -76,6 +77,13 @@ export interface HandleInvocationCtx {
   readonly secret: Uint8Array;
   readonly backendRuntime?: BackendRuntime;
   readonly tokenLeewayMs?: number;
+  // BI[29] S4 active revocation (drift 2026-08-05): when a caller is a
+  // registered client_credentials identity (callerId starts with `cli_`),
+  // handleInvocation must re-check `revoked` after verifyToken and deny with
+  // 401 + `error: client_revoked`. Without this check a revoked client's
+  // existing JWT keeps working for up to its expiry window. Optional in tests
+  // that pre-date the field.
+  readonly clientSvc?: ClientService;
 }
 
 // CID:handle-001 - handleInvocation
@@ -153,6 +161,25 @@ export async function handleInvocation(
     callerId: claims.sub.callerId,
     scope: [...claims.scope],
   };
+
+  // (4a) Active revocation (BI[29] S4): a freshly-verified JWT is not enough.
+  // If the caller is a registered client_credentials identity (id prefix
+  // `cli_`), look up the ClientRecord on disk and reject when revoked.
+  // Operator-tooling tokens (mint via `agentide token issue`) carry a
+  // callerId that does NOT start with `cli_` — those bypass this check.
+  // The lookup is best-effort: a missing record (deleted concurrently) is
+  // treated as "not revoked" — the JWT itself is the trust anchor.
+  if (ctx.clientSvc !== undefined && caller.callerId.startsWith("cli_")) {
+    const record = await ctx.clientSvc.findClientById(caller.callerId);
+    if (record !== null && record.revoked) {
+      return exitWithError(req, ctx, startedAt, {
+        code: ERROR_CODES.AUTH_FAILED,
+        message: "client revoked",
+        details: { callerId: caller.callerId, error: "client_revoked" },
+        retryable: false,
+      });
+    }
+  }
 
   // (5) Tenant state check — must exist, not be suspended.
   const tenant = ctx.tenantStore.get(caller.tenantId);

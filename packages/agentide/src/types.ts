@@ -119,6 +119,15 @@ export interface CreatePlatformConfig {
    */
   readonly enableOidc?: boolean;
   readonly oidcBaseUrl?: string;
+
+  /**
+   * CID:platform-types-011 - requireTls
+   * BI[29] S8 / drift 2026-08-05: when true (default), POST /oauth/token
+   * rejects plain HTTP with 426 tls_required. Set to false ONLY for
+   * localhost dev — production gateways must never disable TLS on the
+   * token endpoint. Wired from `agentide start --no-tls`.
+   */
+  readonly requireTls?: boolean;
 }
 
 // CID:platform-types-002 - Platform
