@@ -17,3 +17,4 @@ export * from "./factory.js";export type {
   RegistrationCode,
   ClientStore,
 } from "./types.js";
+export { FileSystemClientStore } from "./client-store.js";
