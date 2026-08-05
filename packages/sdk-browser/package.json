@@ -1,7 +1,7 @@
 {
   "name": "@spanexx/sdk-browser",
-  "version": "0.0.3",
-  "description": "Browser SDK for Agentide \u2014 the DOM is the manifest. Annotate elements with data-sdk-cap, createSdk observes and registers capabilities, invocations fan out as CustomEvents.",
+  "version": "0.1.0",
+  "description": "Browser SDK for Agentide — the DOM is the manifest. Annotate elements with data-sdk-cap, createSdk observes and registers capabilities, invocations fan out as CustomEvents.",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.js",
