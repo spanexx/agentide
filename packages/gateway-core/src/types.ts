@@ -155,6 +155,7 @@ export interface GatewayConfig {
   readonly auditLogPath?: string;
   readonly tenantsPath?: string;
   readonly secretPath?: string;
+  readonly clientDataDir?: string; // dir for clients.json + registration-codes.json (default /data)
   readonly cleanupTimeoutMs?: number;
   readonly rateLimit?: RateLimitBucketConfig;
   readonly handlerTimeoutMs?: number;
@@ -219,7 +220,7 @@ export interface ClientRecord {
   readonly id: string;                  // "cli_<random>"
   readonly tenantId: string;
   readonly name: string;
-  readonly hashedSecret: string;          // "sha256:<salt-hex>:<digest-hex>"
+  readonly hashedSecret: string;          // "sha256:<salt>:<digest-hex>"
   readonly previousHashedSecrets: readonly string[]; // hashes accepted during rotation grace
   readonly defaultScope: readonly string[];
   readonly revoked: boolean;

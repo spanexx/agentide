@@ -42,6 +42,7 @@ describe("client types", () => {
   it("ClientRecord has the required fields", () => {
     const rec: ClientRecord = {
       id: "cli_abc", tenantId: "acme", name: "n", hashedSecret: "sha256:xx",
+      previousHashedSecrets: [],
       defaultScope: ["*"], revoked: false, createdAt: 1,
       lastUsedAt: null, lastRotatedAt: null, gracePeriodEndsAt: null,
     };
@@ -71,7 +72,8 @@ export interface ClientRecord {
   readonly id: string;
   readonly tenantId: string;
   readonly name: string;
-  readonly hashedSecret: string;          // "sha256:<salt-hex>:<digest-hex>"
+  readonly hashedSecret: string;          // "sha256:<salt>:<digest-hex>"
+  readonly previousHashedSecrets: readonly string[]; // hashes accepted during rotation grace
   readonly defaultScope: readonly string[];
   readonly revoked: boolean;
   readonly createdAt: number;             // UTC epoch ms
@@ -212,9 +214,10 @@ export class FileSystemClientStore implements ClientStore {
 - CID:cs-005 → `randomSecret()`
 - CID:cs-006 → `randomRegistrationCode()`
 
-**Step 1: write failing tests** — `packages/gateway-core/src/__tests__/client-service.test.ts` (12 tests):
+**Step 1: write failing tests** — `packages/gateway-core/src/__tests__/client-service.test.ts` (11 tests):
 ```typescript
 import { describe, it, expect, beforeEach } from "vitest";
+import { createHash } from "node:crypto";
 import { ClientService } from "../client-service.js";
 
 const memStore = () => {
@@ -243,11 +246,11 @@ describe("ClientService", () => {
   });
   it("createClient hashes with salt + secret, not just secret", async () => {
     const { store } = memStore();
-    const svc = new ClientService(store, () => "salt", () => 1000);
-    const { record } = await svc.createClient({ tenantId: "acme", name: "n", defaultScope: ["*"] });
-    expect(record.hashedSecret).toMatch(/^sha256:/);
-    // hash alone (without salt) wouldn't match
-    expect(record.hashedSecret).not.toBe("sha256:701d2cf9c3b48d2ba9cfd8a59ea6f5b54d4e0c2b5a4b94e0b34e8a0a0a0a0a0a");
+    const salt = "fixed-salt";
+    const svc = new ClientService(store, () => salt, () => 1000);
+    const { record, plaintextSecret } = await svc.createClient({ tenantId: "acme", name: "n", defaultScope: ["*"] });
+    const digest = createHash("sha256").update(salt + plaintextSecret).digest("hex");
+    expect(record.hashedSecret).toBe(`sha256:${salt}:${digest}`);
   });
   it("createClient respects the 5/hour operator rate limit", async () => {
     const { store } = memStore();
@@ -353,7 +356,7 @@ export class ClientService {
 ```
 
 Internal helpers:
-- `hashSecret(salt: string, secret: string): string` — returns `sha256:<salt-hex>:<digest-hex>`. Use `node:crypto.createHash("sha256").update(salt + secret).digest("hex")`.
+- `hashSecret(salt: string, secret: string): string` — returns `sha256:<salt>:<digest-hex>` (salt embedded raw, not hex-encoded). Use `node:crypto.createHash("sha256").update(salt + secret).digest("hex")`.
 - `randomClientId(): string` — `cli_` + 16 hex chars from `crypto.randomBytes(16)`.
 - `randomSecret(): string` — 32 bytes from `crypto.randomBytes(32)`, base64url-encoded.
 - `randomRegistrationCode(): string` — `rc_` + 16 hex chars.
