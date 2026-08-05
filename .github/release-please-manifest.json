@@ -1,8 +1,8 @@
 {
   "packages/adapter-mcp": "0.1.1",
   "packages/adapter-websocket": "0.1.1",
-  "packages/agentide": "0.0.6",
-  "packages/agentide-cjs": "0.0.6",
+  "packages/agentide": "0.1.1",
+  "packages/agentide-cjs": "0.1.1",
   "packages/backend-runtime": "0.1.1",
   "packages/capability-registry": "0.1.1",
   "packages/errors": "0.0.4",

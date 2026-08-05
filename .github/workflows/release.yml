@@ -47,19 +47,23 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 11.10.0
-      - run: pnpm install --frozen-lockfile
-      - name: Build all ESM packages (CJS variants skip — broken build deps)
-        run: |
-          pnpm -r --filter './packages/errors' --filter './packages/event-bus' --filter './packages/origin' --filter './packages/session-manager' --filter './packages/capability-registry' --filter './packages/plugin-manager' --filter './packages/backend-runtime' --filter './packages/platform-capabilities' --filter './packages/gateway-core' --filter './packages/sdk-node' --filter './packages/sdk-browser' --filter './packages/adapter-mcp' --filter './packages/adapter-websocket' --filter './packages/agentide' build
+      # CID:cjs-sdk-bootstrap-004 - mirror CJS versions BEFORE install
+      # so the install step sees the new ESM-matched versions. The script
+      # also writes CHANGELOG.md pointers and updates the .github/release-
+      # please-manifest.json in-place.
       - name: Mirror CJS variants to ESM versions
         run: node packages/agentide/scripts/mirror-cjs-versions.mjs
+      - run: pnpm install --frozen-lockfile
+      - name: Build all publishable packages (ESM + sdk-node-cjs + event-bus-cjs)
+        run: |
+          pnpm -r --filter './packages/errors' --filter './packages/event-bus' --filter './packages/event-bus-cjs' --filter './packages/origin' --filter './packages/session-manager' --filter './packages/capability-registry' --filter './packages/plugin-manager' --filter './packages/backend-runtime' --filter './packages/platform-capabilities' --filter './packages/gateway-core' --filter './packages/sdk-node' --filter './packages/sdk-node-cjs' --filter './packages/sdk-browser' --filter './packages/adapter-mcp' --filter './packages/adapter-websocket' --filter './packages/agentide' build
       - name: Write .npmrc with legacy token (pnpm 11.10.0 OIDC fallback)
         run: |
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish to npm (ESM only — CJS variants skipped due to broken build)
+      - name: Publish to npm
         run: |
-          pnpm -r --filter './packages/errors' --filter './packages/event-bus' --filter './packages/origin' --filter './packages/session-manager' --filter './packages/capability-registry' --filter './packages/plugin-manager' --filter './packages/backend-runtime' --filter './packages/platform-capabilities' --filter './packages/gateway-core' --filter './packages/sdk-node' --filter './packages/sdk-browser' --filter './packages/adapter-mcp' --filter './packages/adapter-websocket' --filter './packages/agentide' publish --access public --no-git-checks
+          pnpm -r --filter './packages/errors' --filter './packages/event-bus' --filter './packages/event-bus-cjs' --filter './packages/origin' --filter './packages/session-manager' --filter './packages/capability-registry' --filter './packages/plugin-manager' --filter './packages/backend-runtime' --filter './packages/platform-capabilities' --filter './packages/gateway-core' --filter './packages/sdk-node' --filter './packages/sdk-node-cjs' --filter './packages/sdk-browser' --filter './packages/adapter-mcp' --filter './packages/adapter-websocket' --filter './packages/agentide' publish --access public --no-git-checks
       - name: Revert prepare-publish.sh mutations (all packages)
         run: git checkout -- packages/*/package.json || true

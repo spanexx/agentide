@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/agentide-cjs",
-  "version": "0.0.6",
+  "version": "0.1.1",
   "description": "CommonJS build of @spanexx/agentide — meta-package composing Tier 1 components + gateway-core; ships the `agentide` CLI for operators. Source mirrored from @spanexx/agentide; updated in lockstep.",
   "license": "MIT",
   "main": "dist/index.js",

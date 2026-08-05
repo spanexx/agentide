@@ -10,3 +10,7 @@
 ## 0.0.6 (mirror of @spanexx/agentide@0.0.6)
 
 Mirrors @spanexx/agentide — see https://github.com/spanexx/agentide/releases/tag/v0.0.6.
+
+## 0.1.1 (mirror of @spanexx/agentide@0.1.1)
+
+Mirrors @spanexx/agentide — see https://github.com/spanexx/agentide/releases/tag/v0.1.1.
