@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/sdk-browser-cjs",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "CommonJS build of @spanexx/sdk-browser — for CJS consumers. Source is mirrored from @spanexx/sdk-browser; updated in lockstep. Note: the SDK targets browsers (native WebSocket, DOM APIs); the CJS variant is for SSR/Node-only consumers.",
   "license": "MIT",
   "main": "dist/index.js",

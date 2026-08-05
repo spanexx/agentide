@@ -47,10 +47,13 @@ export type Handler<I = unknown, O = unknown> = (
   ctx: HandlerContext,
 ) => Promise<O>;
 
-/** Connection target — where the SDK will open its WebSocket. */
+/** Connection target — where the SDK will open its WebSocket.
+ *  token is omitted when the SDK authenticates via client_credentials
+ *  (BI[29]): the TokenRefresher mints the JWT at connect() time.
+ */
 export interface GatewayTarget {
   readonly url: string;
-  readonly token: string;
+  readonly token?: string;
 }
 
 /** Developer app identity. */
@@ -80,6 +83,23 @@ export interface SdkConfig {
   readonly manifest: ManifestSource;
   readonly handlers: HandlerSource;
   readonly observability?: Observability;
+  // CID:sdk-002 - client_credentials (BI[29])
+  // When clientId + clientSecret are set, the SDK mints/refreshes JWTs at
+  // POST {oauthUrl}/oauth/token instead of using gateway.token statically.
+  // If BOTH gateway.token and clientId are present, clientId wins (migration).
+  readonly clientId?: string;
+  readonly clientSecret?: string;
+  /** Base URL for POST /oauth/token (required when clientId is set). */
+  readonly oauthUrl?: string;
+  /** Invoked once when the gateway reports client_revoked (401). */
+  readonly onRevoked?: () => void;
+  /** Test seams — default to globalThis.fetch / Date.now / Math.random. */
+  readonly fetchImpl?: import("./refresher.js").FetchImpl;
+  readonly clock?: () => number;
+  readonly random?: () => number;
+  readonly backoffBaseMs?: number;
+  readonly backoffMaxMs?: number;
+  readonly maxAttempts?: number;
 }
 
 /** Read-only state exposed via sdk.state(). */
@@ -96,4 +116,11 @@ export interface SdkInstance {
   disconnect(): Promise<void>;
   reset(): void;
   state(): SdkState;
+  // CID:sdk-002 - token lifecycle (BI[29])
+  /** Current JWT, or null when client_credentials mint hasn't landed /
+   *  the client was revoked. Legacy static-token configs always return it. */
+  token(): string | null;
+  /** Mint (first call) or refresh when the JWT is within the refresh window
+   *  (exp < 60s + jitter). Single in-flight refresh; no-op for legacy configs. */
+  refreshIfNeeded(): Promise<void>;
 }

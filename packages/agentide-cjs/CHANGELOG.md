@@ -6,3 +6,7 @@
 ### Bug Fixes
 
 * **publish:** 12 npm packages shipped — fixes from publish dry-run ([710ed0b](https://github.com/spanexx/agentide/commit/710ed0b43694bf4206ccc2ace50dc9a914411aef))
+
+## 0.0.6 (mirror of @spanexx/agentide@0.0.6)
+
+Mirrors @spanexx/agentide — see https://github.com/spanexx/agentide/releases/tag/v0.0.6.

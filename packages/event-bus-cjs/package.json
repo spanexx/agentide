@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/event-bus-cjs",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "CommonJS build of @spanexx/event-bus — for CJS consumers (nest, most node apps). Source is mirrored from @spanexx/event-bus; updated in lockstep.",
   "license": "MIT",
   "main": "dist/index.js",
