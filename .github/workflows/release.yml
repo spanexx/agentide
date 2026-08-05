@@ -50,9 +50,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Mirror CJS variants to ESM versions
         run: node packages/agentide/scripts/mirror-cjs-versions.mjs
-      - name: Publish to npm
+      - name: Write .npmrc with legacy token (pnpm 11.10.0 OIDC fallback)
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to npm
         run: pnpm -r publish --access public --no-git-checks
       - name: Revert prepare-publish.sh mutation
         run: git checkout -- packages/agentide/package.json
