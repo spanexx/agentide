@@ -62,18 +62,22 @@ class FakeWS {
 
 (globalThis as unknown as { WebSocket: typeof FakeWS }).WebSocket = FakeWS;
 
-const appJs = readFileSync(join(__dirname, "..", "assets", "app.js"), "utf8");
-const stripped = appJs
-  .replace(/^export\s+/gm, "")
-  .replace(/^if \(typeof window !== "undefined"\) boot\(\);\s*$/m, "/* boot skipped in test */");
-const iso = new Function(
-  "WebSocket",
-  stripped + "\n;return { createClient, STATES, computeBackoff };",
-) as (ws: typeof FakeWS) => { createClient: (...a: unknown[]) => unknown; STATES: Record<string, string> };
-const { createClient, STATES } = iso(FakeWS) as unknown as {
+// Load the two layered browser files: render.js (pure renderers +
+// computeBackoff) installs window.AgentideRender; wire.js then consumes
+// it and installs window.AgentideClient.
+const renderJs = readFileSync(join(__dirname, "..", "assets", "render.js"), "utf8");
+const wireJs = readFileSync(join(__dirname, "..", "assets", "wire.js"), "utf8");
+const fakeWindow: Record<string, unknown> = {};
+const isoRender = new Function("window", "globalThis", renderJs);
+isoRender(fakeWindow, fakeWindow);
+const isoWire = new Function(
+  "window", "globalThis", "WebSocket",
+  wireJs + "\n;return window.AgentideClient;",
+);
+const { createClient, STATES } = isoWire(fakeWindow, fakeWindow, FakeWS) as {
   createClient: (opts: unknown) => {
     connect: () => void;
-    state: { ws: FakeWS | null };
+    state: { ws: FakeWS | null; lastError?: string; panelErrors?: Record<string, string> };
     setDetail: (kind: string, i: number) => void;
   };
   STATES: Record<string, string>;
@@ -160,7 +164,7 @@ describe("P5 lifecycle + states (app.js state machine)", () => {
     expect(log[log.length - 1]).toBe(STATES.DOWN);
   });
 
-  it("invoke.error renders verbatim into the matching panel", async () => {
+  it("invoke.error records panelErrors verbatim into the matching panel (Gap 3 fix)", async () => {
     FakeWS.instances.length = 0;
     let panelError: { target: string; message: string } | null = null;
     const client = createClient({
@@ -173,14 +177,15 @@ describe("P5 lifecycle + states (app.js state machine)", () => {
       log: () => {},
       onState: () => {},
       onPanels: (s: unknown) => {
-        const v = s as { panelError?: { target: string; message: string } };
-        if (v.panelError) panelError = v.panelError;
+        const v = s as { panelErrors?: Record<string, string> };
+        if (!v.panelErrors) return;
+        const firstKey = Object.keys(v.panelErrors)[0];
+        if (firstKey) panelError = { target: firstKey, message: v.panelErrors[firstKey] };
       },
     });
     client.connect();
     const ws = FakeWS.instances[0]!;
     ws.ackAuth();
-    // Drain the 3 non-error invokes so the bootstrap loop completes.
     let guard = 10;
     while (ws.sent.filter((f) => f.type === "invoke").length < 4 && guard-- > 0) {
       const sessionListFrame = ws.sent.find((f) => f.type === "invoke" && (f.capability as { name: string }).name === "session.list");
@@ -194,6 +199,29 @@ describe("P5 lifecycle + states (app.js state machine)", () => {
     expect(panelError).not.toBeNull();
     expect(panelError!.target).toBe("sessionsBody");
     expect(panelError!.message).toContain("GATEWAY_INTERNAL_ERROR");
+  });
+
+  it("setPaused hides reconnect attempts (Gap 2 fix)", async () => {
+    FakeWS.instances.length = 0;
+    const client = createClient({
+      token: "tok", wsUrl: "ws://127.0.0.1:7300/ws",
+      send: (frame: FakeFrame) => {
+        const ws = client.state.ws;
+        if (ws) ws.sent.push(frame);
+      },
+      log: () => {}, onState: () => {}, onPanels: () => {},
+    });
+    (client as unknown as { setPaused: (p: boolean) => void }).setPaused(true);
+    expect((client.state as unknown as { paused: boolean }).paused).toBe(true);
+    client.connect();
+    await new Promise((r) => setImmediate(r));
+    FakeWS.instances[FakeWS.instances.length - 1]?.ackAuth();
+    (client as unknown as { setPaused: (p: boolean) => void }).setPaused(true);
+    const beforeResume = FakeWS.instances.length;
+    (client as unknown as { setPaused: (p: boolean) => void }).setPaused(false);
+    await new Promise((r) => setImmediate(r));
+    const afterResume = FakeWS.instances.length;
+    expect(afterResume).toBeGreaterThan(beforeResume);
   });
 
   it("setDetail exposes the matching record (drill-down round-trip)", async () => {

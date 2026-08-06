@@ -155,8 +155,9 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
           extraOwners: async (g: typeof gateway) => {
             // Mint the dashboard-bot token via the gateway's own
             // issueToken (uses the gateway's secret, no second key file).
+            const innerTenantId = config.defaultTenant?.id ?? "default";
             const minted = await g.issueToken({
-              tenantId: config.defaultTenant?.id ?? "default",
+              tenantId: innerTenantId,
               callerId: "dashboard-bot",
               scope: ["platform.*.read"],
               expiresInMs: 60 * 60 * 1000,
@@ -164,7 +165,7 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
             return [{
               owner: "dashboard",
               capabilities: DASHBOARD_CAPS,
-              handlers: createDashboardHandlers(g, { innerToken: minted.token }),
+              handlers: createDashboardHandlers(g, { innerToken: minted.token, innerTenantId }),
             }];
           },
         }
