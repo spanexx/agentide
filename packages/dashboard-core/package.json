@@ -1,8 +1,8 @@
 {
   "name": "@spanexx/dashboard-core",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "private": false,
-  "description": "Web dashboard for Agentide — dashboard.view.* read caps (thin passthrough wrappers) + static UI server. BI[13].",
+  "description": "Web dashboard for Agentide \u2014 dashboard.view.* read caps (thin passthrough wrappers) + static UI server. BI[13].",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
