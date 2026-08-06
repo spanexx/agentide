@@ -328,9 +328,18 @@ importers:
       '@spanexx/errors':
         specifier: workspace:*
         version: link:../errors
+      '@spanexx/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
       '@spanexx/gateway-core':
         specifier: workspace:*
         version: link:../gateway-core
+      '@spanexx/plugin-manager':
+        specifier: workspace:*
+        version: link:../plugin-manager
+      '@spanexx/session-manager':
+        specifier: workspace:*
+        version: link:../session-manager
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
