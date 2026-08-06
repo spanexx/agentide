@@ -1,18 +1,10 @@
 # Drift Log
-**Last updated:** 2026-08-06  **Open:** 10  **Resolved:** 56  **Critical/High:** 1
+**Last updated:** 2026-08-06  **Open:** 9  **Resolved:** 57  **Critical/High:** 0
 
 ## Open
 
 - **D-68** (Low, 2026-08-03, reporter: agentide start pack) — `packages/agentide/src/cli.ts` is 373 lines, over the AGENTS.md rule 9 cap of 350. Pre-existing: was ~410 before this pack; `runStart` extraction to `packages/agentide/src/start.ts` brought it down. Still 23 over because the file holds 6 subcommand handlers + HELP + arg parser + signal-setup helpers. To fix (next pack): extract `installGlobalErrorHandlers` (30 lines) + `runInit` (28 lines) to `error-handlers.ts` and `init.ts` — both small, mechanical moves. Doc note only, no behavior change.
 - **D-69** (Medium, 2026-08-03, reporter: agentide npm-publish preparation) — agentide@0.0.1 ready to publish but the `pnpm publish` flow has friction: 11 separate publishes required (1 agentide + 1 agentide-cjs + 7 internal packages + 2 leaves); each prompts for a 2FA OTP. Order matters (deepest deps first): `errors`, `origin`, `capability-registry`, `session-manager`, `backend-runtime`, `plugin-manager`, `gateway-core`, `adapter-websocket`, `adapter-mcp`, `agentide`, `agentide-cjs`. Each package now has a `scripts/prepare-publish.sh` + `prepublishOnly` hook that flattens workspace refs to `^X.Y.Z` semver, since `npm publish` can't resolve `workspace:*`. To make this one-shot: a `scripts/publish-all.sh` script that iterates packages in dependency order, captures the OTP once (if npm supports it for the token auth path), and rolls back on first failure. Or: use `@npmcli/publish` programmatically with cached auth.
-
-- **D-50** (High, 2026-08-03, reporter: dashboard-core D4 resolution) — Origin-bound browser tokens cannot be minted: the `expectedOrigins` claim is never issued.
-  - Doc claim: sdk-browser T5 Q2 lock (PERMANENT) — "every browser SDK token MUST carry a signed `expectedOrigins` claim; `auth.token.issue` CLI gains `--kind browser` + `--origin` / `--origins` flags" (`docs/features/sdk-browser/GRILL-sdk-browser.txt:223-230`); adapter-websocket W2 sub-Q 4 (closed 2026-08-03) locks enforcement — browser `Origin` present → claim REQUIRED, exact match, deny-by-default, mismatch → `auth.error "origin mismatch"` → close 1008.
-  - Code reality: `issueToken` mints NO `expectedOrigins` — claims are only `sub`/`scope`/`iat`/`exp` (`packages/gateway-core/src/factory.ts:161-170`); CLI `token issue` supports only `--tenant`/`--caller`/`--scope` (`packages/agentide/src/cli.ts:200-222`); the only origin enforcement code anywhere is the simulator (`packages/agentide/scripts/simulate-sdk-browser.mjs:193`); sdk-browser documents the claim but no server ever sees it.
-  - Why matters: with W2 Q4 enforcement locked (deny-by-default for browsers), NO browser client can authenticate until the mint side lands — a hard cross-pack blocker for `@platform/dashboard` v1 (its browser-held token, Q4 lock) and for any sdk-browser consumer.
-  - Owner: gateway-core (`IssueTokenRequest` + `issueToken`) + agentide CLI (`token issue --origin/--origins`); enforcement already locked in adapter-websocket W2 Q4 (adapter pack).
-  - To fix: code — additive optional `expectedOrigins?: string[]` on `IssueTokenRequest`, minted into the JWT claims when present; CLI `--origin`/`--origins` flags; scheduled in the `@platform/dashboard` feature-pipeline IMPL (D4 lock). Dashboard's internal `dashboard` caller token omits the claim (never crosses the wire).
-  - Related: D4 ticket (token-handling), adapter W2 Q4, sdk-browser T5 Q2.
 
 - **D-46** (Medium, 2026-08-03, reporter: dashboard-core D1 grilling) — `gateway.metrics` is a shipped read cap returning placeholder zeros, not metrics.
   - Doc claim: `platform-capabilities read-tier caps are ready: ... gateway.metrics` (`docs/features/dashboard-core/GRILL-dashboard-core.txt:14-16`); v1 dashboard opens with `invoke{gateway.metrics}` (`GRILL-dashboard-core.txt:53`).
@@ -294,4 +286,6 @@
   - Verified by: handle-invocation.test.ts "denies invocation with a revoked client token (D-72)" + code at handle-invocation.ts (4a).
 - **D-73** (Resolved 2026-08-06, session-list pack) — the `--no-tls` CLI surface landed with the S8 fix (`start.ts` CID:start-011 → `requireTls: !noTls`, stderr warning) but the drift entry was never closed.
   - Verified by: `packages/agentide/src/start.ts:132-161` + oauth-token-handler tests.
+- **D-50** (Resolved 2026-08-06, drift-log reconciliation) — the `expectedOrigins` mint side shipped 2026-08-03 as the expected-origins feature pack (`docs/features/expected-origins/` — GRILL + PRD-TRD + IMPL + PLAN) but the drift entry was never closed. Verified: `issueToken`/`auth.token.issue` accept + mint the claim (factory.ts:250-251, 360-373), CLI `token issue` has `--origin`/`--origins` (cli.ts:103, 357-359), enforcement at adapter-websocket W2 Q4 + backend-runtime (D-54 closed in the BI[24] row).
+  - Verified by: expected-origins pack docs + code lines above; live browser auth path exercised in the sdk-browser sim.
 
