@@ -1,7 +1,15 @@
 # Drift Log
-**Last updated:** 2026-08-06  **Open:** 8  **Resolved:** 58  **Critical/High:** 0
+**Last updated:** 2026-08-06  **Open:** 9  **Resolved:** 58  **Critical/High:** 0
 
 ## Open
+
+- **D-51** (Low, 2026-08-06, reporter: dashboard-core drift review 2026-08-06-121223) — Scenario 3 wording in PRD-TRD says "prepends the record" but the implementation (`packages/dashboard-core/src/assets/wire.js:101-106` → `invoke4(true)`) re-issues `session.list` / `plugin.list` / `capability.list` / `system.health` and replaces the snapshot arrays wholesale. User-visible result is identical (new row appears at the top because `session.list` is creation-ordered), but the implementation path is a full refetch, not an incremental prepend. Acceptable: refetch is the canonical live path for v1, simpler than per-event diffs, and the `dashboard.view.*` cap contract makes incremental updates unnecessary at the wrapper boundary.
+  - Doc claim: PRD-TRD §Scenario 3 "prepends the record" (and AC-3.1 "row appears in Sessions within one second").
+  - Code reality: `wire.js` `handleEvent` calls `invoke4(true)` for any `session.*`/`plugin.*`/`capability.*` topic; `invoke4` is a serial re-invoke that replaces `state.sessions` / `state.plugins` / `state.capabilities` / `state.health`.
+  - Why matters: future agents looking for an incremental insert path will not find one; the PRD's wording implies a row-insert strategy that doesn't exist. The refetch model is correct — just stronger than the PRD text.
+  - Owner: dashboard-core.
+  - To fix: doc — update PRD-TRD §Scenario 3 wording from "prepends the record" to "the new record appears in the Sessions panel within one second (via snapshot refetch on the matching event topic)". No code change.
+  - Related: PRD-TRD Scenario 3; wire.js:101-106; PR #48.
 
 - **D-68** (Low, 2026-08-03, reporter: agentide start pack) — `packages/agentide/src/cli.ts` is 373 lines, over the AGENTS.md rule 9 cap of 350. Pre-existing: was ~410 before this pack; `runStart` extraction to `packages/agentide/src/start.ts` brought it down. Still 23 over because the file holds 6 subcommand handlers + HELP + arg parser + signal-setup helpers. To fix (next pack): extract `installGlobalErrorHandlers` (30 lines) + `runInit` (28 lines) to `error-handlers.ts` and `init.ts` — both small, mechanical moves. Doc note only, no behavior change.
 - **D-69** (Medium, 2026-08-03, reporter: agentide npm-publish preparation) — agentide@0.0.1 ready to publish but the `pnpm publish` flow has friction: 11 separate publishes required (1 agentide + 1 agentide-cjs + 7 internal packages + 2 leaves); each prompts for a 2FA OTP. Order matters (deepest deps first): `errors`, `origin`, `capability-registry`, `session-manager`, `backend-runtime`, `plugin-manager`, `gateway-core`, `adapter-websocket`, `adapter-mcp`, `agentide`, `agentide-cjs`. Each package now has a `scripts/prepare-publish.sh` + `prepublishOnly` hook that flattens workspace refs to `^X.Y.Z` semver, since `npm publish` can't resolve `workspace:*`. To make this one-shot: a `scripts/publish-all.sh` script that iterates packages in dependency order, captures the OTP once (if npm supports it for the token auth path), and rolls back on first failure. Or: use `@npmcli/publish` programmatically with cached auth.
