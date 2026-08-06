@@ -34,9 +34,11 @@ const defaultFs: FileSystem = {
 
 /**
  * Strip the internal --detach-child flag from argv before runCli sees it.
- * This flag is only meaningful to the lifecycle helpers (it tells the
- * forked child "you're already detached, run the gateway normally");
- * cli.ts doesn't recognize it and would error otherwise.
+ * The flag is a vestigial marker: the actual "you are the gateway child"
+ * signal is the AGENTIDE_DETACH_CHILD env var (lifecycle.ts detachChild,
+ * checked by runDetachedStart CID:start-013). The argv flag is kept for
+ * debuggability but must not reach runCli — cli.ts doesn't recognize it
+ * and would error otherwise.
  */
 function stripDetachFlag(argv: readonly string[]): string[] {
   return argv.filter((a) => a !== DETACH_CHILD_FLAG);

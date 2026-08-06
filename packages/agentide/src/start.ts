@@ -11,6 +11,10 @@
  * CID:start-007 - signal handlers keep the event loop alive after return
  * CID:start-008 - AGENTIDE_TEST_NO_BLOCK env var skips the blocking wait for tests
  * CID:start-012 - --port-sdk opt-in flag (BI[cjs-sdk-bootstrap] Phase 1)
+ * CID:start-013 - detached-child env marker → child boots gateway directly
+ *                 (fix: child self-kill on its own pid, handoff 2026-08-05)
+ * CID:start-014 - banner written before the blocking await (production CLI
+ *                 never returned it — detached log stayed empty)
  *
  * Quick lookup: rg -n "CID:start-" packages/agentide/src/start.ts
  */
@@ -190,11 +194,16 @@ export async function runStart(
   process.on("SIGINT", () => { void stop(); });
   process.on("SIGTERM", () => { void stop(); });
 
-  // CID:start-008 - For tests, return the banner immediately. Production blocks
-  // forever (SIGINT/SIGTERM handler exits).
+  // CID:start-014 - Banner must be written BEFORE blocking. runStart never
+  // returns in production (the await below resolves never), so a banner
+  // attached to the returned CliResult would never surface — the detached
+  // child's log stayed empty and `start --foreground` printed nothing.
+  // Mirrors scripts/start-gateway.mjs, which prints the banner then blocks.
+  // Test mode keeps the old contract (banner rides the CliResult).
   if (process.env.AGENTIDE_TEST_NO_BLOCK === "1") {
     return result(banner);
   }
+  process.stdout.write(banner);
   await new Promise<never>(() => {});
   return result(banner);
 }
@@ -241,9 +250,20 @@ export async function runDetachedStart(
 ): Promise<CliResult> {
   const { getFlag, result } = await import("./cli.js");
   const {
-    DEFAULT_PID_FILE, DEFAULT_LOG_FILE,
+    DEFAULT_PID_FILE, DEFAULT_LOG_FILE, DETACH_CHILD_ENV,
     detachChild, writePidFile, readPidFile, isAlive,
   } = await import("./lifecycle.js");
+
+  // CID:start-013 - Detached-child mode (fix, handoff 2026-08-05).
+  // The parent spawns the gateway child with DETACH_CHILD_ENV=1
+  // (lifecycle.ts detachChild). The child IS the gateway: skip the pid
+  // guard and the detach logic entirely and boot directly via runStart.
+  // Before this fix the child re-entered this function, read its own PID
+  // from the pid file, saw itself alive, and died with
+  // "gateway already running (PID <itself>)" — the gateway never booted.
+  if (process.env[DETACH_CHILD_ENV] === "1") {
+    return runStart(dataDir, flags, opts);
+  }
 
   const logFile = getFlag(flags, "log-file", DEFAULT_LOG_FILE);
   const pidFile = getFlag(flags, "pid-file", DEFAULT_PID_FILE);
