@@ -64,7 +64,7 @@ Each scenario is runnable against the post-impl simulation (Phase 4).
 3. Subscribes to `session.*` (default topic for the alias)
 4. Streams NDJSON events until Ctrl-C
 5. Sends `session.destroy` on clean exit
-6. Exits 0
+6. Exits 5 (SIGINT — same as parent GRILL S7 lock)
 
 If the connection drops before Ctrl-C, the CLI exits non-clean and the session leaks until the session manager's idle timeout. Matches SDK behavior.
 

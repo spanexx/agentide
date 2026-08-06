@@ -15,6 +15,17 @@ export interface AutoSessionClient {
 export interface WithAutoSessionOptions {
   /** Extra warnings collected during the call (e.g. destroy errors). */
   readonly warnings?: string[];
+  /**
+   * ownerId for the auto-minted session (defaults to "agentide-cli").
+   * Required by the session manager: see packages/session-manager/index.ts
+   * create() — ownerId must be a non-empty string.
+   */
+  readonly ownerId?: string;
+  /**
+   * adapterType for the auto-minted session (defaults to "cli").
+   * Must be one of "mcp" | "cli" | "rest" | "ws" per the session manager.
+   */
+  readonly adapterType?: "mcp" | "cli" | "rest" | "ws";
 }
 
 /**
@@ -27,7 +38,14 @@ export async function withAutoSession<T>(
   fn: (sessionId: string) => Promise<T>,
   opts: WithAutoSessionOptions = {},
 ): Promise<T> {
-  const created = await client.invoke("session.create", { input: {} });
+  // CID:session-mint-002 - the session manager requires ownerId and
+  // adapterType. CLI defaults to "agentide-cli" + "cli" — operators can
+  // override via opts if they need distinct session ownership (future).
+  const ownerId = opts.ownerId ?? "agentide-cli";
+  const adapterType = opts.adapterType ?? "cli";
+  const created = await client.invoke("session.create", {
+    input: { ownerId, adapterType },
+  });
   // session.create returns { id: string }. Defensive: support either shape.
   const sessionId = pickSessionId(created);
   if (sessionId === undefined) {
@@ -37,7 +55,12 @@ export async function withAutoSession<T>(
     return await fn(sessionId);
   } finally {
     try {
-      await client.invoke("session.destroy", { sessionId });
+      // CID:session-mint-003 - session.destroy takes the session id
+      // inside the input payload AND must be invoked IN the auto-minted
+      // session's context (the wire-level sessionId field). The wire
+      // frame puts the call auth session under `sessionId` and the
+      // capability input under `input`.
+      await client.invoke("session.destroy", { input: { sessionId }, sessionId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const warnings = opts.warnings ?? [];

@@ -25,4 +25,12 @@ describe("applyPortDefault", () => {
     expect(() => applyPortDefault("not a url")).toThrow(ConfigError);
     expect(() => applyPortDefault("not a url")).toThrow(/invalid URL/);
   });
+
+  it("inserts :7300 for an IPv6 host (no port)", () => {
+    expect(applyPortDefault("ws://[::1]/ws")).toBe("ws://[::1]:7300/ws");
+  });
+
+  it("leaves IPv6 host URL with explicit port unchanged", () => {
+    expect(applyPortDefault("ws://[::1]:7301/ws")).toBe("ws://[::1]:7301/ws");
+  });
 });

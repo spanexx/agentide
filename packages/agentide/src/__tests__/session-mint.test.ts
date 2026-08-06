@@ -20,16 +20,32 @@ describe("withAutoSession", () => {
       if (name === "session.create") return YamlObject({ id: "sess-1" });
       return YamlObject({ ok: true });
     });
+    // session.create is now called with {ownerId, adapterType}. The mock
+    // above returns {id:"sess-1"} regardless of input.
     const result = await withAutoSession(client, async (sid) => {
       expect(sid).toBe("sess-1");
       return await client.invoke("product.list", { sessionId: sid });
     });
     expect(result).toEqual({ ok: true });
+    // The mock records `${name}:${sessionId}` where sessionId is the
+    // session arg (or "-" for session.create, which is invoked without
+    // a sessionId). withAutoSession passes {ownerId, adapterType} to
+    // session.create and session.destroy takes the minted id.
     expect(calls).toEqual([
       "session.create:-",
       "product.list:sess-1",
-      "session.destroy:sess-1",
+      "session.destroy:sess-1",  // session.destroy runs IN the auto-minted session
     ]);
+  });
+
+  it("passes ownerId + adapterType to session.create", async () => {
+    const seenInputs: unknown[] = [];
+    const client = mkClient(async (_name, opts) => {
+      seenInputs.push(opts?.input);
+      return YamlObject({ id: "sess-x" });
+    });
+    await withAutoSession(client, async () => "ok");
+    expect(seenInputs[0]).toEqual({ ownerId: "agentide-cli", adapterType: "cli" });
   });
 
   it("still destroys the session when fn throws", async () => {
