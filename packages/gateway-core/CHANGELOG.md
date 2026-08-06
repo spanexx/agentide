@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/spanexx/agentide/compare/gateway-core-v0.4.0...gateway-core-v0.5.0) (2026-08-06)
+
+
+### Features
+
+* **dashboard-core:** P1 skeleton + extraOwners seam (BI[13]) ([#41](https://github.com/spanexx/agentide/issues/41)) ([48ee2cc](https://github.com/spanexx/agentide/commit/48ee2cca3ae1700c9358f487b7157b357732ce29))
+* **dashboard-core:** P6 agentide factory wiring (BI[13] P6 of 6) ([#46](https://github.com/spanexx/agentide/issues/46)) ([fbdd847](https://github.com/spanexx/agentide/commit/fbdd84788d05aaeb33e3523952061dfa0881c7e0))
+
+
+### Bug Fixes
+
+* **gateway-core:** real gateway.metrics counters (D-46 closeout) ([#35](https://github.com/spanexx/agentide/issues/35)) ([02e9e3b](https://github.com/spanexx/agentide/commit/02e9e3be73178db1eef6239e875e0138cc3fa40e))
+
 ## [0.4.0](https://github.com/spanexx/agentide/compare/gateway-core-v0.3.1...gateway-core-v0.4.0) (2026-08-06)
 
 

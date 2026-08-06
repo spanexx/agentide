@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/spanexx/agentide/compare/agentide-v0.2.2...agentide-v0.3.0) (2026-08-06)
+
+
+### Features
+
+* **dashboard-core:** P6 agentide factory wiring (BI[13] P6 of 6) ([#46](https://github.com/spanexx/agentide/issues/46)) ([fbdd847](https://github.com/spanexx/agentide/commit/fbdd84788d05aaeb33e3523952061dfa0881c7e0))
+
+
+### Bug Fixes
+
+* **dashboard-core:** drift review fixes (Gaps 1-4 + Drifts 3, 7) ([#48](https://github.com/spanexx/agentide/issues/48)) ([32dcd21](https://github.com/spanexx/agentide/commit/32dcd21e1759b164b35fb06322dd4028101187fb))
+
 ## [0.2.2](https://github.com/spanexx/agentide/compare/agentide-v0.2.1...agentide-v0.2.2) (2026-08-06)
 
 
