@@ -33,11 +33,27 @@
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   th { text-align: left; color: var(--muted); font-weight: 500; padding: 3px 6px; border-bottom: 1px solid var(--border); }
   td { padding: 3px 6px; border-bottom: 1px solid rgba(42,51,61,.5); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: rgba(88,166,255,.07); }
   .s { color: var(--ok); } .sus { color: var(--warn); } .arch { color: var(--muted); }
   .en { color: var(--ok); } .dis { color: var(--muted); }
   .tier { font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); }
   .tier.read { color: var(--accent); } .tier.write { color: var(--warn); } .tier.biz { color: var(--muted); }
   .empty { color: var(--muted); font-style: italic; }
+  /* detail overlay (Q9 revision: click a row to drill in) */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 10; }
+  .overlay.show { display: block; }
+  .detail { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; background: var(--panel);
+    border-left: 1px solid var(--border); z-index: 11; padding: 16px; overflow-y: auto;
+    transform: translateX(100%); transition: transform .18s ease; }
+  .detail.show { transform: translateX(0); }
+  .detail h3 { font-size: 14px; margin-bottom: 12px; }
+  .detail .src { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+  .detail dl { display: grid; grid-template-columns: 130px 1fr; gap: 4px 8px; font-size: 12.5px; }
+  .detail dt { color: var(--muted); }
+  .detail dd { margin: 0; word-break: break-all; }
+  .detail .close { position: absolute; top: 10px; right: 12px; cursor: pointer; color: var(--muted); font-size: 18px; }
+  .detail .close:hover { color: var(--text); }
   .toolbar { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
   button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 12.5px; cursor: pointer; }
   button:hover { border-color: var(--accent); }
@@ -77,6 +93,14 @@
   </section>
 </div>
 
+<div class="overlay" id="overlay"></div>
+<div class="detail" id="detail">
+  <span class="close" id="detailClose">✕</span>
+  <h3 id="detailTitle"></h3>
+  <div class="src" id="detailSrc"></div>
+  <dl id="detailBody"></dl>
+</div>
+
 <div class="toolbar">
   <button id="btnSession">simulate: session.created</button>
   <button id="btnPlugin">simulate: plugin.enabled</button>
@@ -96,25 +120,28 @@
 const state = {
   conn: "connected",           // connecting | connected | down | terminal
   sessions: [
-    { id: "9f2c…41a", status: "active", owner: "cli-demo", created: "10:02:11" },
-    { id: "77ab…0e2", status: "active", owner: "nest-app", created: "10:02:11" },
-    { id: "3d91…7f8", status: "suspended", owner: "mcp-bot", created: "09:58:44" },
+    { id: "9f2c4d11-a8e0-4f41-b3c7-55aa41c0d41a", status: "active", owner: "cli-demo", adapterType: "cli",
+      createdAt: "10:02:11", lastActivityAt: "10:02:11", idleTimeoutMs: 300000, suspendedTtlMs: 1800000, destroyedAt: null, metadata: null },
+    { id: "77ab9e02-3c11-4d5e-9a88-e0f2c31b0e2f", status: "active", owner: "nest-app", adapterType: "ws",
+      createdAt: "10:02:11", lastActivityAt: "10:05:47", idleTimeoutMs: 300000, suspendedTtlMs: 1800000, destroyedAt: null, metadata: { app: "nestjs-ecommerce" } },
+    { id: "3d917f84-6b2a-4c1d-9e53-77a8f0c27f8a", status: "suspended", owner: "mcp-bot", adapterType: "mcp",
+      createdAt: "09:58:44", lastActivityAt: "10:01:02", idleTimeoutMs: 300000, suspendedTtlMs: 1800000, destroyedAt: null, metadata: null },
   ],
   plugins: [
-    { id: "orders-export", version: "1.0.0", enabled: true },
-    { id: "browser-caps", version: "0.4.1", enabled: false },
+    { id: "orders-export", version: "1.0.0", enabled: true, description: "Exports orders to CSV via the orders API", owner: "acme" },
+    { id: "browser-caps", version: "0.4.1", enabled: false, description: "Browser automation capability set", owner: "wayfinder" },
   ],
   capabilities: [
-    { name: "session.list", tier: "read", type: "platform" },
-    { name: "plugin.list", tier: "read", type: "platform" },
-    { name: "capability.list", tier: "read", type: "platform" },
-    { name: "system.health", tier: "read", type: "platform" },
-    { name: "gateway.status", tier: "read", type: "platform" },
-    { name: "gateway.metrics", tier: "read", type: "platform" },
-    { name: "product.list", tier: null, type: "business" },
-    { name: "product.get", tier: null, type: "business" },
-    { name: "cart.view", tier: null, type: "business" },
-    { name: "order.list", tier: null, type: "business" },
+    { name: "session.list", version: "1.0.0", tier: "read", type: "platform", owner: "session-manager", permissions: ["platform.session.read"], description: "List sessions (active + archived)" },
+    { name: "plugin.list", version: "1.0.0", tier: "read", type: "platform", owner: "plugin-manager", permissions: ["platform.plugin.read"], description: "List installed plugins" },
+    { name: "capability.list", version: "1.0.0", tier: "read", type: "platform", owner: "gateway", permissions: ["platform.capability.read"], description: "List registered capabilities" },
+    { name: "system.health", version: "1.0.0", tier: "read", type: "platform", owner: "gateway", permissions: ["platform.system.read"], description: "Platform health status" },
+    { name: "gateway.status", version: "1.0.0", tier: "read", type: "platform", owner: "gateway", permissions: ["platform.gateway.read"], description: "Gateway runtime status" },
+    { name: "gateway.metrics", version: "1.0.0", tier: "read", type: "platform", owner: "gateway", permissions: ["platform.gateway.read"], description: "Gateway counters and metrics" },
+    { name: "product.list", version: "1.0.0", tier: null, type: "business", owner: "nestjs-ecommerce", permissions: ["*"], description: "List active products" },
+    { name: "product.get", version: "1.0.0", tier: null, type: "business", owner: "nestjs-ecommerce", permissions: ["*"], description: "Get a product by id" },
+    { name: "cart.view", version: "1.0.0", tier: null, type: "business", owner: "nestjs-ecommerce", permissions: ["*"], description: "View the cart contents" },
+    { name: "order.list", version: "1.0.0", tier: null, type: "business", owner: "nestjs-ecommerce", permissions: ["*"], description: "List orders for a user" },
   ],
   health: { status: "ok", uptimeMs: 4812000, tenantCount: 1, pluginCount: 2 },
   stale: false,
@@ -153,27 +180,36 @@ function renderSessions() {
   const body = $("sessionsBody");
   if (state.sessions.length === 0) { body.innerHTML = '<span class="empty">no sessions</span>'; return; }
   body.innerHTML = `<table><tr><th>ID</th><th>STATUS</th><th>OWNER</th><th>CREATED</th></tr>` +
-    state.sessions.map((s) =>
-      `<tr><td>${esc(s.id)}</td><td class="${s.status === "active" ? "s" : s.status === "suspended" ? "sus" : "arch"}">${s.status}</td><td>${esc(s.owner)}</td><td>${s.created}</td></tr>`
+    state.sessions.map((s, i) =>
+      `<tr data-i="${i}" title="click for details"><td>${esc(s.id.slice(0, 9))}…</td><td class="${s.status === "active" ? "s" : s.status === "suspended" ? "sus" : "arch"}">${s.status}</td><td>${esc(s.owner)}</td><td>${s.createdAt}</td></tr>`
     ).join("") + `</table>`;
+  body.querySelectorAll("tr[data-i]").forEach((tr) => {
+    tr.onclick = () => openDetail("Session", state.sessions[+tr.dataset.i], "session.list · invoke.result (snapshot)");
+  });
 }
 
 function renderPlugins() {
   const body = $("pluginsBody");
   if (state.plugins.length === 0) { body.innerHTML = '<span class="empty">no plugins installed</span>'; return; }
   body.innerHTML = `<table><tr><th>ID</th><th>VERSION</th><th>STATUS</th></tr>` +
-    state.plugins.map((p) =>
-      `<tr><td>${esc(p.id)}</td><td>${esc(p.version)}</td><td class="${p.enabled ? "en" : "dis"}">${p.enabled ? "enabled" : "disabled"}</td></tr>`
+    state.plugins.map((p, i) =>
+      `<tr data-i="${i}" title="click for details"><td>${esc(p.id)}</td><td>${esc(p.version)}</td><td class="${p.enabled ? "en" : "dis"}">${p.enabled ? "enabled" : "disabled"}</td></tr>`
     ).join("") + `</table>`;
+  body.querySelectorAll("tr[data-i]").forEach((tr) => {
+    tr.onclick = () => openDetail("Plugin", state.plugins[+tr.dataset.i], "plugin.list · invoke.result (snapshot)");
+  });
 }
 
 function renderCaps() {
   const body = $("capsBody");
   if (state.capabilities.length === 0) { body.innerHTML = '<span class="empty">no capabilities registered</span>'; return; }
   body.innerHTML = `<table><tr><th>NAME</th><th>TIER</th></tr>` +
-    state.capabilities.map((c) =>
-      `<tr><td>${esc(c.name)}</td><td>${c.tier ? `<span class="tier ${c.tier}">${c.tier}</span>` : '<span class="tier biz">business</span>'}</td></tr>`
+    state.capabilities.map((c, i) =>
+      `<tr data-i="${i}" title="click for details"><td>${esc(c.name)}</td><td>${c.tier ? `<span class="tier ${c.tier}">${c.tier}</span>` : '<span class="tier biz">business</span>'}</td></tr>`
     ).join("") + `</table>`;
+  body.querySelectorAll("tr[data-i]").forEach((tr) => {
+    tr.onclick = () => openDetail("Capability", state.capabilities[+tr.dataset.i], "capability.list · invoke.result (snapshot)");
+  });
 }
 
 function renderHealth() {
@@ -181,15 +217,38 @@ function renderHealth() {
   $("healthBody").innerHTML = h.status === "down"
     ? '<span class="empty">gateway unreachable — status poll failed</span>'
     : `<table><tr><th>STATUS</th><th>UPTIME</th><th>TENANTS</th><th>PLUGINS</th></tr>
-       <tr><td class="s">${h.status}</td><td>${Math.round(h.uptimeMs / 1000)}s</td><td>${h.tenantCount}</td><td>${h.pluginCount}</td></tr></table>`;
+       <tr id="healthRow" title="click for details"><td class="s">${h.status}</td><td>${Math.round(h.uptimeMs / 1000)}s</td><td>${h.tenantCount}</td><td>${h.pluginCount}</td></tr></table>`;
+  const row = $("healthRow");
+  if (row) row.onclick = () => openDetail("Runtime health", { ...h, uptime: `${Math.round(h.uptimeMs / 1000)}s` }, "system.health + gateway.status · 30s poll");
 }
+
+// ---- detail overlay (Q9 revision: click a row to drill in) ----
+function openDetail(title, record, source) {
+  $("detailTitle").textContent = title;
+  $("detailSrc").textContent = "source: " + source;
+  $("detailBody").innerHTML = Object.entries(record)
+    .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v === null ? "null" : typeof v === "object" ? JSON.stringify(v) : v)}</dd>`)
+    .join("");
+  $("detail").classList.add("show");
+  $("overlay").classList.add("show");
+}
+function closeDetail() {
+  $("detail").classList.remove("show");
+  $("overlay").classList.remove("show");
+}
+$("detailClose").onclick = closeDetail;
+$("overlay").onclick = closeDetail;
 
 // ---- simulated adapter wire ----
 function wire(tag, frame) { log(tag, frame); }
 
 $("btnSession").onclick = () => {
-  wire("event →", `{ type: "event", topic: "session.created", sessionId: "c4d9…12b" }`);
-  state.sessions.unshift({ id: "c4d9…12b", status: "active", owner: "new-agent", created: new Date().toLocaleTimeString() });
+  wire("event →", `{ type: "event", topic: "session.created", sessionId: "c4d9e112-6a3b-4f0c-9d1e-2b8a70c112bc" }`);
+  state.sessions.unshift({
+    id: "c4d9e112-6a3b-4f0c-9d1e-2b8a70c112bc", status: "active", owner: "new-agent", adapterType: "cli",
+    createdAt: new Date().toLocaleTimeString(), lastActivityAt: new Date().toLocaleTimeString(),
+    idleTimeoutMs: 300000, suspendedTtlMs: 1800000, destroyedAt: null, metadata: null,
+  });
   render();
 };
 
