@@ -137,6 +137,10 @@ export interface SessionManager {
   touch(sessionId: string): SessionRecord;
   destroy(sessionId: string, reason?: DestroyReason): SessionRecord;
   getStatus(sessionId: string): SessionStatus;
+  /** Snapshot source for session.list (D-45 closeout): every record in the
+   *  store, active and archived, in insertion order. Archived records drop
+   *  out after the archive TTL. */
+  list(): SessionRecord[];
   attachResource(sessionId: string, resource: ResourceRecord): void;
   detachResource(sessionId: string, resourceId: string): void;
   listResources(sessionId: string): ResourceRecord[];
