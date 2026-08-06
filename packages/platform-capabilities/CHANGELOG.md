@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.0](https://github.com/spanexx/agentide/compare/platform-capabilities-v0.4.1...platform-capabilities-v0.5.0) (2026-08-06)
+
+
+### Features
+
+* **engines:** bump all 14 ESM packages + root to Node &gt;=22.12 (Phase 3/5) ([d6323b5](https://github.com/spanexx/agentide/commit/d6323b589ab646aabd70c1613a2b2554cfaac9f2))
+* **gateway-core:** register client.* capabilities (CID:cap-001..004, CID:cs-007) ([3e6cf2f](https://github.com/spanexx/agentide/commit/3e6cf2f85db44cf339bdfe2a07499ba104de71d3))
+* **permission-tiering:** BI[7] tier field + validator + convention + 25 platform caps ([f617092](https://github.com/spanexx/agentide/commit/f6170921e310bc48e1de936bc888c6398c7b0ef9))
+* **platform-capabilities:** ship 25 platform caps with real owners + authz wildcard + CLI filters ([300fb44](https://github.com/spanexx/agentide/commit/300fb44a107aaaf3a5b10e8280ba295f079b4dfd))
+* **platform-capabilities:** ship 25 platform caps with real owners + authz wildcard + CLI filters ([83b8b94](https://github.com/spanexx/agentide/commit/83b8b94af666c33f6ad8591f1e8fd8990c5fdbd3))
+* **sdk-node:** Phase 7 — event bus wiring + post-impl drift doc fixes ([b78109e](https://github.com/spanexx/agentide/commit/b78109e0aa82957d2d0a1918b6e213cbc26abb86))
+* **sdk:** add require condition to all 14 ESM exports maps (Phase 1a/5) ([afa3182](https://github.com/spanexx/agentide/commit/afa3182e7cdadc9db80ba86faacc6143ab66123e))
+
+
+### Bug Fixes
+
+* **platform-capabilities:** address gap-report findings (AC-3 test, drift 1/2, session.list caveat) ([f0e8258](https://github.com/spanexx/agentide/commit/f0e8258e9b5368d7bcd987c1800d619ac84f1ba9))
+* **platform-capabilities:** session.list description no longer claims v1 stub ([#32](https://github.com/spanexx/agentide/issues/32)) ([427bd0a](https://github.com/spanexx/agentide/commit/427bd0a0780422ecf6f99b0ed9e20187b979445a))
+* **publish:** 12 npm packages shipped — fixes from publish dry-run ([710ed0b](https://github.com/spanexx/agentide/commit/710ed0b43694bf4206ccc2ace50dc9a914411aef))
+* **release:** sync package.json + manifest to npm state ([#52](https://github.com/spanexx/agentide/issues/52)) ([302d205](https://github.com/spanexx/agentide/commit/302d205a9b4ca6a7c8343c477f7fc8fdcd7a31f1))
+
 ## [0.4.0](https://github.com/spanexx/agentide/compare/platform-capabilities-v0.3.1...platform-capabilities-v0.4.0) (2026-08-06)
 
 

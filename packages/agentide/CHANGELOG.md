@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/spanexx/agentide/compare/agentide-v0.3.0...agentide-v0.3.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **agentide:** bundle crash + --dashboard-port flag ([#54](https://github.com/spanexx/agentide/issues/54)) ([e841e06](https://github.com/spanexx/agentide/commit/e841e06e362211b15c6f722bdf83d4fe14e425f3))
+
 ## [0.3.0](https://github.com/spanexx/agentide/compare/agentide-v0.2.2...agentide-v0.3.0) (2026-08-06)
 
 
