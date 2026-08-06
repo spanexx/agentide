@@ -26,6 +26,7 @@ import { AuditWriter } from "./audit.js";
 import { checkAuthz } from "./authz.js";
 import { issueToken } from "./auth.js";
 import { ClientService } from "./client-service.js";
+import { createMetricsCounter, type MetricsCounter } from "./metrics.js";
 import { FileSystemClientStore } from "./client-store.js";
 import { handleTokenRequest, TokenRequestRateLimiter, type OAuthTokenHandler, handleAuthorize, handleCallback } from "./oauth-token-handler.js";
 import { handleInvocation } from "./handle-invocation.js";
@@ -192,6 +193,9 @@ export async function createGateway(
     : undefined;
 
   const startedAt = clock.now();
+  // D-46 closeout (2026-08-06): one counter per gateway — handleInvocation
+  // increments it at every exit path; the gateway.metrics handler reads it.
+  const metrics = createMetricsCounter();
   const handlers = buildGatewayHandlers({
     tenantStore,
     registry,
@@ -204,6 +208,7 @@ export async function createGateway(
     startedAt,
     fs,
     clientSvc,
+    metrics,
   });
 
   await registerPlatformCapabilities(registry);
@@ -228,6 +233,8 @@ export async function createGateway(
         // verifyToken for cli_* callers. Threaded 2026-08-05 to close the
         // S4 gap surfaced by the drift review.
         clientSvc,
+        // D-46 closeout (2026-08-06): metrics counter for the exit paths.
+        metrics,
       }),
 
     registerAdapter: async (adapter: Adapter): Promise<void> => {
@@ -340,6 +347,7 @@ interface BuildHandlersCtx {
   readonly startedAt: number;
   readonly fs: FileSystem;
   readonly clientSvc: ClientService;
+  readonly metrics: MetricsCounter;
 }
 
 function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
@@ -566,12 +574,11 @@ function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
     }),
 
     "gateway.metrics": wrap(() => {
-      // v1 placeholder. v2 adds rate-limit denial counters, dispatch-failure counts, etc.
-      return {
-        invocations: { ok: 0, denied: 0, error: 0 },
-        rateLimitDenials: 0,
-        authFailures: 0,
-      };
+      // D-46 closeout (2026-08-06): real counters from the per-gateway
+      // MetricsCounter, incremented at handleInvocation's canonical exit
+      // paths (auditOk/auditError/exitWithError). Shape unchanged from the
+      // v1 placeholder — same contract, real numbers now.
+      return ctx.metrics.snapshot();
     }),
 
     "gateway.configuration": wrap(() => {
