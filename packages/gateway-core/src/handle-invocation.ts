@@ -23,6 +23,7 @@ import { RateLimiter } from "./rate-limit.js";
 import { validateJsonSchema } from "./json-schema.js";
 import type { TenantStore } from "./tenant-store.js";
 import type { ClientService } from "./client-service.js";
+import type { MetricsCounter } from "./metrics.js";
 import type {
   CanonicalInvocation,
   CanonicalResponse,
@@ -77,6 +78,9 @@ export interface HandleInvocationCtx {
   readonly secret: Uint8Array;
   readonly backendRuntime?: BackendRuntime;
   readonly tokenLeewayMs?: number;
+  // D-46 closeout (2026-08-06): per-gateway metrics counter. Incremented at
+  // the canonical exit paths below; read by the gateway.metrics handler.
+  readonly metrics?: MetricsCounter;
   // BI[29] S4 active revocation (drift 2026-08-05): when a caller is a
   // registered client_credentials identity (callerId starts with `cli_`),
   // handleInvocation must re-check `revoked` after verifyToken and deny with
@@ -376,6 +380,7 @@ async function auditOk(
   };
   await ctx.audit.append(record);
   await ctx.eventBus.publish("gateway.invocation", record);
+  ctx.metrics?.recordOk();
 }
 
 async function auditError(
@@ -401,6 +406,7 @@ async function auditError(
   };
   await ctx.audit.append(record);
   await ctx.eventBus.publish("gateway.invocation", record);
+  ctx.metrics?.recordError();
 }
 
 // CID:handle-002 - exitWithError
@@ -430,5 +436,6 @@ async function exitWithError(
   };
   await ctx.audit.append(record);
   await ctx.eventBus.publish("gateway.invocation", record);
+  ctx.metrics?.recordDenied(errPayload.code);
   return { error: errPayload };
 }

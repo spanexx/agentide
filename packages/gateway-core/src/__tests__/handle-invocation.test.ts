@@ -568,6 +568,103 @@ it("returns GATEWAY_SESSION_REQUIRED for session-required capability without ses
     expect(lastLine.denyReason).toBe(ERROR_CODES.RATE_LIMIT_EXCEEDED);
   });
 
+  // D-46 closeout (2026-08-06): gateway.metrics must return REAL counters,
+  // not placeholder zeros. Counters are incremented at the canonical exit
+  // points (auditOk → ok, auditError → error, exitWithError → denied with
+  // auth/rate-limit sub-buckets). Note: reading gateway.metrics itself is an
+  // invocation and counts +1 ok.
+  it("gateway.metrics counts successful invocations (D-46)", async () => {
+    const { gateway, clock } = await setup();
+    await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["platform.gateway.read"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["platform.gateway.read"] },
+      capability: { name: "gateway.status" },
+      input: {},
+    });
+    const res = await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["platform.gateway.read"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["platform.gateway.read"] },
+      capability: { name: "gateway.metrics" },
+      input: {},
+    });
+    expect(res).toHaveProperty("output");
+    if ("output" in res) {
+      const m = res.output as { invocations: { ok: number; denied: number; error: number } };
+      // The snapshot is captured BEFORE the metrics read itself is audited,
+      // so it shows exactly the one gateway.status call.
+      expect(m.invocations.ok).toBe(1);
+    }
+  });
+
+  it("gateway.metrics counts authz denials (D-46)", async () => {
+    const { gateway, clock } = await setup();
+    // No scope → INSUFFICIENT_SCOPE → denied.
+    await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", []),
+      caller: { tenantId: "default", callerId: "alice", scope: [] },
+      capability: { name: "gateway.status" },
+      input: {},
+    });
+    const res = await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["platform.gateway.read"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["platform.gateway.read"] },
+      capability: { name: "gateway.metrics" },
+      input: {},
+    });
+    if ("output" in res) {
+      const m = res.output as { invocations: { ok: number; denied: number; error: number } };
+      expect(m.invocations.denied).toBe(1);
+      expect(m.invocations.ok).toBe(0); // snapshot excludes the metrics read itself
+    }
+  });
+
+  it("gateway.metrics counts auth failures (D-46)", async () => {
+    const { gateway, clock } = await setup();
+    // Garbage token → TOKEN_INVALID → auth failure bucket.
+    await gateway.handleInvocation({
+      token: "not-a-real-jwt",
+      caller: { tenantId: "default", callerId: "alice", scope: ["*"] },
+      capability: { name: "gateway.status" },
+      input: {},
+    });
+    const res = await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["platform.gateway.read"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["platform.gateway.read"] },
+      capability: { name: "gateway.metrics" },
+      input: {},
+    });
+    if ("output" in res) {
+      const m = res.output as { authFailures: number };
+      expect(m.authFailures).toBe(1);
+    }
+  });
+
+  it("gateway.metrics counts rate-limit denials (D-46)", async () => {
+    const { gateway, clock } = await setup();
+    const invocation: CanonicalInvocation = {
+      token: makeToken(clock, "default", "alice", ["platform.gateway.read"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["platform.gateway.read"] },
+      capability: { name: "gateway.status" },
+      input: {},
+    };
+    // 100 pass, the 101st (same caller) is rate-limited → denied.
+    for (let i = 0; i < 101; i++) await gateway.handleInvocation(invocation);
+    // Read metrics as a DIFFERENT caller — the same caller is now limited.
+    const res = await gateway.handleInvocation({
+      token: makeToken(clock, "default", "ops", ["platform.gateway.read"]),
+      caller: { tenantId: "default", callerId: "ops", scope: ["platform.gateway.read"] },
+      capability: { name: "gateway.metrics" },
+      input: {},
+    });
+    expect(res).toHaveProperty("output");
+    if ("output" in res) {
+      const m = res.output as { rateLimitDenials: number; invocations: { ok: number; denied: number } };
+      expect(m.rateLimitDenials).toBe(1);
+      expect(m.invocations.denied).toBe(1);
+      expect(m.invocations.ok).toBe(100);
+    }
+  });
+
   it("Event Bus emits gateway.invocation event", async () => {
     const { gateway, bus, sm, clock } = await setup();
     const events: PlatformEvent<unknown>[] = [];

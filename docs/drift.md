@@ -1,18 +1,10 @@
 # Drift Log
-**Last updated:** 2026-08-06  **Open:** 9  **Resolved:** 57  **Critical/High:** 0
+**Last updated:** 2026-08-06  **Open:** 8  **Resolved:** 58  **Critical/High:** 0
 
 ## Open
 
 - **D-68** (Low, 2026-08-03, reporter: agentide start pack) — `packages/agentide/src/cli.ts` is 373 lines, over the AGENTS.md rule 9 cap of 350. Pre-existing: was ~410 before this pack; `runStart` extraction to `packages/agentide/src/start.ts` brought it down. Still 23 over because the file holds 6 subcommand handlers + HELP + arg parser + signal-setup helpers. To fix (next pack): extract `installGlobalErrorHandlers` (30 lines) + `runInit` (28 lines) to `error-handlers.ts` and `init.ts` — both small, mechanical moves. Doc note only, no behavior change.
 - **D-69** (Medium, 2026-08-03, reporter: agentide npm-publish preparation) — agentide@0.0.1 ready to publish but the `pnpm publish` flow has friction: 11 separate publishes required (1 agentide + 1 agentide-cjs + 7 internal packages + 2 leaves); each prompts for a 2FA OTP. Order matters (deepest deps first): `errors`, `origin`, `capability-registry`, `session-manager`, `backend-runtime`, `plugin-manager`, `gateway-core`, `adapter-websocket`, `adapter-mcp`, `agentide`, `agentide-cjs`. Each package now has a `scripts/prepare-publish.sh` + `prepublishOnly` hook that flattens workspace refs to `^X.Y.Z` semver, since `npm publish` can't resolve `workspace:*`. To make this one-shot: a `scripts/publish-all.sh` script that iterates packages in dependency order, captures the OTP once (if npm supports it for the token auth path), and rolls back on first failure. Or: use `@npmcli/publish` programmatically with cached auth.
-
-- **D-46** (Medium, 2026-08-03, reporter: dashboard-core D1 grilling) — `gateway.metrics` is a shipped read cap returning placeholder zeros, not metrics.
-  - Doc claim: `platform-capabilities read-tier caps are ready: ... gateway.metrics` (`docs/features/dashboard-core/GRILL-dashboard-core.txt:14-16`); v1 dashboard opens with `invoke{gateway.metrics}` (`GRILL-dashboard-core.txt:53`).
-  - Code reality: handler returns `{invocations:{ok:0,denied:0,error:0}, rateLimitDenials:0, authFailures:0}` — placeholder, all zeros (`packages/gateway-core/src/factory.ts:378-384`).
-  - Why matters: any consumer of `gateway.metrics` (dashboard Metrics view, future Grafana-style panel) gets fabricated data. Snapshot is dead — violates the D1 acceptance bar (snapshot + live).
-  - Owner: gateway-core.
-  - To fix: code — implement real invocation/denial/error counters in the `handleInvocation` exit path before the Metrics view ships (or rule the view out of scope).
-  - Related: D1 ticket (view-scope), D-45 (session.list stub — same class of gap).
 
 - **D-47** (Medium, 2026-08-03, reporter: dashboard-core D1 grilling) — No log-reading capability exists; the Logs view has no snapshot source.
   - Doc claim: backlog BI[13] names `logs` as a v1 dashboard view (`docs/features/dashboard-core/GRILL-dashboard-core.txt:10-11`); §14 lists Logs as a core Dashboard feature (`docs/architecture/Agentide.md:841`).
@@ -288,4 +280,6 @@
   - Verified by: `packages/agentide/src/start.ts:132-161` + oauth-token-handler tests.
 - **D-50** (Resolved 2026-08-06, drift-log reconciliation) — the `expectedOrigins` mint side shipped 2026-08-03 as the expected-origins feature pack (`docs/features/expected-origins/` — GRILL + PRD-TRD + IMPL + PLAN) but the drift entry was never closed. Verified: `issueToken`/`auth.token.issue` accept + mint the claim (factory.ts:250-251, 360-373), CLI `token issue` has `--origin`/`--origins` (cli.ts:103, 357-359), enforcement at adapter-websocket W2 Q4 + backend-runtime (D-54 closed in the BI[24] row).
   - Verified by: expected-origins pack docs + code lines above; live browser auth path exercised in the sdk-browser sim.
+- **D-46** (Resolved 2026-08-06, metrics pack) — `gateway.metrics` returned placeholder zeros. Fixed with a real per-gateway MetricsCounter (`packages/gateway-core/src/metrics.ts` CID:metrics-001/002): incremented at the canonical handleInvocation exit paths (auditOk → ok, auditError → error, exitWithError → denied with rateLimit/auth sub-buckets classified from the error code). Shape unchanged from the placeholder (interface forever). Wired through factory (BuildHandlersCtx + handleInvocation ctx, additive optional `metrics` on HandleInvocationCtx).
+  - Verified by: 4 new handle-invocation tests (ok/denied/authFailures/rateLimitDenials — exact counts incl. the snapshot-excludes-itself semantics); gateway-core 182/182 green.
 
