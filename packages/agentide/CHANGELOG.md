@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/spanexx/agentide/compare/agentide-v0.2.1...agentide-v0.2.2) (2026-08-06)
+
+
+### Bug Fixes
+
+* **agentide:** capabilities alias passes operator scope to capability.list ([#29](https://github.com/spanexx/agentide/issues/29)) ([da10df0](https://github.com/spanexx/agentide/commit/da10df0901e15317da01fe1d35070481cfa8c58f))
+
 ## [0.2.1](https://github.com/spanexx/agentide/compare/agentide-v0.2.0...agentide-v0.2.1) (2026-08-06)
 
 
