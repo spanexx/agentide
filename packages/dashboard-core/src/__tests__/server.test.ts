@@ -4,8 +4,7 @@ import {
   mintDashboardToken,
   createDashboardServer,
 } from "../index.js";
-import { verifyToken, type Clock } from "@spanexx/gateway-core";
-import type { Gateway, IssueTokenRequest } from "@spanexx/gateway-core";
+import type { Clock, Gateway, IssueTokenRequest } from "@spanexx/gateway-core";
 
 // P3 dashboard-core IMPL: mint helper + static server (D3 + D4 lock).
 // Mint produces claims matching the D4 contract:
@@ -22,7 +21,7 @@ class FakeClock implements Clock {
 }
 const clock = new FakeClock();
 
-function makeGateway(extraOrigins?: string[]): Gateway {
+function makeGateway(): Gateway {
   return {
     async issueToken(req: IssueTokenRequest) {
       return { token: "test-token", claims: { ...req, sub: { tenantId: req.tenantId, callerId: req.callerId } } as never };

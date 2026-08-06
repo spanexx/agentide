@@ -31,7 +31,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ASSETS_DIR = join(__dirname, "..", "assets");
 
-const INDEX_HTML = `<!DOCTYPE html>
+// Load the served index.html from the assets directory (P4). Falls back to
+// the inline placeholder if the file isn't shipped (defensive — for old
+// builds or partial installs).
+const INDEX_HTML = (() => {
+  const indexPath = join(ASSETS_DIR, "index.html");
+  if (existsSync(indexPath)) {
+    return readFileSync(indexPath, "utf8");
+  }
+  return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Agentide Dashboard</title>
 <link rel="stylesheet" href="/assets/theme.css"></head>
 <body>
@@ -42,6 +50,7 @@ const INDEX_HTML = `<!DOCTYPE html>
   <script src="/assets/app.js"></script>
 </div>
 </body></html>`;
+})();
 
 // Minimal assets so the route returns real content during tests. P4 will
 // replace these with the full dashboard UX.
@@ -69,7 +78,10 @@ export async function createDashboardServer(opts: {
         // Per-load mint — every GET / produces a fresh token. Memory only;
         // the page holds it in window.__AGENTIDE_TOKEN__, never localStorage.
         const minted = await mintDashboardToken(opts.gateway, { clock: opts.clock, port });
-        const body = INDEX_HTML.replace("__AGENTIDE_TOKEN__", minted.token);
+        // Replace BOTH occurrences of the placeholder (the variable name
+        // and the literal string assigned to it). Using a regex with the
+        // global flag handles both in one pass.
+        const body = INDEX_HTML.replace(/__AGENTIDE_TOKEN__/g, minted.token);
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(body);
         return;

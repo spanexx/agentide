@@ -158,6 +158,9 @@ importers:
       '@spanexx/capability-registry':
         specifier: workspace:*
         version: link:../capability-registry
+      '@spanexx/dashboard-core':
+        specifier: workspace:*
+        version: link:../dashboard-core
       '@spanexx/event-bus':
         specifier: workspace:*
         version: link:../event-bus

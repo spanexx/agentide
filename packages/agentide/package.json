@@ -39,7 +39,8 @@
     "@spanexx/event-bus": "workspace:*",
     "@spanexx/gateway-core": "workspace:*",
     "@spanexx/plugin-manager": "workspace:*",
-    "@spanexx/session-manager": "workspace:*"
+    "@spanexx/session-manager": "workspace:*",
+    "@spanexx/dashboard-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
