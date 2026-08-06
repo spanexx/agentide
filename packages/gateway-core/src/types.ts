@@ -168,6 +168,24 @@ export interface GatewayConfig {
   readonly fs?: FileSystem;
   readonly eventBus?: import("@spanexx/event-bus").EventBus;
   readonly backendRuntime?: import("@spanexx/backend-runtime").BackendRuntime;
+  // P1 dashboard-core (D2 lock): extra owners registered at factory time —
+  // capability records + handlers merged into the dispatch map. The kernel
+  // stays dashboard-agnostic; the composition root supplies the owner.
+  readonly extraOwners?: (gateway: Gateway) => readonly ExtraOwner[];
+  // P1 dashboard-core (D2 lock): capability names treated as session-less in
+  // addition to the kernel's built-in set (dashboard.view.* join the set).
+  readonly extraSessionLessCapabilities?: readonly string[];
+}
+
+// CID:types-017 - ExtraOwner
+// Purpose: an owner whose caps + handlers are injected by the composition
+// root at factory time (generic seam; dashboard-core is the first consumer).
+export interface ExtraOwner {
+  readonly owner: string;
+  readonly capabilities: readonly import("@spanexx/capability-registry").CapabilityRecord[];
+  // Flat name→handler map matching DispatchHandlers.gatewayHandlers —
+  // merged into the kernel's in-process map at factory time.
+  readonly handlers: import("./dispatch.js").DispatchHandlers["gatewayHandlers"];
 }
 
 // CID:types-013 - Adapter

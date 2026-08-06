@@ -81,6 +81,9 @@ export interface HandleInvocationCtx {
   // D-46 closeout (2026-08-06): per-gateway metrics counter. Incremented at
   // the canonical exit paths below; read by the gateway.metrics handler.
   readonly metrics?: MetricsCounter;
+  // P1 dashboard-core (D2 lock): extra session-less names beyond the kernel
+  // set (dashboard.view.* join it via factory config).
+  readonly sessionLessCapabilities?: ReadonlySet<string>;
   // BI[29] S4 active revocation (drift 2026-08-05): when a caller is a
   // registered client_credentials identity (callerId starts with `cli_`),
   // handleInvocation must re-check `revoked` after verifyToken and deny with
@@ -229,7 +232,8 @@ export async function handleInvocation(
   }
 
   // (5) Session requirement + status check.
-  const requiresSession = !SESSION_LESS_CAPABILITIES.has(req.capability.name);
+  const requiresSession = !SESSION_LESS_CAPABILITIES.has(req.capability.name)
+    && !(ctx.sessionLessCapabilities?.has(req.capability.name) ?? false);
   if (requiresSession && !req.sessionId) {
     return exitWithError(req, ctx, startedAt, {
       code: ERROR_CODES.SESSION_REQUIRED,

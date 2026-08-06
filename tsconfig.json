@@ -1,54 +1,21 @@
-// Add a reference here for each package under packages/ as it's implemented.
-// Order is topological: leaves first, dependents after. tsc --build
-// walks the dep graph from these references; ordering ensures the
-// right build sequence on a clean cache.
 {
   "files": [],
   "references": [
-    {
-      "path": "packages/errors"
-    },
-    {
-      "path": "packages/origin"
-    },
-    {
-      "path": "packages/browser-runtime"
-    },
-    {
-      "path": "packages/application"
-    },
-    {
-      "path": "packages/event-bus"
-    },
-    {
-      "path": "packages/capability-registry"
-    },
-    {
-      "path": "packages/session-manager"
-    },
-    {
-      "path": "packages/plugin-manager"
-    },
-    {
-      "path": "packages/platform-capabilities"
-    },
-    {
-      "path": "packages/backend-runtime"
-    },
-    {
-      "path": "packages/gateway-core"
-    },
-    {
-      "path": "packages/adapter-mcp"
-    },
-    {
-      "path": "packages/adapter-websocket"
-    },
-    {
-      "path": "packages/sdk-node"
-    },
-    {
-      "path": "packages/agentide"
-    }
+    { "path": "packages/errors" },
+    { "path": "packages/origin" },
+    { "path": "packages/browser-runtime" },
+    { "path": "packages/application" },
+    { "path": "packages/event-bus" },
+    { "path": "packages/capability-registry" },
+    { "path": "packages/session-manager" },
+    { "path": "packages/plugin-manager" },
+    { "path": "packages/platform-capabilities" },
+    { "path": "packages/backend-runtime" },
+    { "path": "packages/gateway-core" },
+    { "path": "packages/dashboard-core" },
+    { "path": "packages/adapter-mcp" },
+    { "path": "packages/adapter-websocket" },
+    { "path": "packages/sdk-node" },
+    { "path": "packages/agentide" }
   ]
 }
