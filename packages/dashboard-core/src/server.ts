@@ -24,34 +24,14 @@ import type { Gateway, Clock } from "@spanexx/gateway-core";
 import { mintDashboardToken } from "./token.js";
 import { DASHBOARD_DEFAULT_PORT } from "./config.js";
 import { readFileSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { resolveAssetsDir } from "./fileloc.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Resolve the served assets directory. The server runs from `dist/server.js`
-// after publish; in dev/test it may run from `src/server.ts` via vitest. The
-// published package.json ships `src/assets/` (no build step — the assets are
-// plain HTML/CSS/JS), so we look for the assets next to the source file,
-// falling back to `dist/../src/assets` when running from source.
-function resolveAssetsDir(): string {
-  // Primary: alongside the source file (matches the published package layout —
-  // `dist/server.js` is the bin, `dist/assets/` would be where a built output
-  // lands; but since we don't bundle the assets, the published layout is
-  // `dist/server.js` + `src/assets/` next to it via the package's `files`).
-  const candidates = [
-    join(__dirname, "assets"),                       // published: src/assets moved to dist/assets
-    join(__dirname, "..", "src", "assets"),         // running from src/server.ts (dev/test)
-    join(__dirname, "..", "assets"),                 // running from dist/server.js (post-bundle)
-  ];
-  for (const c of candidates) {
-    if (existsSync(join(c, "index.html"))) return c;
-  }
-  // Fallback: return the most-likely path so `existsSync(path.startsWith(...))`
-  // below still gets a meaningful prefix check.
-  return candidates[0];
-}
+// CID:server-filename-001 - removed direct fileURLToPath(import.meta.url).
+// CJS bundles (esbuild --format=cjs) make import.meta.url undefined; using it
+// at module top-level crashed every agentide CLI subcommand. Now resolves
+// via ./fileloc.js which handles ESM source, CJS bundled, and env-override
+// modes.
 
 const ASSETS_DIR = resolveAssetsDir();
 

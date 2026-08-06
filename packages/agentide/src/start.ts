@@ -59,6 +59,31 @@ export async function runStart(
     return result("", "error: --port-ws is not supported yet (WS adapter port is fixed at 7300 in v1; future versions will expose adapterWsPort)\n", 2);
   }
 
+  // CID:start-013 - --dashboard-port opt-in (BI[13] dashboard-core).
+  // Opens the dashboard static server at the given port (default 7200 when
+  // the flag is present with no value, matching DASHBOARD_DEFAULT_PORT in
+  // packages/dashboard-core/src/config.ts). Flag absent → dashboard server
+  // does NOT start (matches factory's regression test: no dashboardPort →
+  // no dashboardServer on the Platform).
+  const portDashFlag = flags["dashboard-port"];
+  let dashboardPort: number | undefined;
+  if (portDashFlag !== undefined) {
+    if (typeof portDashFlag === "boolean" && portDashFlag === true) {
+      dashboardPort = 7200;
+    } else if (typeof portDashFlag === "string") {
+      const parsed = Number.parseInt(portDashFlag, 10);
+      if (!Number.isFinite(parsed)) {
+        return result("", `error: invalid port --dashboard-port=${portDashFlag}\n`, 2);
+      }
+      if (parsed === 7100 || parsed === 7300 || parsed === 7350) {
+        return result("", `error: --dashboard-port=${parsed} collides with MCP/WS/SDK adapter doors (7100/7300/7350)\n`, 2);
+      }
+      dashboardPort = parsed;
+    } else {
+      return result("", `error: invalid --dashboard-port value (${String(portDashFlag)})\n`, 2);
+    }
+  }
+
   // CID:start-012 - --port-sdk opt-in (BI[cjs-sdk-bootstrap] Phase 1).
   // Opens the backend-runtime door (where sdk-node/sdk-browser connect with
   // the {type:"sdk.auth"} first-frame protocol). Flag absent → door stays
@@ -156,11 +181,16 @@ export async function runStart(
       // CID:start-012 - SDK door opt-in. Spread only when portSdk is set so
       // the no-flag path keeps createPlatform's config shape identical to
       // before (regression test at factory.ts:78-80 stays valid).
-      // NOTE: backendRuntime's WebSocketServer currently hardcodes host
+      // NOTE: backend-runtime's WebSocketServer currently hardcodes host
       // "127.0.0.1" (packages/backend-runtime/src/server.ts:277); --bind
       // does not flow through to the SDK door in v1. Phase 1 ships the
       // port-on opt-in; bind-on is a follow-up patch.
       ...(portSdk !== undefined ? { backendRuntimePort: portSdk } : {}),
+      // CID:start-013 - Dashboard door opt-in. Same shape as --port-sdk:
+      // absent → no dashboardServer on the Platform (matches the
+      // regression test in factory.ts:97-112). Dashboard binds 127.0.0.1
+      // only (server.ts:99) — --bind does not flow through in v1.
+      ...(dashboardPort !== undefined ? { dashboardPort } : {}),
       ...(enableOidc ? { enableOidc: true } : {}),
       requireTls: !noTls,
     });
