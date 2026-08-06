@@ -44,20 +44,30 @@ async function runScenarios(): Promise<void> {
   if (!token) return;
   (document.getElementById("gw") as HTMLElement).textContent = gateway;
 
+  // Drift-fix S1: declare fakeWindow before the loader uses it.
+  const fakeWindow: Record<string, unknown> = {};
+
   const results: Array<{ name: string; pass: boolean; detail: string }> = [];
   function record(name: string, pass: boolean, detail: string) {
     results.push({ name, pass, detail });
     renderResults(results);
   }
 
-  // Pull the createClient / STATES exports out of the same app.js the page
-  // uses, so the sim and the production page share the exact state machine.
-  const appJs = await fetch("./assets/app.js").then((r) => r.text());
-  const mod = new Function("WebSocket", appJs + "\n;return { createClient, STATES };");
-  const { createClient, STATES } = mod(window.WebSocket) as {
+  // Pull the createClient / STATES exports out of the bundled assets
+  // the page uses. Drift-fix S1: render.js installs AgentideRender,
+  // wire.js installs AgentideClient (createClient + STATES). The sim
+  // loads both so the state machine + backoff are shared with prod.
+  async function loadModule(path: string, attr: string): Promise<Record<string, unknown>> {
+    const src = await fetch(path).then((r) => r.text());
+    const fn = new Function("window", "globalThis", src + `;return window.${attr};`);
+    return fn(fakeWindow, fakeWindow) ?? {};
+  }
+  await loadModule("./assets/render.js", "AgentideRender");
+  const AgentideClient = await loadModule("./assets/wire.js", "AgentideClient") as {
     createClient: (opts: unknown) => SimClient;
     STATES: Record<string, string>;
   };
+  const { createClient, STATES } = AgentideClient;
 
   const sent: SentFrame[] = [];
   // Mutable ref so the HookedWS constructor can capture the live instance
