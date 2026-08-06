@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/spanexx/agentide/compare/agentide-v0.2.0...agentide-v0.2.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **agentide:** detached start self-kill on own pid guard ([#25](https://github.com/spanexx/agentide/issues/25)) ([95a2cb5](https://github.com/spanexx/agentide/commit/95a2cb55009388123e49fd062b2f7a062fa7d266))
+
 ## [0.2.0](https://github.com/spanexx/agentide/compare/agentide-v0.1.1...agentide-v0.2.0) (2026-08-05)
 
 
