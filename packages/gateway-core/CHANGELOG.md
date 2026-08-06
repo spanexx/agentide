@@ -42,6 +42,7 @@
 * **gateway-core:** preserve rate-limit progress under sub-interval retries ([e99b0fe](https://github.com/spanexx/agentide/commit/e99b0fe56c45f8b2c93b6a491e1a04e407f224c4))
 * **platform-capabilities:** address gap-report findings (AC-3 test, drift 1/2, session.list caveat) ([f0e8258](https://github.com/spanexx/agentide/commit/f0e8258e9b5368d7bcd987c1800d619ac84f1ba9))
 * **publish:** 12 npm packages shipped — fixes from publish dry-run ([710ed0b](https://github.com/spanexx/agentide/commit/710ed0b43694bf4206ccc2ace50dc9a914411aef))
+* **session-manager:** real session.list snapshot (D-45 closeout) ([#30](https://github.com/spanexx/agentide/issues/30)) ([daa0ec3](https://github.com/spanexx/agentide/commit/daa0ec36c209f36522670d6ba22aaabb5866a20e))
 
 
 ### CI/CD
