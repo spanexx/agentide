@@ -81,13 +81,14 @@ export async function createDashboardServer(opts: {
           const content = readFileSync(path);
           const ct = file.endsWith(".js") ? "application/javascript"
             : file.endsWith(".css") ? "text/css"
+            : file.endsWith(".html") ? "text/html; charset=utf-8"
             : "text/plain";
           res.writeHead(200, { "content-type": ct });
           res.end(content);
           return;
         }
-        // Fallback to the inline placeholder for P3 tests until P4 ships real
-        // assets in the package's assets/ directory.
+        // Fallback to the inline placeholder only when the asset isn't
+        // shipped in the package (defensive — shouldn't happen post-P4).
         if (file === "app.js") {
           res.writeHead(200, { "content-type": "application/javascript" });
           res.end(PLACEHOLDER_APP_JS);
