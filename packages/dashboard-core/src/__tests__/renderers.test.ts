@@ -7,31 +7,43 @@ import { dirname } from "node:path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// P4: pure renderers + backoff live in assets/app.js (browser-only by default).
-// These tests load the file as text, eval the renderer + backoff declarations
-// in an isolated scope, and assert their behavior. The browser-only `boot()`
-// (DOM + WebSocket) is exercised by the integration tests in P5/P6.
-const appJs = readFileSync(join(__dirname, "..", "assets", "app.js"), "utf8");
-// Strip ESM `export` statements; the browser doesn't need them at runtime,
-// and stripping lets the iso-function pick up the bare declarations.
-const stripped = appJs
-  .replace(/^export\s+/gm, "")
-  .replace(/^if \(typeof window !== "undefined"\) boot\(\);\s*$/m, "/* boot skipped in test */");
-const iso = new Function(stripped + "\n;return { renderSessions, renderPlugins, renderCaps, renderHealth, computeBackoff, STATES };");
-const { renderSessions, renderPlugins, renderCaps, renderHealth, computeBackoff, STATES } = iso();
+// P4: pure renderers + backoff live in assets/render.js. We eval the
+// file in an isolated scope that injects a fake `window` so the IIFE
+// installs AgentideRender there. The test asserts on the resulting
+// exports.
+function loadRender() {
+  const renderJs = readFileSync(join(__dirname, "..", "assets", "render.js"), "utf8");
+  const fakeWindow: Record<string, unknown> = {};
+  const fakeSelf: Record<string, unknown> = {};
+  const fn = new Function("window", "globalThis", renderJs);
+  fn(fakeWindow, fakeSelf);
+  return fakeWindow.AgentideRender as {
+    renderSessions: (s: unknown) => string;
+    renderPlugins: (s: unknown) => string;
+    renderCaps: (s: unknown) => string;
+    renderHealth: (s: unknown) => string;
+    renderError: (msg: string) => string;
+    computeBackoff: (attempt: number) => number;
+    renderDetailRows: (rec: Record<string, unknown>) => string;
+  };
+}
 
-describe("P4 renderers + backoff (app.js pure modules)", () => {
+const R = loadRender();
+const { renderSessions, renderPlugins, renderCaps, renderHealth,
+        renderError, computeBackoff } = R;
+
+describe("P4 renderers + backoff (render.js)", () => {
   it("renderSessions draws the table with status colors", () => {
     const html = renderSessions([
       { id: "abc12345-x", status: "active", owner: "alice", createdAt: "10:00" },
       { id: "def67890-y", status: "suspended", owner: "bob", createdAt: "10:01" },
     ]);
     expect(html).toContain("table");
-    expect(html).toContain('class="s"'); // active
-    expect(html).toContain('class="sus"'); // suspended
+    expect(html).toContain('class="s"');
+    expect(html).toContain('class="sus"');
     expect(html).toContain("alice");
     expect(html).toContain("bob");
-    expect(html).toContain("data-kind=\"session\"");
+    expect(html).toContain('data-kind="session"');
   });
 
   it("renderSessions shows the empty text for zero records", () => {
@@ -72,24 +84,17 @@ describe("P4 renderers + backoff (app.js pure modules)", () => {
     expect(renderHealth(null)).toContain("unreachable");
   });
 
-  it("computeBackoff doubles to the 30s cap with ±20% jitter", () => {
-    // attempt 1 → ~1s ± 200ms
-    expect(computeBackoff(1)).toBeGreaterThanOrEqual(800);
-    expect(computeBackoff(1)).toBeLessThanOrEqual(1200);
-    // attempt 3 → ~4s ± 800ms
-    expect(computeBackoff(3)).toBeGreaterThanOrEqual(3200);
-    expect(computeBackoff(3)).toBeLessThanOrEqual(4800);
-    // attempt 10 → capped at 30s ± 6s
-    expect(computeBackoff(10)).toBeGreaterThanOrEqual(24000);
-    expect(computeBackoff(10)).toBeLessThanOrEqual(36000);
+  it("renderError wraps the verbatim GATEWAY_* message", () => {
+    expect(renderError("GATEWAY_INTERNAL_ERROR: no backing store")).toContain("error-msg");
+    expect(renderError("GATEWAY_INTERNAL_ERROR: no backing store")).toContain("no backing store");
   });
 
-  it("exposes the four state names (Q9 lifecycle)", () => {
-    expect(STATES).toEqual({
-      CONNECTING: "connecting",
-      CONNECTED: "connected",
-      DOWN: "down",
-      TERMINAL: "terminal",
-    });
+  it("computeBackoff doubles to the 30s cap with ±20% jitter", () => {
+    expect(computeBackoff(1)).toBeGreaterThanOrEqual(800);
+    expect(computeBackoff(1)).toBeLessThanOrEqual(1200);
+    expect(computeBackoff(3)).toBeGreaterThanOrEqual(3200);
+    expect(computeBackoff(3)).toBeLessThanOrEqual(4800);
+    expect(computeBackoff(10)).toBeGreaterThanOrEqual(24000);
+    expect(computeBackoff(10)).toBeLessThanOrEqual(36000);
   });
 });

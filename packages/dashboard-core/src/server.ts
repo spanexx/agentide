@@ -29,7 +29,31 @@ import { dirname, join } from "node:path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const ASSETS_DIR = join(__dirname, "..", "assets");
+
+// Resolve the served assets directory. The server runs from `dist/server.js`
+// after publish; in dev/test it may run from `src/server.ts` via vitest. The
+// published package.json ships `src/assets/` (no build step — the assets are
+// plain HTML/CSS/JS), so we look for the assets next to the source file,
+// falling back to `dist/../src/assets` when running from source.
+function resolveAssetsDir(): string {
+  // Primary: alongside the source file (matches the published package layout —
+  // `dist/server.js` is the bin, `dist/assets/` would be where a built output
+  // lands; but since we don't bundle the assets, the published layout is
+  // `dist/server.js` + `src/assets/` next to it via the package's `files`).
+  const candidates = [
+    join(__dirname, "assets"),                       // published: src/assets moved to dist/assets
+    join(__dirname, "..", "src", "assets"),         // running from src/server.ts (dev/test)
+    join(__dirname, "..", "assets"),                 // running from dist/server.js (post-bundle)
+  ];
+  for (const c of candidates) {
+    if (existsSync(join(c, "index.html"))) return c;
+  }
+  // Fallback: return the most-likely path so `existsSync(path.startsWith(...))`
+  // below still gets a meaningful prefix check.
+  return candidates[0];
+}
+
+const ASSETS_DIR = resolveAssetsDir();
 
 // Load the served index.html from the assets directory (P4). Falls back to
 // the inline placeholder if the file isn't shipped (defensive — for old

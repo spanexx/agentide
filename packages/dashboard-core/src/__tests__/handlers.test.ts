@@ -84,7 +84,7 @@ async function setupWithDashboard() {
     extraOwners: (g) => [{
       owner: "dashboard",
       capabilities: DASHBOARD_CAPS,
-      handlers: createDashboardHandlers(g, { innerToken }),
+      handlers: createDashboardHandlers(g, { innerToken, innerTenantId: "default" }),
     }],
   });
   await gateway.createTenant({ id: "default", name: "Default" });

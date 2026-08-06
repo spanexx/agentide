@@ -27,7 +27,6 @@ import type { Gateway, YamlValue } from "@spanexx/gateway-core";
 // Locked D4 shape: callerId dashboard-bot, scope platform.*.read, no
 // expectedOrigins (these are for browser-bound tokens; the internal
 // re-invoke path runs over the in-process Gateway, not over a socket).
-const DASHBOARD_BOT_TENANT = "default";
 const DASHBOARD_BOT_CALLER = "dashboard-bot";
 const DASHBOARD_BOT_SCOPE = ["platform.*.read"] as const;
 
@@ -43,6 +42,11 @@ export interface DashboardHandlerContext {
   // Forwarded to the inner invoke; mint via gateway.issueToken in the
   // composition root.
   readonly innerToken: string;
+  // Drift fix (Phase 2 Notes): the inner-caller tenant must match the
+  // outer tenant for the audit rows to be tagged correctly. Without this,
+  // any install that overrides defaultTenant is silently tagged "default"
+  // for inner audit rows. The composition root threads this through.
+  readonly innerTenantId: string;
 }
 
 // CID:handlers-001 - createDashboardHandlers
@@ -61,8 +65,9 @@ export function createDashboardHandlers(
       // Inner token is the canonical caller for the backing-cap audit row.
       token: ctx.innerToken,
       // Inner CallerIdentity — callerId dashboard-bot, scope platform.*.read.
+      // Tenant comes from the composition root (handles custom defaultTenant).
       caller: {
-        tenantId: DASHBOARD_BOT_TENANT,
+        tenantId: ctx.innerTenantId,
         callerId: DASHBOARD_BOT_CALLER,
         scope: [...DASHBOARD_BOT_SCOPE],
       },
