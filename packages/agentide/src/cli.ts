@@ -6,6 +6,7 @@
 import { homedir } from "node:os";
 import { createPlatform } from "./factory.js";
 import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { hasUrlSource } from "./config.js";
 import { runConsumer } from "./consumer.js";
 import { runStart, runStop, runDetachedStart } from "./start.js";
@@ -49,19 +50,33 @@ export function installGlobalErrorHandlers(sink: ErrorSink = defaultErrorSink): 
 // `CLI_VERSION is not defined`.  CID:dist-001 in dist.test.ts pins this.
 declare const CLI_VERSION: string;
 
+// CID:cli-version-001 - CJS-bundle-safe package.json lookup.
+// In ESM source / dev, `import.meta.url` works. In an esbuild `--format=cjs`
+// bundle (the published agentide CLI), `import.meta.url` is undefined and
+// `new URL("...", undefined)` throws synchronously, but the outer try/catch
+// hides it and we fall through to `0.0.0`. To get the real version, also try
+// the CJS __filename global that the bundle exposes.
+function resolvePackageJsonCandidates(): string[] {
+  const out: string[] = [];
+  try {
+    const meta = (import.meta as { url?: string } | undefined)?.url;
+    if (meta) {
+      out.push(new URL("../package.json", meta).toString());       // dist/cli.js → package.json
+      out.push(new URL(new URL("./cli.ts", meta).toString(), meta).toString()); // src → package.json
+    }
+  } catch { /* ESM path threw — fall through */ }
+  const cjsFilename = (globalThis as { __filename?: string }).__filename;
+  if (typeof cjsFilename === "string" && cjsFilename.length > 0) {
+    out.push(`file://${resolvePath(cjsFilename, "..", "..", "package.json")}`);
+  }
+  return out;
+}
+
 let cachedVersion: string | undefined;
 function readPackageVersion(): string {
   if (cachedVersion !== undefined) return cachedVersion;
-  // The CLI source lives at packages/agentide/src/cli.ts (one level up from
-  // the dist/ directory at build time). Resolve the package.json at runtime
-  // via import.meta.url. Walk up from the current file's location: dist/
-  // or src/, both are children of packages/agentide/.
   try {
-    const candidates = [
-      new URL("../package.json", import.meta.url),  // dist/cli.js → packages/agentide/package.json
-      new URL("../package.json", new URL("./cli.ts", import.meta.url)),  // src/cli.ts → packages/agentide/package.json (defensive)
-    ];
-    for (const url of candidates) {
+    for (const url of resolvePackageJsonCandidates()) {
       try {
         const raw = readFileSync(url, "utf-8") as string;
         const pkg = JSON.parse(raw) as { version?: string };
@@ -96,7 +111,7 @@ function buildHelp(): string {
 
 Usage:
   agentide init    [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]
-  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--port-sdk <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>] [--pid-file <path>] [--log-file <path>] [--foreground] [--enable-oidc] [--no-tls]
+  agentide start   [--data-dir <path>] [--bind <ip>] [--port-mcp <n>] [--port-sdk <n>] [--dashboard-port <n>] [--no-mcp] [--no-ws] [--default-tenant <id>] [--default-tenant-name <name>] [--pid-file <path>] [--log-file <path>] [--foreground] [--enable-oidc] [--no-tls]
   agentide stop    [--pid-file <path>]
   agentide status  [--data-dir <path>] [--pid-file <path>] [--url ...] [--token ...] [--json] [remote-only if --url given]  (remote gateway.status)
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
@@ -135,7 +150,27 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     const tok = argv[i];
     if (tok === undefined) break;
     if (tok.startsWith("--")) {
-      const key = tok.slice(2);
+      // Split on '=' so `--flag=value` parses to { flag: "value" } (matches
+      // the convention used by --port-sdk, --port-mcp, --bind, etc.). When
+      // the parser was first written, only `--flag value` was supported and
+      // `--flag=value` silently became a key with `=value` baked in — that
+      // hid flag bugs in CI. CID:cli-args-001.
+      const eq = tok.indexOf("=");
+      const key = eq >= 0 ? tok.slice(2, eq) : tok.slice(2);
+      const inlineValue = eq >= 0 ? tok.slice(eq + 1) : undefined;
+      if (inlineValue !== undefined) {
+        // `--flag=value` — record the value directly, do not consume argv[i+1].
+        const existing = flags[key];
+        if (typeof existing === "string") {
+          flags[key] = [existing, inlineValue];
+        } else if (Array.isArray(existing)) {
+          existing.push(inlineValue);
+        } else {
+          flags[key] = inlineValue;
+        }
+        i += 1;
+        continue;
+      }
       const next = argv[i + 1];
       if (next === undefined || next.startsWith("--")) {
         flags[key] = true;
