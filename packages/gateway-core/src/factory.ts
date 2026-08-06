@@ -422,9 +422,11 @@ function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
     }),
 
     "session.list": wrap(() => {
-      // NOTE[agent]: session-manager v1 doesn't expose listSessions(tenantId). v1 returns [].
-      // v2 enhancement adds listSessions(tenantId) → SessionRecord[].
-      return [];
+      // D-45 closeout (2026-08-06): real snapshot from the session-manager
+      // store (active + archived; archive-TTL eviction is store-side).
+      // v1 returns ALL sessions across callers — sessions are not tenant-
+      // scoped yet (SessionRecord has no tenantId); v2 may filter.
+      return ctx.sessionManager.list();
     }),
 
     // === tenant ===

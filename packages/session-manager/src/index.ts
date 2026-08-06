@@ -22,6 +22,7 @@ import {
  *
  * CID Index:
  * CID:index-001 -> createSessionManager
+ * CID:index-002 -> list (session.list snapshot source, D-45 closeout)
  *
  * Quick lookup: rg -n "CID:index-" packages/session-manager/src/index.ts
  */
@@ -63,6 +64,11 @@ export function createSessionManager(
     if (!record) throw new SessionNotFoundError(sessionId);
     return record;
   };
+
+  // CID:index-002 - list
+  // Snapshot source for session.list (D-45): all records in insertion
+  // order, active + archived; archive-TTL eviction is handled by destroy.
+  const list = (): SessionRecord[] => [...sessions.values()];
 
   const save = (record: SessionRecord): SessionRecord => {
     sessions.set(record.id, record);
@@ -158,6 +164,7 @@ export function createSessionManager(
     touch,
     destroy,
     getStatus: (sessionId): SessionStatus => get(sessionId).status,
+    list,
     attachResource: (sessionId, resource) => resources.attach(sessionId, resource, sessions.get(sessionId)?.status),
     detachResource: (sessionId, resourceId) => {
       if (!sessions.has(sessionId)) throw new SessionNotFoundError(sessionId);

@@ -76,8 +76,16 @@ class InMemoryFs implements FileSystem {
     return content;
   }
   async writeFile(path: string, content: string): Promise<void> {
-    // Mirrors fs.promises.appendFile (append, not overwrite) — same as the audit.test.ts fake.
-    this.files.set(path, (this.files.get(path) ?? "") + content);
+    // Mirrors real fs semantics per consumer: the AuditWriter appends rows
+    // to audit.log; file stores (tenants.json, clients.json,
+    // registration-codes.json) OVERWRITE. The old fake appended everything,
+    // which silently corrupted clients.json (save #2 → invalid JSON →
+    // store.load() returns [] → revocation lookups missed).
+    if (path.endsWith("audit.log")) {
+      this.files.set(path, (this.files.get(path) ?? "") + content);
+    } else {
+      this.files.set(path, content);
+    }
   }
   async exists(path: string): Promise<boolean> {
     return this.files.has(path);
@@ -191,6 +199,109 @@ describe("Gateway.handleInvocation", () => {
     expect(result).toHaveProperty("output");
     if ("output" in result) {
       expect(result.output).toMatchObject({ ownerId: "alice", status: "active" });
+    }
+  });
+
+  // D-45 closeout (2026-08-06): session.list returns the real snapshot —
+  // records created via session.create (or the session manager) show up;
+  // destroyed sessions stay visible as archived. The CLI `sessions` alias
+  // and the dashboard Sessions view depend on this.
+  it("session.list returns the real session snapshot (D-45)", async () => {
+    const { gateway, clock } = await setup();
+    const create = await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["*"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["*"] },
+      capability: { name: "session.create" },
+      input: { ownerId: "alice", adapterType: "cli" },
+    });
+    expect(create).toHaveProperty("output");
+    const created = "output" in create ? (create.output as { id: string }) : { id: "" };
+    expect(created.id).toBeTruthy();
+
+    const list = await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["*"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["*"] },
+      capability: { name: "session.list" },
+      input: {},
+    });
+    expect(list).toHaveProperty("output");
+    if ("output" in list) {
+      const records = list.output as Array<{ id: string; status: string; ownerId: string }>;
+      expect(records.map((r) => r.id)).toContain(created.id);
+      expect(records.find((r) => r.id === created.id)).toMatchObject({ status: "active", ownerId: "alice" });
+    }
+
+    // Destroyed sessions remain visible as archived (operator can see history).
+    await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["*"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["*"] },
+      capability: { name: "session.destroy" },
+      input: { sessionId: created.id },
+      sessionId: created.id,
+    });
+    const after = await gateway.handleInvocation({
+      token: makeToken(clock, "default", "alice", ["*"]),
+      caller: { tenantId: "default", callerId: "alice", scope: ["*"] },
+      capability: { name: "session.list" },
+      input: {},
+    });
+    if ("output" in after) {
+      const records = after.output as Array<{ id: string; status: string }>;
+      expect(records.find((r) => r.id === created.id)).toMatchObject({ status: "archived" });
+    }
+  });
+
+  // D-72 pin (2026-08-06): active revocation fires on the invocation path.
+  // A token minted for a client_credentials identity (`cli_` callerId) is
+  // re-checked against ClientRecord.revoked AFTER JWT verification — a
+  // revoked client's token must be denied even before its expiry. The check
+  // lives at handle-invocation.ts (4a); this test pins it end-to-end.
+  it("denies invocation with a revoked client token (D-72)", async () => {
+    const { gateway, sm, clock } = await setup();
+    const session = sm.create({ ownerId: "ops", adapterType: "cli" });
+    const withSession = { sessionId: session.id };
+    const created = await gateway.handleInvocation({
+      token: makeToken(clock, "default", "ops", ["*"]),
+      caller: { tenantId: "default", callerId: "ops", scope: ["*"] },
+      capability: { name: "client.create" },
+      input: { tenantId: "default", name: "bot", defaultScope: ["*"] },
+      ...withSession,
+    });
+    expect(created).toHaveProperty("output");
+    const clientId = "output" in created
+      ? (created.output as { record?: { id?: string } }).record?.id ?? ""
+      : "";
+    expect(clientId).toMatch(/^cli_/);
+
+    // Token minted for the client identity — still valid by signature/expiry.
+    const clientToken = makeToken(clock, "default", clientId, ["*"]);
+    const before = await gateway.handleInvocation({
+      token: clientToken,
+      caller: { tenantId: "default", callerId: clientId, scope: ["*"] },
+      capability: { name: "session.list" },
+      input: {},
+    });
+    expect(before).toHaveProperty("output");
+
+    const revoked = await gateway.handleInvocation({
+      token: makeToken(clock, "default", "ops", ["*"]),
+      caller: { tenantId: "default", callerId: "ops", scope: ["*"] },
+      capability: { name: "client.revoke" },
+      input: { clientId },
+      ...withSession,
+    });
+    expect(revoked).toHaveProperty("output");
+
+    const after = await gateway.handleInvocation({
+      token: clientToken,
+      caller: { tenantId: "default", callerId: clientId, scope: ["*"] },
+      capability: { name: "session.list" },
+      input: {},
+    });
+    expect(after).toHaveProperty("error");
+    if ("error" in after) {
+      expect(after.error.code).toBe(ERROR_CODES.AUTH_FAILED);
+      expect(after.error.details).toMatchObject({ error: "client_revoked" });
     }
   });
 

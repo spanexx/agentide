@@ -57,6 +57,33 @@ describe("SessionManager", () => {
     expect(session.createdAt).toBe(session.lastActivityAt);
   });
 
+  // D-45 closeout (2026-08-06): list() is the snapshot source for
+  // session.list — the Sessions view / `agentide sessions` alias.
+  it("list() returns all live sessions (snapshot source)", () => {
+    const clock = new TestClock();
+    const manager = createSessionManager(createEventBus(), { clock });
+    expect(manager.list()).toEqual([]);
+    const a = manager.create({ ownerId: "app-a", adapterType: "cli" });
+    clock.nowValue += 1;
+    const b = manager.create({ ownerId: "app-b", adapterType: "ws" });
+    const all = manager.list();
+    expect(all.map((s) => s.id)).toEqual([a.id, b.id]);
+    expect(all[0]).toMatchObject({ ownerId: "app-a", status: "active" });
+    expect(all[1]).toMatchObject({ ownerId: "app-b", status: "active" });
+  });
+
+  it("list() keeps archived sessions until the archive TTL evicts them", () => {
+    const clock = new TestClock();
+    const manager = createSessionManager(createEventBus(), { clock });
+    const a = manager.create({ ownerId: "app-a", adapterType: "mcp" });
+    manager.destroy(a.id, "explicit");
+    expect(manager.list().map((s) => s.id)).toEqual([a.id]);
+    expect(manager.list()[0]?.status).toBe("archived");
+    // After the archive TTL the record is evicted from the store.
+    clock.advance(604_800_000 + 1);
+    expect(manager.list()).toEqual([]);
+  });
+
   it("applies per-session timeout metadata", () => {
     const manager = createSessionManager(createEventBus());
     const session = manager.create({ ownerId: "app", adapterType: "cli", metadata: { idleTimeoutMs: "25", suspendedTtlMs: "50" } });
