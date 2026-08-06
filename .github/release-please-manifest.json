@@ -1,7 +1,7 @@
 {
   "packages/adapter-mcp": "0.2.0",
   "packages/adapter-websocket": "0.2.0",
-  "packages/agentide": "0.2.0",
+  "packages/agentide": "0.2.1",
   "packages/backend-runtime": "0.2.0",
   "packages/capability-registry": "0.2.0",
   "packages/errors": "0.1.0",
