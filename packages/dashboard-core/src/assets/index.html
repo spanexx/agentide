@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentide Dashboard</title>
+  <link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body>
+  <header>
+    <h1>Agentide Dashboard</h1>
+    <span class="pill connected" id="connPill">connected</span>
+    <span class="muted" id="tokenHint">token: <span id="tokenShort">…</span> · origin-bound · 1h</span>
+  </header>
+
+  <div class="banner down" id="downBanner">gateway unreachable — reconnecting (<span id="backoffState">…</span>) · panels show STALE</div>
+  <div class="banner token" id="tokenBanner">token expired or origin mismatch (auth.error) — reload the page to mint a fresh token</div>
+
+  <div class="grid">
+    <section class="panel" id="pSessions">
+      <h2>Active Sessions <span class="live">● live</span></h2>
+      <div class="body" id="sessionsBody"></div>
+    </section>
+    <section class="panel" id="pPlugins">
+      <h2>Installed Plugins <span class="live">● live</span></h2>
+      <div class="body" id="pluginsBody"></div>
+    </section>
+    <section class="panel" id="pCapabilities">
+      <h2>Registered Capabilities <span class="live">● live</span></h2>
+      <div class="body" id="capsBody"></div>
+    </section>
+    <section class="panel" id="pHealth">
+      <h2>Runtime Health <span class="live">● live</span></h2>
+      <div class="body" id="healthBody"></div>
+    </section>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <div class="detail" id="detail">
+    <span class="close" id="detailClose">✕</span>
+    <h3 id="detailTitle"></h3>
+    <div class="src" id="detailSrc"></div>
+    <dl id="detailBody"></dl>
+  </div>
+
+  <div class="log" id="log"></div>
+
+  <script>window.__AGENTIDE_TOKEN__ = "__AGENTIDE_TOKEN__";</script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
