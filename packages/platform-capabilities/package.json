@@ -1,8 +1,8 @@
 {
   "name": "@spanexx/platform-capabilities",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": false,
-  "description": "Single source of truth for all 25 platform-capability registrations (16 migrated from gateway-core + 9 new). Pure registration seam \u2014 no handlers, no state.",
+  "description": "Single source of truth for all 25 platform-capability registrations (16 migrated from gateway-core + 9 new). Pure registration seam — no handlers, no state.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
