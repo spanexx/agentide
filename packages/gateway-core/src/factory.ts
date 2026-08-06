@@ -213,7 +213,7 @@ export async function createGateway(
 
   await registerPlatformCapabilities(registry);
 
-  return {
+  const gateway: Gateway = {
     handleInvocation: (req) =>
       handleInvocation(req, {
         registry,
@@ -235,6 +235,10 @@ export async function createGateway(
         clientSvc,
         // D-46 closeout (2026-08-06): metrics counter for the exit paths.
         metrics,
+        // P1 dashboard-core (D2 lock): extra session-less names from config.
+        ...(config.extraSessionLessCapabilities !== undefined && config.extraSessionLessCapabilities.length > 0
+          ? { sessionLessCapabilities: new Set(config.extraSessionLessCapabilities) }
+          : {}),
       }),
 
     registerAdapter: async (adapter: Adapter): Promise<void> => {
@@ -327,6 +331,17 @@ export async function createGateway(
       return { uptimeMs, tenantCount, pluginCount, auditLogBytes };
     },
   };
+
+  // P1 dashboard-core (D2 lock): inject extra owners AFTER the gateway object
+  // exists (their handlers close over it for the double-invoke pattern).
+  // Registry + dispatch map are mutated in place — every future invocation
+  // sees the extras; the kernel never imports the dashboard.
+  for (const extra of config.extraOwners?.(gateway) ?? []) {
+    await registry.register(extra.owner, { owner: extra.owner, capabilities: extra.capabilities });
+    Object.assign(handlers.gatewayHandlers, extra.handlers);
+  }
+
+  return gateway;
 }
 
 async function auditLogSize(auditLogPath: string, fs: FileSystem): Promise<number> {

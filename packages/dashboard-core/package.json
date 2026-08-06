@@ -1,0 +1,54 @@
+{
+  "name": "@spanexx/dashboard-core",
+  "version": "0.0.1",
+  "private": false,
+  "description": "Web dashboard for Agentide — dashboard.view.* read caps (thin passthrough wrappers) + static UI server. BI[13].",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build --pretty",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "typecheck": "tsc --build --pretty",
+    "prepublishOnly": "bash scripts/prepare-publish.sh"
+  },
+  "dependencies": {
+    "@spanexx/capability-registry": "workspace:*",
+    "@spanexx/errors": "workspace:*",
+    "@spanexx/gateway-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "eslint": "^10.8.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agentide",
+    "dashboard",
+    "platform"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

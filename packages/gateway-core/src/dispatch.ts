@@ -139,6 +139,14 @@ export async function dispatchCapability(
       );
       return result as JsonValue;
     }
+    // P1 dashboard-core (D2 lock): extra owners — any capability with an
+    // in-process gateway handler dispatches regardless of owner string. The
+    // composition root decides what "dashboard" means; the kernel only
+    // consults the handler map (no owner-name hardcoding here).
+    const extraHandler = ctx.handlers.gatewayHandlers[capability.name];
+    if (extraHandler) {
+      return await extraHandler(input, sessionId);
+    }
     throw new GatewayError(
       ERROR_CODES.PLUGIN_NOT_INSTALLED,
       `unknown capability owner "${owner}"`,
