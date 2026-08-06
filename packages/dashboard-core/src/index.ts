@@ -30,3 +30,15 @@ export {
   type DashboardBotToken,
   type DashboardHandlerContext,
 } from "./handlers.js";
+export {
+  mintDashboardToken,
+  type DashboardMintResult,
+} from "./token.js";
+export {
+  createDashboardServer,
+  type DashboardServer,
+} from "./server.js";
+export {
+  DASHBOARD_DEFAULT_PORT,
+  DASHBOARD_LOOPBACK_HOSTS,
+} from "./config.js";
