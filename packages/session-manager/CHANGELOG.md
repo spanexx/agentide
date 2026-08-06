@@ -19,6 +19,7 @@
 * **session-manager:** align docs and per-symbol CID blocks, fix detach contract ([ee65769](https://github.com/spanexx/agentide/commit/ee657694df4eb41d4015f246ff4f3e334d555ac5))
 * **session-manager:** clear timers map entry on archive ttl ([599f856](https://github.com/spanexx/agentide/commit/599f8565fe0456fa185e01e9057d82b8985dc779))
 * **session-manager:** drop unused [@ts-expect-error](https://github.com/ts-expect-error) directive ([a946942](https://github.com/spanexx/agentide/commit/a9469428b2edadac9e60ab8bf366e51c3e2ec84b))
+* **session-manager:** real session.list snapshot (D-45 closeout) ([#30](https://github.com/spanexx/agentide/issues/30)) ([daa0ec3](https://github.com/spanexx/agentide/commit/daa0ec36c209f36522670d6ba22aaabb5866a20e))
 
 ## [0.2.0](https://github.com/spanexx/agentide/compare/session-manager-v0.1.1...session-manager-v0.2.0) (2026-08-05)
 
