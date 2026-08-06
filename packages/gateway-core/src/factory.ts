@@ -16,7 +16,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { appendFile, writeFile as fsWriteFile, readFile, access } from "node:fs/promises";
+import { appendFile, writeFile as fsWriteFile, readFile, access, mkdir } from "node:fs/promises";
 import type { EventBus } from "@spanexx/event-bus";
 import type { CapabilityRegistry } from "@spanexx/capability-registry";
 import { registerPlatformCapabilities } from "@spanexx/platform-capabilities";
@@ -709,5 +709,8 @@ function nodeFileSystem(): FileSystem {
         return false;
       }
     },
+    // CID:factory-013 - D-78: recursive mkdir so `agentide init` can
+    // bootstrap a fresh data dir without the operator running `mkdir -p`.
+    mkdir: async (path, options) => { await mkdir(path, { recursive: options?.recursive ?? true }); },
   };
 }

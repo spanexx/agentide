@@ -1,0 +1,89 @@
+CLI quality-of-life pack — Grill Notes
+
+Status: Locked
+Date: 2026-08-06
+Source: Drift entries D-78, D-81, D-83, D-84 in agentide/docs/drift.md.
+
+Parent: agentide-cli-consumer (row 28) — these drifts were intentionally deferred from the cli-consumer-ux pack (commit 1a6bfca). They were tagged "Owner: agentide CLI pack (next)" in drift.md.
+
+What this pack is about
+
+- Closes four open drifts from the 2026-08-06 e2e test that were intentionally deferred from the cli-consumer-ux pack (drift log says "Owner: agentide CLI pack (next)").
+- D-78 (High): `agentide init --data-dir <fresh>` fails with raw ENOENT.
+- D-81 (Medium): `agentide status` (no --data-dir) defaults to cwd-relative.
+- D-83 (Low): `agentide stop` exit codes 0 vs 1 inconsistent.
+- D-84 (Low): `agentide client grant` flag mismatch, no per-subcommand help.
+- Scope: small, surgical fixes. No new surface, no new dependencies, no consumer-websocket changes.
+
+What this pack does NOT touch
+
+- Does NOT revisit the consumer UX (D-79, D-80) — that was the cli-consumer-ux pack.
+- Does NOT touch the dashboard (D-82 — separate dashboard-core pack).
+- Does NOT add new subcommands. Per-subcommand help is a doc/CLI-help fix, not a new surface.
+- Does NOT change exit-code semantics for `start`, `init`, or any other command — only `stop`'s "nothing running" branch.
+
+Questions and answers locked so far
+
+1. Should `agentide init` silently `mkdir -p` the data dir, emit a friendly `mkdir -p` hint, or do both? (D-78: current behavior fails with raw ENOENT on a fresh path; the start command has a friendlier hint at CID:start-003.)
+
+Answer:
+- Option A (silent mkdir): top of `runInit` does `await fs.mkdir(dataDir, { recursive: true })` (Node `fs/promises`). Self-sufficient; the `init` flow already prints `# Initialized Agentide in <dataDir>` so the path is visible.
+
+Why:
+- `init` is the bootstrap path. If the operator has to know to `mkdir` first, `init` isn't doing its job. Self-sufficient beats discoverable.
+- The `start` command's friendly hint stays as-is — it's a different surface (start of a long-running process vs. bootstrap of a data dir) and the hint is still useful there for the case where the operator intentionally runs `start` against a non-`init`-managed dir.
+- One-line path confirmation is nice-to-have but the existing `# Initialized` banner covers it.
+
+Source: drift.md D-78, packages/agentide/src/cli.ts runInit (L286-315), packages/agentide/src/start.ts CID:start-003 (L118-132).
+
+2. How should `agentide status` recover the running gateway's data-dir? (D-81: pid file is canonical, but currently only carries the pid; status falls back to cwd-relative default and fails when cwd ≠ start cwd.)
+
+Answer:
+- Option A: extend the pid file from a single-line `<pid>\n` to JSON `{"pid": 1234, "dataDir": "/tmp/foo", "startedAt": "2026-08-06T..."}`. `status` reads JSON, uses `dataDir` from the file. Backward-compat: `stop` falls back to "pid is a number" if JSON parse fails (older pid files from before this pack stay parseable; they just lose the data-dir metadata, which is fine — `stop` doesn't need it).
+
+Why:
+- The pid file is already the canonical artifact. Extending it (not splitting) keeps file-count the same and the failure modes obvious (one file, either parseable or not).
+- The backward-compat fallback is two lines. Older versions of the CLI keep working.
+- Option B (sibling .json) is a close second but doubles the file count and the failure modes. Option C (env + default walk) can't reach custom `--data-dir` paths.
+
+Source: drift.md D-81, packages/agentide/src/cli.ts runStatus (data-dir resolver), packages/agentide/src/start.ts runDetachedStart (writes pid file).
+
+3. Should `agentide stop` unify on rc 0, rc 1, or document the distinction? (D-83: pid file present + pid dead = rc 0; pid file missing = rc 1; both mean "nothing to stop.")
+
+Answer:
+- Option A: unify on rc 0 in both branches. "Nothing to stop" is success for `stop` — the desired post-condition ("no gateway running") is met. The two stderr messages still differ (one mentions the dead PID cleanup, one says no pid file) so the operator gets the right diagnostic; only the exit code unifies.
+
+Why:
+- User-facing behavior of `agentide stop` is "ensure no gateway is running." If the gateway is already not running, the goal is met.
+- Shell scripts want idempotent stop (`stop && rm /tmp/something`). Today's rc 1 breaks those.
+- `systemctl`'s strict semantics ("did something" vs "nothing to do") is for a system with first-class "active" state, not a process-managed pid file.
+- The two stderr messages preserve the diagnostic; the operator still sees what happened.
+
+Source: drift.md D-83, packages/agentide/src/start.ts runStop (CID:start-009).
+
+4. How should `agentide client grant` (and the other client subcommands) surface their flag set? (D-84: the help row dumps six subcommands without per-subcommand flags; `client grant` legitimately uses a different flag set than the rest.)
+
+Answer:
+- Option A: per-subcommand help via dispatcher. `agentide client grant` (or any subcommand) with no positional args prints the per-subcommand help and exits 0. Same for `create|list|grant|revoke|rotate|redeem`. The current single-line help stays as the top-level summary.
+
+Why:
+- The dispatcher pattern is standard CLI UX (every operator-facing CLI does it).
+- Change is small: one new `if no positional in client subcommand` branch.
+- The top-level summary answers "what subcommands exist?"; per-subcommand help answers "how do I use this subcommand?". Two distinct surfaces.
+- The drift's "To fix" recommendation explicitly says per-subcommand help.
+- Option C (rename grant's flags) is backward-incompatible; the operator's existing scripts break.
+- Option B (docs only) preserves the current operator friction (guess the flags).
+
+Source: drift.md D-84, packages/agentide/src/cli.ts runClient (L420+) — the test fs / one-line refactor happens there.
+
+Tags: init-mkdir, pidfile-json, stop-exit-code, client-subcommand-help
+
+No remaining open questions
+
+Locked at 2026-08-06. Ready for PRD-TRD.
+
+Tags: <filled at lock time>
+
+No remaining open questions
+
+<added verbatim when all questions resolve.>

@@ -228,7 +228,7 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
     return result(`${cliVersion()}\n`);
   }
 
-  if (cmd === undefined || cmd === "--help" || cmd === "-h" || flags["help"] === true) {
+  if (cmd === undefined || cmd === "--help" || cmd === "-h" || (flags["help"] === true && cmd === undefined)) {
     return result(buildHelp());
   }
 
@@ -246,7 +246,7 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
         // in-process when no remote config; remote (gateway.status) otherwise
         return (await hasUrlSource(argv, process.env))
           ? await runConsumer(argv, consumerOptions(argv))
-          : await runStatus(dataDir, opts);
+          : await runStatus(dataDir, opts, getFlag(flags, "pid-file", await defaultPidFile()));
       case "tenant":
         return await runTenant(positional.slice(1), dataDir, flags, opts);
       case "token":
@@ -292,6 +292,14 @@ function consumerOptions(argv: readonly string[]) {
 async function runInit(dataDir: string, flags: Record<string, string | boolean | string[]>, opts: CliOptions): Promise<CliResult> {
   const tenantId = getFlag(flags, "default-tenant", "default");
   const tenantName = getFlag(flags, "default-tenant-name", tenantId);
+  // CID:cli-init-001 - D-78: create the data dir if it doesn't exist.
+  // The CLI is the bootstrap path; the operator should never have to `mkdir -p`
+  // before `init`. Idempotent (recursive: true is a no-op on existing dirs).
+  // Uses the FileSystem seam — the production fs implements mkdir; in-memory
+  // fakes omit it (they don't need real directories) and the mkdir is skipped.
+  if (typeof opts.fs.mkdir === "function") {
+    await opts.fs.mkdir(dataDir, { recursive: true });
+  }
   const platform = await createPlatform({
     fs: opts.fs,
     dataDir,
@@ -321,10 +329,29 @@ async function runInit(dataDir: string, flags: Record<string, string | boolean |
 }
 
 
-async function runStatus(dataDir: string, opts: CliOptions): Promise<CliResult> {
+// CID:cli-status-001 - pidFile for status. The gateway's default pid file is
+// /tmp/agentide.pid; a custom --pid-file may have been used at start. When a
+// pid file is present and carries dataDir (D-81), status uses that instead of
+// the cwd-relative default.
+async function defaultPidFile(): Promise<string> {
+  const { DEFAULT_PID_FILE } = await import("./lifecycle.js");
+  return DEFAULT_PID_FILE;
+}
+
+async function runStatus(dataDir: string, opts: CliOptions, pidFile?: string): Promise<CliResult> {
+  let effectiveDataDir = dataDir;
+  if (pidFile !== undefined) {
+    const { readPidFile } = await import("./lifecycle.js");
+    const info = await readPidFile(pidFile);
+    if (info?.dataDir !== undefined) {
+      // D-81: the gateway was started with a non-default data-dir; recover it
+      // from the pid file so `status` works from any cwd.
+      effectiveDataDir = info.dataDir;
+    }
+  }
   const platform = await createPlatform({
     fs: opts.fs,
-    dataDir,
+    dataDir: effectiveDataDir,
     adapterMcp: false,
     adapterWs: false,
   });
@@ -427,6 +454,32 @@ async function runToken(
 // discovery/issues: the plaintext secret is written to <dataDir>/clients/
 //   .secret-<id>.txt with 0600 permissions and is only echoed to stdout with
 //   --print. Real-fs runs retry the write after mkdir (InMemoryFs never fails).
+// CID:cli-009 - clientHelp
+// Purpose: D-84 per-subcommand help. `agentide client` (no subcommand) or
+// `agentide client <sub> --help` prints the subcommand's flag set and exits 0.
+function clientHelp(sub?: string): string {
+  const lines: Record<string, string> = {
+    "": `agentide client  — machine identities (client_credentials)
+
+Usage:
+  agentide client create   --tenant <id> --name <name> [--scope <csv>] [--print] [--data-dir <path>]
+  agentide client list     [--tenant <id>] [--data-dir <path>]
+  agentide client grant    --tenant <id> --name <name> [--scope <csv>] [--ttl-min <n>] [--data-dir <path>]
+  agentide client revoke   --client-id <id> [--data-dir <path>]
+  agentide client rotate   --client-id <id> [--data-dir <path>]
+  agentide client redeem   --code <rc_...> [--data-dir <path>]
+
+Run 'agentide client <subcommand> --help' for subcommand-specific flags.`,
+    "create": "agentide client create  --tenant <id> --name <name> [--scope <csv>] [--print] [--data-dir <path>]\n",
+    "list": "agentide client list    [--tenant <id>] [--data-dir <path>]\n",
+    "grant": "agentide client grant   --tenant <id> --name <name> [--scope <csv>] [--ttl-min <n>] [--data-dir <path>]\n",
+    "revoke": "agentide client revoke --client-id <id> [--data-dir <path>]\n",
+    "rotate": "agentide client rotate --client-id <id> [--data-dir <path>]\n",
+    "redeem": "agentide client redeem --code <rc_...> [--data-dir <path>]\n",
+  };
+  return lines[sub ?? ""] ?? lines[""];
+}
+
 async function runClient(
   subArgs: readonly string[],
   dataDir: string,
@@ -434,6 +487,10 @@ async function runClient(
   opts: CliOptions,
 ): Promise<CliResult> {
   const sub = subArgs[0];
+  // D-84: no subcommand, or explicit --help, prints the per-subcommand help.
+  if (sub === undefined || flags["help"] === true) {
+    return result(clientHelp(sub));
+  }
   const platform = await createPlatform({
     fs: opts.fs,
     dataDir,

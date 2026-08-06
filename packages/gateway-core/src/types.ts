@@ -146,6 +146,10 @@ export interface FileSystem {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string, mode?: number): Promise<void>;
   exists(path: string): Promise<boolean>;
+  /** Optional recursive dir creation. The production fs implements it;
+   *  in-memory fakes may omit it (runInit falls back to the real fs.
+   *  Making it optional keeps every existing FileSystem fake compatible). */
+  mkdir?(path: string, options?: { recursive?: boolean }): Promise<void>;
 }
 
 // CID:types-010 - GatewayConfig

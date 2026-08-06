@@ -252,17 +252,19 @@ export async function runStop(
   const { getFlag } = await import("./cli.js");
 
   const pidFile = getFlag(flags, "pid-file", DEFAULT_PID_FILE);
-  const pid = await readPidFile(pidFile);
-  if (pid === null) {
-    return result("", `no gateway running (no pid file at ${pidFile})\n`, 1);
+  const info = await readPidFile(pidFile);
+  if (info === null) {
+    // D-83: both "nothing running" branches exit 0 so `agentide stop && …`
+    // works in shell scripts. The message keeps the diagnostic.
+    return result("", `no gateway running (no pid file at ${pidFile})\n`, 0);
   }
-  const outcome = await stopByPid(pid);
+  const outcome = await stopByPid(info.pid);
   await removePidFile(pidFile);
 
   const msgs: Record<typeof outcome, string> = {
-    "graceful": `Gateway stopped (PID ${pid}, graceful).`,
-    "forced": `Gateway stopped (PID ${pid}, SIGKILL — did not respond to SIGTERM within 10s).`,
-    "already-gone": `Gateway (PID ${pid}) was already not running. Pid file removed.`,
+    "graceful": `Gateway stopped (PID ${info.pid}, graceful).`,
+    "forced": `Gateway stopped (PID ${info.pid}, SIGKILL — did not respond to SIGTERM within 10s).`,
+    "already-gone": `Gateway (PID ${info.pid}) was already not running. Pid file removed.`,
   };
   return result(`${msgs[outcome]}\n`);
 }
@@ -301,8 +303,8 @@ export async function runDetachedStart(
 
   // Refuse to start a second one when one is already alive.
   const existing = await readPidFile(pidFile);
-  if (existing !== null && isAlive(existing)) {
-    return result("", `error: gateway already running (PID ${existing}). Use \`agentide stop\` first.\n`, 2);
+  if (existing !== null && isAlive(existing.pid)) {
+    return result("", `error: gateway already running (PID ${existing.pid}). Use \`agentide stop\` first.\n`, 2);
   }
 
   // Pass-through argv (everything we received) so the child re-runs runCli
@@ -334,7 +336,8 @@ export async function runDetachedStart(
   if ("error" in detached) {
     return result("", `error: detach failed: ${detached.error}\n`, 2);
   }
-  await writePidFile(pidFile, detached.childPid);
+  // D-81: carry the data-dir in the pid file so `status` recovers it from any cwd.
+  await writePidFile(pidFile, detached.childPid, dataDir, new Date().toISOString());
   return result(
     `Detached. PID: ${detached.childPid}. ` +
       `Logs: ${logFile}. ` +

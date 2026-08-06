@@ -99,15 +99,42 @@ export async function printTokenWithClear(token: string): Promise<void> {
  * Sid: these touch /tmp which is OS-volatile, so reboots wipe them — exactly
  * what we want (no stale pids survive a restart).
  */
-export async function writePidFile(path: string, pid: number): Promise<void> {
-  await fs.writeFile(path, String(pid), { mode: 0o644 });
+/** Full pid-file payload: the gateway's pid + the data-dir it was started
+ *  with (+ a startedAt timestamp). `status` reads dataDir from here so it
+ *  can recover the right data path from any cwd (D-81). */
+export interface PidFileInfo {
+  pid: number;
+  dataDir?: string;
+  startedAt?: string;
 }
 
-export async function readPidFile(path: string): Promise<number | null> {
+export async function writePidFile(path: string, pid: number, dataDir?: string, startedAt?: string): Promise<void> {
+  await fs.writeFile(
+    path,
+    JSON.stringify({ pid, ...(dataDir === undefined ? {} : { dataDir }), ...(startedAt === undefined ? {} : { startedAt }) }),
+    { mode: 0o644 },
+  );
+}
+
+export async function readPidFile(path: string): Promise<PidFileInfo | null> {
   try {
     const raw = await fs.readFile(path, "utf8");
-    const pid = Number.parseInt(raw.trim(), 10);
-    return Number.isFinite(pid) ? pid : null;
+    const trimmed = raw.trim();
+    // Prefer JSON (D-81). Legacy pid files are a single integer — fall back.
+    if (trimmed.startsWith("{")) {
+      const parsed = JSON.parse(trimmed) as { pid?: string | number; dataDir?: string; startedAt?: string };
+      const pid = typeof parsed.pid === "number" ? parsed.pid : Number.parseInt(String(parsed.pid), 10);
+      if (Number.isFinite(pid)) {
+        return {
+          pid,
+          ...(typeof parsed.dataDir === "string" ? { dataDir: parsed.dataDir } : {}),
+          ...(typeof parsed.startedAt === "string" ? { startedAt: parsed.startedAt } : {}),
+        };
+      }
+      return null;
+    }
+    const pid = Number.parseInt(trimmed, 10);
+    return Number.isFinite(pid) ? { pid } : null;
   } catch {
     return null;
   }

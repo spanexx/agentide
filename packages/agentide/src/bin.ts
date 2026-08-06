@@ -30,6 +30,10 @@ const defaultFs: FileSystem = {
   exists: async (path) => {
     try { await fsPromises.access(path); return true; } catch { return false; }
   },
+  // CID:bin-002 - D-78: the bundled CLI's fs supports recursive mkdir so
+  // `agentide init --data-dir <fresh>` bootstraps the dir (mirrors the
+  // gateway-core nodeFileSystem helper).
+  mkdir: async (path, options): Promise<void> => { await fsPromises.mkdir(path, { recursive: options?.recursive ?? true }); },
 };
 
 /**

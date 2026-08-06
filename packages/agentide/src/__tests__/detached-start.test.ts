@@ -53,7 +53,11 @@ function isAlive(pid: number): boolean {
 function readPid(pidFile: string): number | null {
   try {
     const raw = fs.readFileSync(pidFile, "utf8").trim();
-    const pid = Number.parseInt(raw, 10);
+    // D-81: pid file is now JSON {"pid":…,"dataDir":…,…}; legacy plain-number
+    // files still parse.
+    const pid = raw.startsWith("{")
+      ? Number.parseInt(String(JSON.parse(raw).pid), 10)
+      : Number.parseInt(raw, 10);
     return Number.isFinite(pid) ? pid : null;
   } catch {
     return null;
