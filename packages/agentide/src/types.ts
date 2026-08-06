@@ -128,6 +128,22 @@ export interface CreatePlatformConfig {
    * token endpoint. Wired from `agentide start --no-tls`.
    */
   readonly requireTls?: boolean;
+
+  /**
+   * CID:platform-types-012 - dashboardPort (BI[13] dashboard-core, P6)
+   * When set, createPlatform() registers the four `dashboard.view.*` thin
+   * passthrough caps (via gateway-core's extraOwners + extraSessionLessCapabilities
+   * seams — D2 lock) and starts the dashboard static server (Q9 lock) on
+   * this port. The server binds 127.0.0.1 by default, mints a fresh
+   * origin-bound dashboard-bot token per GET / (D4 lock), and serves the
+   * served page from packages/dashboard-core/src/assets/. Default 7200.
+   *
+   * Port 7200 is RESERVED for the dashboard — adapter-websocket (7300) and
+   * the SDK door (7350) must never collide. When undefined, no dashboard
+   * caps are registered and no static server starts (preserves backward
+   * compat — same shape as omitting `backendRuntimePort` or `adapterMcp`).
+   */
+  readonly dashboardPort?: number;
 }
 
 // CID:platform-types-002 - Platform
@@ -160,5 +176,13 @@ export interface Platform {
    */
   readonly mcpAdapter?: import("@spanexx/adapter-mcp").McpAdapter;
   readonly wsAdapter?: import("@spanexx/adapter-websocket").WebSocketAdapter;
+  /**
+   * CID:platform-types-013 - dashboardServer
+   * BI[13]: present when createPlatform() was called with dashboardPort.
+   *   Undefined otherwise. Exposed so tests and operators can introspect the
+   *   bound port (port 0 = OS-assigned at start time).
+   * Used by: integration tests, custom boot scripts.
+   */
+  readonly dashboardServer?: import("@spanexx/dashboard-core").DashboardServer;
   stop(): Promise<void>;
 }

@@ -171,7 +171,7 @@ export interface GatewayConfig {
   // P1 dashboard-core (D2 lock): extra owners registered at factory time —
   // capability records + handlers merged into the dispatch map. The kernel
   // stays dashboard-agnostic; the composition root supplies the owner.
-  readonly extraOwners?: (gateway: Gateway) => readonly ExtraOwner[];
+  readonly extraOwners?: (gateway: Gateway) => readonly ExtraOwner[] | Promise<readonly ExtraOwner[]>;
   // P1 dashboard-core (D2 lock): capability names treated as session-less in
   // addition to the kernel's built-in set (dashboard.view.* join the set).
   readonly extraSessionLessCapabilities?: readonly string[];

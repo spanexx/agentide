@@ -32,6 +32,13 @@ import { createGateway } from "@spanexx/gateway-core";
 import { createBackendRuntime, type BackendRuntime } from "@spanexx/backend-runtime";
 import { createMcpAdapter, type McpAdapter } from "@spanexx/adapter-mcp";
 import { createWebSocketAdapter, type WebSocketAdapter } from "@spanexx/adapter-websocket";
+import {
+  DASHBOARD_CAPS,
+  DASHBOARD_CAPSESSION_LESS,
+  createDashboardHandlers,
+  createDashboardServer,
+  type DashboardServer,
+} from "@spanexx/dashboard-core";
 import type { Platform, CreatePlatformConfig } from "./types.js";
 
 const DEFAULT_RATE_LIMIT = { capacity: 100, tokensPerSecond: 50 };
@@ -136,6 +143,32 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
         }
       : {}),
     ...(backendRuntime !== undefined ? { backendRuntime } : {}),
+    // BI[13] dashboard-core P6: register the dashboard.view.* caps via
+    // gateway-core's extraOwners + extraSessionLessCapabilities seam (D2
+    // lock). The composition root supplies the owner + handlers; the
+    // kernel stays dashboard-agnostic. Handlers close over the live
+    // `gateway` passed by createGateway so they can re-invoke backing caps
+    // with the dashboard-bot token.
+    ...(config.dashboardPort !== undefined
+      ? {
+          extraSessionLessCapabilities: DASHBOARD_CAPSESSION_LESS,
+          extraOwners: async (g: typeof gateway) => {
+            // Mint the dashboard-bot token via the gateway's own
+            // issueToken (uses the gateway's secret, no second key file).
+            const minted = await g.issueToken({
+              tenantId: config.defaultTenant?.id ?? "default",
+              callerId: "dashboard-bot",
+              scope: ["platform.*.read"],
+              expiresInMs: 60 * 60 * 1000,
+            });
+            return [{
+              owner: "dashboard",
+              capabilities: DASHBOARD_CAPS,
+              handlers: createDashboardHandlers(g, { innerToken: minted.token }),
+            }];
+          },
+        }
+      : {}),
   });
 
   // Bootstrap default tenant when caller provided one (idempotent — re-creating Platform against the same dataDir must not fail).
@@ -144,6 +177,21 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     if (!existing) {
       await gateway.createTenant(config.defaultTenant);
     }
+  }
+
+  // BI[13] dashboard-core P6: start the static server AFTER the gateway
+  // exists. The dashboard caps + handlers were registered through the
+  // gateway-core extraOwners + extraSessionLessCapabilities seam in the
+  // createGateway call above (see config.dashboardPort branch there). The
+  // server itself only needs the gateway reference for per-GET / token
+  // minting; the inner invoke path goes through the registered handlers.
+  let dashboardServer: DashboardServer | undefined;
+  if (config.dashboardPort !== undefined) {
+    dashboardServer = await createDashboardServer({
+      gateway,
+      clock: config.clock ?? { now: () => Date.now(), setTimeout: () => 0, clearTimeout: () => {} },
+      port: config.dashboardPort,
+    });
   }
 
   // Start the runtime AFTER the gateway is built so SDKs hitting
@@ -203,6 +251,10 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     if (backendRuntime !== undefined) {
       await backendRuntime.stop();
     }
+    // Stop the dashboard server if it was started (Q9 lifecycle).
+    if (dashboardServer !== undefined) {
+      await dashboardServer.stop();
+    }
     // Reserved for future use (gateway-level adapter.stop() loop, audit flush).
   };
 
@@ -215,6 +267,7 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     backendRuntime,
     mcpAdapter,
     wsAdapter,
+    dashboardServer,
     stop,
   };
 }

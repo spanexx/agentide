@@ -336,7 +336,7 @@ export async function createGateway(
   // exists (their handlers close over it for the double-invoke pattern).
   // Registry + dispatch map are mutated in place — every future invocation
   // sees the extras; the kernel never imports the dashboard.
-  for (const extra of config.extraOwners?.(gateway) ?? []) {
+  for (const extra of (await config.extraOwners?.(gateway)) ?? []) {
     await registry.register(extra.owner, { owner: extra.owner, capabilities: extra.capabilities });
     Object.assign(handlers.gatewayHandlers, extra.handlers);
   }
