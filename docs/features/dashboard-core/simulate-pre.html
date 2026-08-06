@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentide Dashboard — pre-impl simulation (design feedback)</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a2129; --border: #2a333d; --text: #d7dde3;
+    --muted: #8b98a5; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+    --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace; padding: 16px; }
+  header { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  h1 { font-size: 16px; font-weight: 600; }
+  .pill { padding: 3px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); }
+  .pill.connected { color: var(--ok); border-color: var(--ok); }
+  .pill.connecting { color: var(--warn); border-color: var(--warn); }
+  .pill.down { color: var(--err); border-color: var(--err); }
+  .pill.terminal { color: var(--err); border-color: var(--err); background: rgba(248,81,73,.08); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .banner { display: none; padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-size: 13px; }
+  .banner.show { display: block; }
+  .banner.down { background: rgba(248,81,73,.12); color: var(--err); border: 1px solid var(--err); }
+  .banner.token { background: rgba(210,153,34,.12); color: var(--warn); border: 1px solid var(--warn); }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; min-height: 180px; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 10px; display: flex; justify-content: space-between; }
+  .panel .live { color: var(--ok); font-size: 11px; }
+  .panel.stale { opacity: .55; }
+  .panel.stale h2::after { content: "STALE"; color: var(--warn); font-size: 10px; margin-left: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 3px 6px; border-bottom: 1px solid var(--border); }
+  td { padding: 3px 6px; border-bottom: 1px solid rgba(42,51,61,.5); }
+  .s { color: var(--ok); } .sus { color: var(--warn); } .arch { color: var(--muted); }
+  .en { color: var(--ok); } .dis { color: var(--muted); }
+  .tier { font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); }
+  .tier.read { color: var(--accent); } .tier.write { color: var(--warn); } .tier.biz { color: var(--muted); }
+  .empty { color: var(--muted); font-style: italic; }
+  .toolbar { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  .log { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; font-size: 11.5px; color: var(--muted); max-height: 140px; overflow-y: auto; }
+  .log div { padding: 1px 0; }
+  .log .ev { color: var(--accent); }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agentide Dashboard</h1>
+  <span class="pill connected" id="connPill">connected</span>
+  <span class="muted">tenant: acme</span>
+  <span class="muted" id="tokenHint">token: dashboard-bot · platform.*.read · origin-bound · 1h</span>
+</header>
+
+<div class="banner down" id="downBanner">gateway unreachable — reconnecting (1s, 2s, 4s… 30s cap, ±20% jitter) · panels show STALE</div>
+<div class="banner token" id="tokenBanner">token expired or origin mismatch (auth.error) — reload the page to mint a fresh token</div>
+
+<div class="grid">
+  <section class="panel" id="pSessions">
+    <h2>Active Sessions <span class="live">● live</span></h2>
+    <div id="sessionsBody"></div>
+  </section>
+  <section class="panel" id="pPlugins">
+    <h2>Installed Plugins <span class="live">● live</span></h2>
+    <div id="pluginsBody"></div>
+  </section>
+  <section class="panel" id="pCapabilities">
+    <h2>Registered Capabilities <span class="live">● live</span></h2>
+    <div id="capsBody"></div>
+  </section>
+  <section class="panel" id="pHealth">
+    <h2>Runtime Health <span class="live">● live</span></h2>
+    <div id="healthBody"></div>
+  </section>
+</div>
+
+<div class="toolbar">
+  <button id="btnSession">simulate: session.created</button>
+  <button id="btnPlugin">simulate: plugin.enabled</button>
+  <button id="btnCap">simulate: capability registered</button>
+  <button id="btnDown">gateway down / up</button>
+  <button id="btnToken">token expired (auth.error 1008)</button>
+</div>
+
+<div class="log" id="log"></div>
+
+<script>
+// Pre-impl simulation — mirrors the GRILL Q9-locked dashboard shape with
+// HARDCODED state + simulated adapter-wire frames. No real gateway.
+// Wire frames shown in the log are the adapter wire (auth / invoke.result /
+// event) the real page will speak.
+
+const state = {
+  conn: "connected",           // connecting | connected | down | terminal
+  sessions: [
+    { id: "9f2c…41a", status: "active", owner: "cli-demo", created: "10:02:11" },
+    { id: "77ab…0e2", status: "active", owner: "nest-app", created: "10:02:11" },
+    { id: "3d91…7f8", status: "suspended", owner: "mcp-bot", created: "09:58:44" },
+  ],
+  plugins: [
+    { id: "orders-export", version: "1.0.0", enabled: true },
+    { id: "browser-caps", version: "0.4.1", enabled: false },
+  ],
+  capabilities: [
+    { name: "session.list", tier: "read", type: "platform" },
+    { name: "plugin.list", tier: "read", type: "platform" },
+    { name: "capability.list", tier: "read", type: "platform" },
+    { name: "system.health", tier: "read", type: "platform" },
+    { name: "gateway.status", tier: "read", type: "platform" },
+    { name: "gateway.metrics", tier: "read", type: "platform" },
+    { name: "product.list", tier: null, type: "business" },
+    { name: "product.get", tier: null, type: "business" },
+    { name: "cart.view", tier: null, type: "business" },
+    { name: "order.list", tier: null, type: "business" },
+  ],
+  health: { status: "ok", uptimeMs: 4812000, tenantCount: 1, pluginCount: 2 },
+  stale: false,
+  terminal: false,
+};
+
+const $ = (id) => document.getElementById(id);
+const logEl = $("log");
+const log = (tag, msg) => {
+  const d = document.createElement("div");
+  d.innerHTML = `<span class="ev">${tag}</span> ${msg}`;
+  logEl.prepend(d);
+};
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function render() {
+  // connection pill
+  const pill = $("connPill");
+  pill.className = "pill " + (state.conn === "connected" ? "connected" : state.conn === "down" ? "down" : state.conn === "terminal" ? "terminal" : "connecting");
+  pill.textContent = state.conn;
+  $("tokenHint").textContent = state.terminal
+    ? "token: INVALID — reload the page"
+    : "token: dashboard-bot · platform.*.read · origin-bound · 1h";
+  $("downBanner").classList.toggle("show", state.conn === "down" || state.conn === "connecting");
+  $("tokenBanner").classList.toggle("show", state.terminal);
+  for (const p of ["pSessions", "pPlugins", "pCapabilities", "pHealth"]) {
+    $(p).classList.toggle("stale", state.stale);
+    const live = $(p).querySelector(".live");
+    if (live) live.textContent = state.stale ? "stale" : "● live";
+  }
+  renderSessions(); renderPlugins(); renderCaps(); renderHealth();
+}
+
+function renderSessions() {
+  const body = $("sessionsBody");
+  if (state.sessions.length === 0) { body.innerHTML = '<span class="empty">no sessions</span>'; return; }
+  body.innerHTML = `<table><tr><th>ID</th><th>STATUS</th><th>OWNER</th><th>CREATED</th></tr>` +
+    state.sessions.map((s) =>
+      `<tr><td>${esc(s.id)}</td><td class="${s.status === "active" ? "s" : s.status === "suspended" ? "sus" : "arch"}">${s.status}</td><td>${esc(s.owner)}</td><td>${s.created}</td></tr>`
+    ).join("") + `</table>`;
+}
+
+function renderPlugins() {
+  const body = $("pluginsBody");
+  if (state.plugins.length === 0) { body.innerHTML = '<span class="empty">no plugins installed</span>'; return; }
+  body.innerHTML = `<table><tr><th>ID</th><th>VERSION</th><th>STATUS</th></tr>` +
+    state.plugins.map((p) =>
+      `<tr><td>${esc(p.id)}</td><td>${esc(p.version)}</td><td class="${p.enabled ? "en" : "dis"}">${p.enabled ? "enabled" : "disabled"}</td></tr>`
+    ).join("") + `</table>`;
+}
+
+function renderCaps() {
+  const body = $("capsBody");
+  if (state.capabilities.length === 0) { body.innerHTML = '<span class="empty">no capabilities registered</span>'; return; }
+  body.innerHTML = `<table><tr><th>NAME</th><th>TIER</th></tr>` +
+    state.capabilities.map((c) =>
+      `<tr><td>${esc(c.name)}</td><td>${c.tier ? `<span class="tier ${c.tier}">${c.tier}</span>` : '<span class="tier biz">business</span>'}</td></tr>`
+    ).join("") + `</table>`;
+}
+
+function renderHealth() {
+  const h = state.health;
+  $("healthBody").innerHTML = h.status === "down"
+    ? '<span class="empty">gateway unreachable — status poll failed</span>'
+    : `<table><tr><th>STATUS</th><th>UPTIME</th><th>TENANTS</th><th>PLUGINS</th></tr>
+       <tr><td class="s">${h.status}</td><td>${Math.round(h.uptimeMs / 1000)}s</td><td>${h.tenantCount}</td><td>${h.pluginCount}</td></tr></table>`;
+}
+
+// ---- simulated adapter wire ----
+function wire(tag, frame) { log(tag, frame); }
+
+$("btnSession").onclick = () => {
+  wire("event →", `{ type: "event", topic: "session.created", sessionId: "c4d9…12b" }`);
+  state.sessions.unshift({ id: "c4d9…12b", status: "active", owner: "new-agent", created: new Date().toLocaleTimeString() });
+  render();
+};
+
+$("btnPlugin").onclick = () => {
+  wire("event →", `{ type: "event", topic: "plugin.enabled", id: "browser-caps" }`);
+  const p = state.plugins.find((x) => x.id === "browser-caps");
+  if (p) p.enabled = true;
+  render();
+};
+
+$("btnCap").onclick = () => {
+  wire("event →", `{ type: "event", topic: "capability.registered", name: "product.delete" }`);
+  state.capabilities.push({ name: "product.delete", tier: null, type: "business" });
+  render();
+};
+
+$("btnDown").onclick = () => {
+  if (state.conn === "down" || state.conn === "connecting") {
+    state.conn = "connected"; state.stale = false;
+    wire("auth →", `{ type: "auth", token: "…reconnected…" }`);
+    wire("← auth.ok", `{ type: "auth.ok", leewayMs: 0 }`);
+    log("invoke →", `4 × invoke (mode:"call") → session.list · plugin.list · capability.list · system.health`);
+  } else {
+    state.conn = "connecting"; state.stale = true; state.health.status = "down";
+    wire("⛔", "socket closed (gateway down) — reconnect backoff 1s, 2s, 4s… 30s ±20%");
+  }
+  render();
+};
+
+$("btnToken").onclick = () => {
+  state.conn = "terminal"; state.stale = true; state.terminal = true;
+  wire("← auth.error", `{ type: "auth.error", code: "auth.error", message: "origin mismatch — expected http://localhost:7200" }`);
+  wire("⛔", "close 1008 — terminal, NO reconnect (per Q9 lifecycle lock)");
+  render();
+};
+
+// boot sequence (Q9): connect → auth → 4 invokes → subscribe → live
+log("connect →", "ws://127.0.0.1:7300/ws");
+log("auth →", `{ type: "auth", token: "eyJhbG…<dashboard-bot, platform.*.read, expectedOrigins>" }`);
+log("← auth.ok", `{ type: "auth.ok" }`);
+log("invoke →", `4 × invoke (mode:"call") → session.list · plugin.list · capability.list · system.health`);
+log("← invoke.result", `session.list: 3 records · plugin.list: 2 · capability.list: 10 · system.health: ok`);
+log("subscribe →", `{ type: "subscribe", topics: ["session.*", "plugin.*", "capability.*"] }`);
+log("⏱", "health panel: gateway.status poll every 30s (D1→D3 lock)");
+
+render();
+</script>
+</body>
+</html>
