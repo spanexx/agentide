@@ -27,6 +27,9 @@ interface AliasDef {
   readonly kind: "table" | "kv";
   readonly columns?: readonly string[];
   readonly defaultTopic: string;
+  /** Optional invoke input. capabilities uses the operator view scope ['*']
+   *  because capability.list (BI[7]) defensively returns [] for empty scope. */
+  readonly input?: YamlValue;
   readonly rows: (output: YamlValue) => readonly (readonly string[])[];
 }
 
@@ -70,6 +73,10 @@ const ALIASES: Record<string, AliasDef> = {
     kind: "table",
     columns: ["NAME", "VERSION", "TIER"],
     defaultTopic: "capability.*",
+    // Operator view: capability.list (BI[7]) filters by input.scope and
+    // returns [] for empty scope. The CLI is operator tooling, so the
+    // alias always asks for the full catalog.
+    input: { scope: ["*"] },
     rows: rowForCapabilities,
   },
   plugins: {
@@ -213,7 +220,10 @@ async function runAlias(
   name: string,
   render: { json: boolean; isTTY: boolean; width?: number },
 ): Promise<CliResult> {
-  const output = await client.invoke(alias.capability);
+  const output = await client.invoke(
+    alias.capability,
+    alias.input === undefined ? undefined : { input: alias.input },
+  );
   if (alias.kind === "table" && !render.json && render.isTTY && alias.columns !== undefined) {
     return resultOut(renderTable(alias.columns, alias.rows(output), render));
   }

@@ -530,9 +530,9 @@ function buildGatewayHandlers(ctx: BuildHandlersCtx): DispatchHandlers {
       // BI[7]: tier-aware catalog. Filter by caller's scope so a token with
       //   runtime.browser.read does not see runtime.browser.click in its
       //   catalog (avoids info-leak via capability discovery).
-      //   Bootstrap callers (CLI operator) pass scope: ["*"] or omit to see
-      //   everything — operators retain the v1 "full catalog" view.
-      // Empty/malformed scope returns an empty list — defensive.
+      //   Operators pass scope: ["*"] for the full catalog view (the CLI's
+      //   `capabilities` alias does this — consumer.ts). Empty/malformed
+      //   scope returns an empty list — defensive, NOT "show everything".
       const i = (input ?? {}) as { scope?: readonly string[] };
       const callerScope = Array.isArray(i.scope) ? i.scope : [];
       if (callerScope.length === 0) return [];
