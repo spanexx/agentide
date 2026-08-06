@@ -116,6 +116,25 @@ describe("consumer: aliases (S2/S3)", () => {
     expect(res.stdout).toMatch(/gateway\.status\s+1\.0\.0\s+read/);
   });
 
+  // Regression (2026-08-06): the capabilities alias invoked capability.list
+  // with NO input; the gateway defensively returns [] for empty scope
+  // (BI[7]), so `agentide capabilities` showed an empty catalog even when
+  // caps were registered. The alias must pass the operator view scope.
+  it("capabilities alias passes operator scope ['*'] to capability.list", async () => {
+    const bus = createEventBus();
+    let seen: unknown;
+    const adapter = await startAdapter(bus, gateway(async (req) => {
+      seen = req.input;
+      return { output: [] };
+    }));
+    const res = await runConsumer(
+      ["capabilities", "--url", url(adapter), "--token", token()],
+      { env: {}, isTTY: true },
+    );
+    expect(res.exitCode).toBe(0);
+    expect(seen).toEqual({ scope: ["*"] });
+  });
+
   it("status alias → key:value, exit 0", async () => {
     const bus = createEventBus();
     const adapter = await startAdapter(bus);
