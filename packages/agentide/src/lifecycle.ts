@@ -22,6 +22,12 @@ import * as fss from "node:fs";
 export const DEFAULT_PID_FILE = "/tmp/agentide.pid";
 export const DEFAULT_LOG_FILE = "/tmp/agentide.log";
 export const DETACH_CHILD_FLAG = "--detach-child";
+// Env marker the parent sets on the spawned gateway child (CID:lc-002).
+// The child checks this in runDetachedStart and boots the gateway directly
+// instead of re-running the detach logic. This is the actual child signal:
+// the --detach-child argv flag is stripped by bin.ts before runCli sees it,
+// so argv alone can never tell the child it is the gateway.
+export const DETACH_CHILD_ENV = "AGENTIDE_DETACH_CHILD";
 export const TOKEN_CLEAR_MS = 30_000;
 
 /**
@@ -143,8 +149,10 @@ export async function stopByPid(pid: number, timeoutMs = 10_000): Promise<"grace
  * redirect stdio to the log file, write the child's pid, return immediately.
  *
  * Re-execs the current node process with the same argv + the child flag + the
- * stdio redirects. The child sees its argv[2] === '--detach-child' and skips
- * the detach logic (it just runs the gateway normally).
+ * stdio redirects. The child is told it IS the gateway via
+ * DETACH_CHILD_ENV (not argv — bin.ts strips the argv flag before runCli):
+ * runDetachedStart sees the env marker, skips the pid guard and the detach
+ * logic, and boots the gateway directly (runStart).
  */
 export function detachChild(opts: {
   logFile: string;
@@ -159,7 +167,7 @@ export function detachChild(opts: {
     {
       detached: true,
       stdio: ["ignore", logFd, logFd],
-      env: opts.env ?? process.env,
+      env: { ...(opts.env ?? process.env), [DETACH_CHILD_ENV]: "1" },
     },
   );
   fss.closeSync(logFd);

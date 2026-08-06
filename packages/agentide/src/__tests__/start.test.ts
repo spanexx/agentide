@@ -20,6 +20,9 @@ import { runCli } from "../cli.js";
 import type { CliResult } from "../cli-types.js";
 import { createPlatform } from "../factory.js";
 import { runStart } from "../start.js";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 // Shape of the createPlatform call config — only the fields our tests assert on.
 interface CreatePlatformCallConfig {
@@ -124,6 +127,7 @@ async function run(args: string[], mem: InMemoryFs): Promise<CliResult> {
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.AGENTIDE_TEST_NO_BLOCK = "1";
+  delete process.env.AGENTIDE_DETACH_CHILD;
 });
 
 describe("agentide start", () => {
@@ -266,5 +270,36 @@ describe("agentide start", () => {
     const r = await run(["start", "--data-dir", "/data", "--port-sdk", "7300"], mem);
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toMatch(/collides with MCP\/WS adapter doors/);
+  });
+
+  // CID:start-009 - detached-child mode (fix, handoff 2026-08-05).
+  // With AGENTIDE_DETACH_CHILD=1 the CLI is the gateway child: it must boot
+  // the platform directly and must NOT re-enter the detach path (which
+  // previously read its own PID from the pid file and self-killed with
+  // "gateway already running (PID <itself>)"). No spawn, no pid-file read.
+  it("AGENTIDE_DETACH_CHILD=1 boots the gateway directly (no detach re-entry)", async () => {
+    process.env.AGENTIDE_DETACH_CHILD = "1";
+    const mem = makeFs();
+    const r = await runCli(["start", "--data-dir", "/data"], { fs: makeInMemoryFileSystemAdapter(mem) });
+    expect(r.exitCode).toBe(0);
+    const call = lastCreatePlatformCall();
+    expect(call.adapterMcp).toBeDefined();
+    expect(call.adapterWs).toBeDefined();
+  });
+
+  // CID:start-010 - the "already running" guard must stay intact for
+  // non-child invocations: a live PID in the pid file → exit 2 before any
+  // spawn. Uses the test runner's own PID as the "already running" gateway.
+  it("live pid in pid file → exit 2 already running (guard intact)", async () => {
+    const pidFile = path.join(os.tmpdir(), `agentide-guard-test-${process.pid}-${Date.now()}.pid`);
+    fs.writeFileSync(pidFile, String(process.pid));
+    try {
+      const mem = makeFs();
+      const r = await runCli(["start", "--data-dir", "/data", "--pid-file", pidFile], { fs: makeInMemoryFileSystemAdapter(mem) });
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toMatch(/gateway already running/);
+    } finally {
+      fs.rmSync(pidFile, { force: true });
+    }
   });
 });
