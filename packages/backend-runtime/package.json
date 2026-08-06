@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/backend-runtime",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "description": "Gateway-side counterpart to sdk-node/sdk-browser. Accepts SDK WS connections, performs HS256 JWT handshake, threads runtime capabilities into the gateway's dispatch.",
   "type": "module",
