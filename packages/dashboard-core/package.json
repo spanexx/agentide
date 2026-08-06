@@ -28,7 +28,10 @@
   "dependencies": {
     "@spanexx/capability-registry": "workspace:*",
     "@spanexx/errors": "workspace:*",
-    "@spanexx/gateway-core": "workspace:*"
+    "@spanexx/event-bus": "workspace:*",
+    "@spanexx/gateway-core": "workspace:*",
+    "@spanexx/plugin-manager": "workspace:*",
+    "@spanexx/session-manager": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
