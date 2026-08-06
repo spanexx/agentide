@@ -3,7 +3,7 @@
  *
  * The publish job must:
  *   - run on tag pushes (v*, *-v*) or workflow_dispatch
- *   - install pnpm, then build the 14 ESM packages, then publish
+ *   - install pnpm, then build the 15 ESM packages, then publish
  *   - have no Mirror CJS step (CJS siblings are gone)
  *   - have no --filter './packages/*-cjs' in build OR publish
  *
@@ -57,11 +57,12 @@ describe("release.yml publish workflow (post-drop-cjs-siblings)", () => {
     expect(publishFilters).toEqual(buildFilters);
   });
 
-  it("CID:release-yml-005 — exactly 14 ESM packages in the publish filter", () => {
+  it("CID:release-yml-005 — exactly 15 ESM packages in the publish filter", () => {
     const publishIdx = yml.indexOf("Publish to npm");
     const publishChunk = yml.slice(publishIdx, yml.indexOf("Revert prepare-publish", publishIdx));
     const filters = publishChunk.match(/--filter '\.\/packages\/[^']+'/g) ?? [];
-    expect(filters.length).toBe(14);
+    // 14 → 15 after dashboard-core was added in BI[13] (2026-08-06).
+    expect(filters.length).toBe(15);
     // spot-check: every ESM published package is present
     for (const pkg of [
       "errors", "event-bus", "origin", "session-manager",

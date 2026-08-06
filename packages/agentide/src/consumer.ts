@@ -4,11 +4,13 @@
 //   Owns config resolution (flag > env > file > prompt), the WS client, and
 //   TTY-aware output. In-process operator commands stay in cli.ts.
 // Used by: cli.ts (remote dispatch), consumer.test.ts
-import { createWsClient, WsInvokeError } from "@spanexx/adapter-websocket";
+import { createWsClient, WsInvokeError, WsDoorMismatchError } from "@spanexx/adapter-websocket";
 import type { YamlValue } from "@spanexx/gateway-core";
 import { resolveConfig, ConfigError } from "./config.js";
 import { ExitCode, exitCodeFor } from "./exit-codes.js";
 import { renderTable, renderKeyValue, renderJson } from "./output.js";
+import { applyPortDefault } from "./url-default.js";
+import { withAutoSession } from "./session-mint.js";
 import type { CliResult } from "./cli-types.js";
 
 export interface ConsumerOptions {
@@ -20,6 +22,9 @@ export interface ConsumerOptions {
   readonly home?: string;
   /** Injectable signal wiring (watch Ctrl-C → exit 5). Default: SIGINT/SIGTERM. */
   readonly onSignal?: (handler: () => void) => () => void;
+  /** Auth handshake timeout in ms (default 3000). CLI consumer only.
+   *  Tests inject a smaller value to surface the wrong-door case fast. */
+  readonly authTimeoutMs?: number;
 }
 
 interface AliasDef {
@@ -170,7 +175,7 @@ export async function runConsumer(argv: readonly string[], opts: ConsumerOptions
       cwd: opts.cwd,
       home: opts.home,
     });
-    url = resolved.url;
+    url = applyPortDefault(resolved.url); // GRILL-cli-consumer-ux Q2: default port 7300
     token = resolved.token;
     warnings = resolved.warnings;
   } catch (err) {
@@ -181,13 +186,23 @@ export async function runConsumer(argv: readonly string[], opts: ConsumerOptions
   }
 
   // connect + auth (S8: auth.error before auth.ok → exit 4)
-  const client = createWsClient({ url, token });
+  const client = createWsClient({ url, token, authTimeoutMs: opts.authTimeoutMs });
   try {
-    await client.open();
-  } catch (err) {
-    return resultStderr(`error: ${err instanceof Error ? err.message : String(err)}`, err instanceof Error ? exitCodeFor(err) : ExitCode.Preflight);
-  }
-  try {
+    // CID:consumer-003 - GRILL-cli-consumer-ux Q2: the WS upgrade may have
+    // succeeded but the server doesn't speak the consumer protocol (case:
+    // operator pointed at the SDK door, which silently ignores
+    // `{type:"auth"}` frames). Surface the locked wrong-door message.
+    try {
+      await client.open();
+    } catch (err) {
+      if (err instanceof WsDoorMismatchError) {
+        return resultStderr(
+          "error: --url points to the SDK door (port 7350); the CLI consumer needs the websocket adapter (port 7300). Override with --url ws://...:7300/ws.",
+          ExitCode.Preflight,
+        );
+      }
+      return resultStderr(`error: ${err instanceof Error ? err.message : String(err)}`, err instanceof Error ? exitCodeFor(err) : ExitCode.Preflight);
+    }
     let res: CliResult;
     if (cmd === "invoke") {
       res = await runInvoke(client, positional.slice(1), flags, render, warnings);
@@ -259,10 +274,18 @@ async function runInvoke(
   }
   const sessionId = flagValue(flags, "session");
   try {
-    const output = await client.invoke(name, {
-      ...(input === undefined ? {} : { input }),
-      ...(sessionId === undefined ? {} : { sessionId }),
-    });
+    let output: YamlValue;
+    if (sessionId !== undefined) {
+      // CID:consumer-004 - Q1: supplied --session is reused; the CLI does NOT
+      // destroy the session on exit (operator owns the lifecycle).
+      output = await client.invoke(name, { ...(input === undefined ? {} : { input }), sessionId });
+    } else {
+      // CID:consumer-005 - Q1: no --session → auto-mint (session.create),
+      // run invoke, then destroy. Same shape as the SDK lifecycle.
+      output = await withAutoSession(client, async (sid) => {
+        return await client.invoke(name, { ...(input === undefined ? {} : { input }), sessionId: sid });
+      }, { warnings });
+    }
     return resultOut(renderJson(output, render));
   } catch (err) {
     if (err instanceof WsInvokeError) {
@@ -285,10 +308,36 @@ async function runWatch(
     return resultStderr(`error: unrecognized watch alias: ${String(aliasName)} (use sessions|capabilities|plugins|status|health)`, ExitCode.Preflight);
   }
 
+  // CID:consumer-006 - Q3: auto-mint a session, run the watch until exit,
+  // destroy the session on clean exit. Non-clean exits (network drop,
+  // gateway restart) skip the destroy to avoid spamming errors — the
+  // session leaks until the session manager's idle timeout, same as the SDK.
+  const warnings: string[] = [];
+  try {
+    return await withAutoSession(client, async (sid) => {
+      return await runWatchInner(client, alias, flags, render, opts, sid);
+    }, { warnings });
+  } finally {
+    if (warnings.length > 0) {
+      // already merged via S6 in the caller's runConsumer wrapper (when
+      // applicable). runWatch is called from the main runConsumer try,
+      // which will surface warnings. Nothing extra to do here.
+    }
+  }
+}
+
+async function runWatchInner(
+  client: ReturnType<typeof createWsClient>,
+  alias: AliasDef,
+  flags: Record<string, string | boolean | string[]>,
+  render: { json: boolean; isTTY: boolean; width?: number },
+  opts: ConsumerOptions,
+  sessionId: string,
+): Promise<CliResult> {
   // snapshot once — normal TTY/--json shape (S7)
   let snapshot: string;
   try {
-    const output = await client.invoke(alias.capability);
+    const output = await client.invoke(alias.capability, { sessionId });
     if (alias.kind === "table" && !render.json && render.isTTY && alias.columns !== undefined) {
       snapshot = renderTable(alias.columns, alias.rows(output), render);
     } else if (alias.kind === "kv" && !render.json && render.isTTY && isRecord(output)) {
@@ -298,9 +347,9 @@ async function runWatch(
     }
   } catch (err) {
     if (err instanceof WsInvokeError) {
-      return resultStderr(`error: ${err.code} — ${err.message}`, ExitCode.InvokeError);
+      return resultStderr("error: ${err.code} — ${err.message}", ExitCode.InvokeError);
     }
-    return resultStderr(`error: ${err instanceof Error ? err.message : String(err)}`, err instanceof Error ? exitCodeFor(err) : ExitCode.Preflight);
+    return resultStderr("error: ${err instanceof Error ? err.message : String(err)}", err instanceof Error ? exitCodeFor(err) : ExitCode.Preflight);
   }
 
   // subscribe (--topic overrides default)
@@ -308,7 +357,7 @@ async function runWatch(
   try {
     await client.subscribe([topic]);
   } catch (err) {
-    return resultStderr(`error: ${err instanceof Error ? err.message : String(err)}`, err instanceof Error ? exitCodeFor(err) : ExitCode.Preflight);
+    return resultStderr("error: ${err instanceof Error ? err.message : String(err)}", err instanceof Error ? exitCodeFor(err) : ExitCode.Preflight);
   }
 
   // NDJSON event stream until signal → exit 5 (S7). Unexpected close ends

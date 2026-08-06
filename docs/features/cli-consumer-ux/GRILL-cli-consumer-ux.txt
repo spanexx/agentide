@@ -1,0 +1,76 @@
+CLI Consumer UX pack — Grill Notes
+
+Status: Locked
+Date: 2026-08-06
+Source: e2e test report agentide/docs/testing/2026-08-06-issues.md, drift entries D-78..D-84 (agentide/docs/drift.md).
+
+Parent pack: agentide-cli-consumer (GRILL-agentide-cli-consumer.txt). Q1, Q3, Q4, Q5 stand. Q2 (optional `--session`) and Q3 (no hardcoded default URL) are partially amended by this pack — see Follow-ups below.
+
+What this pack is about
+
+- Filed as e2e findings after testing agentide@0.3.1 against example/. revisit two operator-blocking issues locked in the parent GRILL (agentide-cli-consumer, Q2 and Q3).
+- D-79 (Critical): `agentide invoke <business-cap>` returns `GATEWAY_SESSION_REQUIRED` for every business cap. The CLI never auto-creates a session. This blocks the headline use case the parent pack exists to deliver.
+- D-80 (High): CLI help says `--url <ws://host/ws>` with no port. Port 7350 is the SDK door for sdk-node/sdk-browser; the CLI consumer protocol only works on the websocket adapter port (7300). New operators hit a silent 15-second timeout because the help doesn't reveal which port is which.
+- The pack is a **revisit** of locked decisions, not a new surface. Scope: lock UX answers for these two issues, document the rationale, hand off to PRD-TRD.
+
+What this pack does NOT touch
+
+- Does NOT change the CLI's wire protocol, surface, or Q1/Q3/Q4/Q5 of the parent GRILL (TS language, subcommands, exit codes, output shapes all stay).
+- Does NOT introduce a new door or port. The existing websocket adapter port (7300) is the consumer door; the SDK door (7350) stays as-is for SDK clients.
+- Does NOT fix D-78 (init mkdir), D-81 (status default cwd), D-82 (dashboard app.js), D-83 (stop exit codes), or D-84 (client grant flags). Those are separate packs.
+
+Questions and answers locked so far
+
+1. Should the CLI auto-create a session per invocation, or expect the operator to manage sessions explicitly? (parent GRILL Q2 said `--session` is optional; e2e test D-79 shows that path is a dead-end.)
+
+Answer:
+- Option C (both): when `--session` is omitted, the CLI mints a session internally (`session.create` → capture id → invoke → destroy the session). When `--session <id>` is supplied, the CLI reuses that session id and does NOT destroy it on exit. The flag is no longer optional in practice — it stays in the help but the default behavior is the auto-mint path.
+- Auto-mint is one round-trip extra per invocation. Acceptable: CLI use is single-shot, the cost is negligible, and the SDK/dashboard already do the same lifecycle.
+- The supplied `--session` path is kept for batch workflows (one session, multiple invokes) — the CLI trusts the id and surfaces gateway errors verbatim.
+
+Why:
+- The parent GRILL Q2 locked `--session` as optional to express "operator doesn't have to think about sessions." That intent requires auto-mint. Pure verbatim (Option B) keeps the original wording but the operator still has to learn session vocabulary to do anything — which contradicts the headline use case the pack exists to deliver.
+- Option A (auto-mint only, hide the flag) loses the batch-workflow path. The flag is cheap; keep it.
+- Option C matches what the dashboard and SDKs already do: the caller owns the session lifecycle, and for the CLI the simplest ownership is "one session per invocation, born and destroyed in-process."
+- Verified by: e2e test agentide/docs/testing/e2e-2026-08-06.sh — every `agentide invoke <business-cap>` against the running gateway receives `GATEWAY_SESSION_REQUIRED` today. Session auto-mint unblocks all of them.
+- Source: agentide/docs/features/agentide-cli-consumer/GRILL-agentide-cli-consumer.txt:26-45 (Q2 surface), CONTEXT.md:33-38 (Session/Session Manager glossary), agentide/docs/drift.md D-79.
+
+2. How should the CLI handle the port / door distinction with `--url`? (help currently says `--url <ws://host/ws>` with no port; e2e test D-80 shows new operators hit a silent 15s timeout when they accidentally point at the SDK door 7350.)
+
+Answer:
+- Option D: default the port to 7300 when the operator's `--url` has no port specified (`ws://host/ws` → `ws://host:7300/ws`). The host is never defaulted — Q3's "no hardcoded default URL" stays intact for the host portion. Operators who supply a port explicitly override the default.
+- Add a client-side handshake timeout (~3s). When the WS handshake completes but the auth handshake fails with a server-side frame that indicates "this is the SDK door, not the consumer door" (or the auth frame never arrives within the timeout), the CLI emits a clear error and exits 2 (pre-flight): `error: --url points to the SDK door (port 7350); the CLI consumer needs the websocket adapter (port 7300). Override with --url ws://...:7300/ws.`
+- The exact detection heuristic (specific frame shape, server-side banner, or pure timeout) is left to IMPL. The pack just locks the user-visible behavior: short wait + clear error.
+
+Why:
+- The reason most operators hit D-80 is they don't know the gateway has two doors and the CLI only speaks the consumer protocol. Defaulting the port fixes the common case (operator omits port). The clear error fixes the explicit-misroute case (operator typed 7350).
+- The detection heuristic gate is the right place to INVEST a small amount of code, because the failure mode today is silent — operators can't tell whether the gateway is down, the URL is wrong, or they used the wrong door. Any improvement is better than the current 15s hang with no output.
+- Q3's "no hardcoded default URL" lock is read narrowly: the host is operator-supplied. The port is gateway-side infrastructure chosen by `agentide start` — defaulting it is consistent with how the gateway already publishes the port (the banner). The CLI's help text is updated to show the port example: `agentide --url <ws://host:7300/ws>` (consumer door). The SDK door stays undocumented in the help (operators using the SDK door are using the wrong door for the CLI).
+- Verified by: e2e test — `agentide sessions --url ws://127.0.0.1:7350/ws --token ...` hangs 15s with no output; same command on `:7300/ws` returns `[]` in <100ms. Both default-port + clear error would be welcome.
+- Source: agentide/docs/features/agentide-cli-consumer/GRILL-agentide-cli-consumer.txt:48-58 (Q3 config precedence), CONTEXT.md:30 (Adapter door convention), agentide/docs/drift.md D-80.
+
+3. `agentide watch <alias>` runs longer than a single invoke. How should the session lifecycle work for it? (Q1's mint→invoke→destroy pattern doesn't apply; the CLI subscribes to events and streams NDJSON until Ctrl-C.)
+
+Answer:
+- Option A: `agentide watch` auto-mints a session at startup (`session.create` → capture id → use for the snapshot invoke + the subscribe), keeps it alive for the watch's lifetime, and sends `session.destroy` on clean exit (SIGINT/SIGTERM, EOF on stdin).
+- The implementation is a `try/finally` around the existing watch loop. When the network drops or the gateway restarts, the watch exits non-clean and the session leaks until the session manager's idle timeout — same as the SDK's behavior. The parent GRILL explicitly listed "watch reconnect / resync after disconnect" as out-of-scope future work, so this matches.
+- The session id is NOT printed to the operator on startup. The CLI owns the session internally for the watch's lifetime.
+
+Why:
+- The SDK and dashboard both own session lifecycle for the long-running consumer. The CLI should match: every command that needs a session owns it for its own lifetime.
+- Option B (require `--session` for watch) leaks the same complexity the pack exists to remove — operators have to learn the two-step flow just to start a watch.
+- Option C (mint, never destroy) bloats the session list with leaked sessions on every Ctrl-C. The dashboard's `session.list` returns 30+ stale entries after a few dev iterations; not a path we want for the CLI.
+- Behavior is consistent with Q1: auto-mint for every remote command, lifecycle tied to the command itself.
+- Source: agentide/docs/features/agentide-cli-consumer/GRILL-agentide-cli-consumer.txt:46-58 (split), CONTEXT.md:33-37 (Session lifecycle), agentide/docs/drift.md D-79 (intent).
+
+Tags: session-auto-mint, port-default-7300, wrong-door-error, watch-lifecycle
+
+No remaining open questions
+
+Locked at 2026-08-06. Ready for PRD-TRD.
+
+Follow-ups (separate packs / cleanup)
+
+- Parent GRILL (agentide-cli-consumer) Q3 — `no hardcoded default URL in v1` — needs a one-line amendment: "host is operator-supplied; port defaults to 7300 when omitted (see GRILL-cli-consumer-ux Q2)." Either fold this into the PRD-TRD as a cross-reference or open a 1-line cleanup pack.
+- The detection heuristic for the wrong-door error (Q2) is left to IMPL — needs a small gateway-side reconnaissance to confirm the SDK door's first frame shape. If the heuristic turns out to be unreliable (e.g. the SDK door's first frame is timing-dependent), the IMPL falls back to a pure timeout + generic hint.
+- D-78 (init mkdir), D-81 (status default cwd), D-82 (dashboard app.js), D-83 (stop exit codes), D-84 (client grant flags) are still open. Group into a "CLI quality-of-life" pack if/when one is chartered.

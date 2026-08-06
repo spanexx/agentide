@@ -18,7 +18,7 @@
  */
 
 import { describe, it, expect, afterEach } from "vitest";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import * as net from "node:net";
 import * as fs from "node:fs";
 import * as path from "node:path";

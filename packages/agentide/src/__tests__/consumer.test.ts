@@ -23,8 +23,19 @@ class TestClock implements Clock {
 }
 
 function gateway(handler?: (request: CanonicalInvocation) => Promise<CanonicalResponse>): Gateway {
-  const h = handler ?? (async (req) => {
+  const userHandler = handler;
+  const h = async (req: CanonicalInvocation): Promise<CanonicalResponse> => {
+    // CID:test-session-stub - tests that drive the consumer expect
+    // session.create / session.destroy to be handled by the gateway stub
+    // (the auto-mint path in runInvoke / runWatch always calls them).
+    // The session id is deterministic per request so tests can assert on
+    // it if needed.
+    if (req.capability.name === "session.create") return { output: { id: "sess-stub" } };
+    if (req.capability.name === "session.destroy") return { output: {} };
+    if (userHandler) return userHandler(req);
     switch (req.capability.name) {
+      case "session.create": return { output: { id: "sess-default" } };
+      case "session.destroy": return { output: {} };
       case "session.list": return { output: [] };
       case "capability.list": return {
         output: [
@@ -37,7 +48,7 @@ function gateway(handler?: (request: CanonicalInvocation) => Promise<CanonicalRe
       case "system.health": return { output: { status: "ok" } };
       default: return { output: { echoed: req.input ?? {} } };
     }
-  });
+  };
   return {
     listTenants: () => [{ id: "acme", name: "Acme", createdAt: 1, suspended: false }],
     handleInvocation: h,
@@ -84,6 +95,7 @@ function signalAfter(ms: number): (handler: () => void) => () => void {
 }
 
 const TTY = { isTTY: true };
+void TTY;
 
 afterEach(async () => {
   await Promise.all(adapters.splice(0).map((a) => a.stop()));
@@ -183,7 +195,11 @@ describe("consumer: aliases (S2/S3)", () => {
 describe("consumer: invoke (S4)", () => {
   it("invoke happy → output JSON, exit 0", async () => {
     const bus = createEventBus();
-    const adapter = await startAdapter(bus, gateway(async () => ({ output: { hello: "world" } })));
+    const adapter = await startAdapter(bus, gateway(async (req: CanonicalInvocation) => {
+      if (req.capability.name === "session.create") return { output: { id: "sess-test" } } as unknown as CanonicalResponse;
+      if (req.capability.name === "session.destroy") return { output: {} } as unknown as CanonicalResponse;
+      return { output: { hello: "world" } } as unknown as CanonicalResponse;
+    }));
     const res = await runConsumer(
       ["invoke", "product.list", "--url", url(adapter), "--token", token()],
       { env: {}, isTTY: false },

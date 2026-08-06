@@ -289,6 +289,8 @@ describe("CLI remote dispatch (--url)", () => {
       listTenants: () => [{ id: "acme", name: "Acme", createdAt: 1, suspended: false }],
       handleInvocation: handler ?? (async (req): Promise<CanonicalResponse> => {
         switch (req.capability.name) {
+          case "session.create": return { output: { id: "sess-cli-test" } };
+          case "session.destroy": return { output: {} };
           case "session.list": return { output: [] };
           case "gateway.status": return { output: { status: "ok", tenantCount: 1, pluginCount: 1, uptimeMs: 7 } };
           case "system.health": return { output: { status: "ok" } };
@@ -344,7 +346,7 @@ describe("CLI remote dispatch (--url)", () => {
   });
 
   it("`capability list --url` dispatches to the consumer", async () => {
-    const url = await startAdapter(async (req) => ({ output: [{ name: "gateway.status", version: "1.0.0", tier: "read" }] }));
+    const url = await startAdapter(async (_req) => ({ output: [{ name: "gateway.status", version: "1.0.0", tier: "read" }] }));
     const r = await runCli(["capability", "list", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toBe('[{"name":"gateway.status","version":"1.0.0","tier":"read"}]');

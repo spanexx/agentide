@@ -1,5 +1,5 @@
 export { createWebSocketAdapter } from "./server.js";
-export { createWsClient, WsInvokeError } from "./client.js";
+export { createWsClient, WsInvokeError, WsDoorMismatchError } from "./client.js";
 export { originMatches, authenticateToken } from "./auth.js";
 export { ConnectionRegistry } from "./registry.js";
 export { WS_ERROR_CODES } from "./errors.js";

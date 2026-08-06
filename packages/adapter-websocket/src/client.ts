@@ -33,6 +33,13 @@ export interface WsClientConfig {
   readonly token: string;
   /** Per-invoke timeout in ms (default 30_000). */
   readonly timeoutMs?: number;
+  /** Auth handshake timeout in ms (default 3_000). When the WS upgrade
+   *  succeeds but no auth.ok arrives within this window, client.open()
+   *  rejects with WsDoorMismatchError. The CLI uses this to detect the
+   *  case where the operator pointed at the SDK door (port 7350), which
+   *  silently ignores the consumer auth frame `{type:"auth"}` and
+   *  expects `{type:"sdk.auth"}` instead. */
+  readonly authTimeoutMs?: number;
 }
 
 // CID:client-002 - WsInvokeError
@@ -47,6 +54,19 @@ export class WsInvokeError extends Error {
     this.name = "WsInvokeError";
     this.code = code;
     this.details = details;
+  }
+}
+
+// CID:client-004 - WsDoorMismatchError
+// Purpose: surfaced when the WS upgrade succeeds but the server doesn't speak
+//   the consumer protocol (typical: the SDK door accepted the upgrade but
+//   silently ignores the consumer auth frame). The CLI prints the locked
+//   wrong-door message and exits 2.
+export class WsDoorMismatchError extends Error {
+  readonly code = "GATEWAY_DOOR_MISMATCH";
+  constructor(message: string) {
+    super(message);
+    this.name = "WsDoorMismatchError";
   }
 }
 
@@ -81,10 +101,21 @@ export function createWsClient(config: WsClientConfig): WsClientHandle {
   const statsHandlers = new Set<(dropped: number) => void>();
   const closeHandlers = new Set<() => void>();
   const timeoutMs = config.timeoutMs ?? 30_000;
+  const authTimeoutMs = config.authTimeoutMs ?? 3_000;
   let openResolve: (() => void) | null = null;
   let openReject: ((err: Error) => void) | null = null;
   let closeResolve: (() => void) | null = null;
-  let closedByUs = false;
+  // CID:client-005 - auth handshake timer. Lives at module-scope of
+  //   createWsClient so `handleFrame` can clear it on auth.ok/auth.error.
+  //   (Defining it inside `open()` would put it out of scope of the
+  //   frame handler — ReferenceError on every happy-path open.)
+  let authTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearAuthTimer = (): void => {
+    if (authTimer !== null) {
+      clearTimeout(authTimer);
+      authTimer = null;
+    }
+  };
 
   const failPending = (message: string): void => {
     for (const [, p] of pending) {
@@ -97,6 +128,7 @@ export function createWsClient(config: WsClientConfig): WsClientHandle {
   const handleFrame = (frame: Record<string, YamlValue>): void => {
     const type = frame.type;
     if (type === "auth.ok") {
+      clearAuthTimer();
       state = "open";
       openResolve?.();
       openResolve = null;
@@ -104,6 +136,7 @@ export function createWsClient(config: WsClientConfig): WsClientHandle {
       return;
     }
     if (type === "auth.error") {
+      clearAuthTimer();
       const message = String(frame.message ?? "auth rejected");
       const err = new Error(`auth.error: ${message}`);
       err.name = "WsAuthError";
@@ -189,6 +222,21 @@ export function createWsClient(config: WsClientConfig): WsClientHandle {
         ws = socket;
         socket.on("open", () => {
           socket.send(JSON.stringify({ type: "auth", token: config.token }));
+          // CID:client-005 - auth handshake timeout. If the server didn't
+          // send auth.ok (or auth.error) within authTimeoutMs, we
+          // surfaced a connection to a door that doesn't speak the
+          // consumer protocol (e.g. the SDK door). Reject with a
+          // typed error so the CLI can render the wrong-door message.
+          authTimer = setTimeout(() => {
+            authTimer = null;
+            const err = new WsDoorMismatchError(
+              "no auth.ok within authTimeoutMs (likely the SDK door; expected consumer protocol)",
+            );
+            openReject?.(err);
+            openReject = null;
+            openResolve = null;
+            try { socket.close(); } catch { /* already closed */ }
+          }, authTimeoutMs);
         });
         socket.on("message", (raw) => {
           let value: Record<string, YamlValue>;
@@ -202,6 +250,7 @@ export function createWsClient(config: WsClientConfig): WsClientHandle {
         });
         socket.on("error", (err: Error) => {
           wsError = err;
+          clearAuthTimer();
           const message = err.message || "websocket error";
           openReject?.(new Error(message));
           openReject = null;
@@ -209,6 +258,7 @@ export function createWsClient(config: WsClientConfig): WsClientHandle {
           failPending(message);
         });
         socket.on("close", (code: number, reason: Buffer) => {
+          clearAuthTimer();
           const reasonText = reason.toString();
           const message = code === 1008
             ? `closed with 1008 (auth rejected${reasonText ? `: ${reasonText}` : ""})`
@@ -283,10 +333,15 @@ export function createWsClient(config: WsClientConfig): WsClientHandle {
     },
 
     close(): Promise<void> {
-      closedByUs = true;
       failPending("connection closed");
+      clearAuthTimer();
       if (ws !== null) {
-        ws.close();
+        // Use terminate() rather than close() to avoid hanging on a peer
+        // that doesn't respond to the close handshake (e.g. an inert
+        // server, the SDK door, or a gateway that's mid-restart). The
+        // WS RFC requires a graceful close handshake, but for a CLI
+        // that exits after one round-trip, hang-free cleanup matters more.
+        try { ws.terminate(); } catch { /* already closed */ }
       } else if (state !== "closed") {
         // never opened (or failed to open): nothing to wait for
         state = "closed";

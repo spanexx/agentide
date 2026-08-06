@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-06  **Open:** 9  **Resolved:** 58  **Critical/High:** 0
+**Last updated:** 2026-08-06  **Open:** 16  **Resolved:** 58  **Critical/High:** 2
 
 ## Open
 
@@ -58,6 +58,57 @@
   - Why matters: divergence is intentional. The mock's timestamps are placeholder for test stability (deterministic NDJSON bytes per run); real adapters timestamp per `Date.now()` or RFC 3339.
   - Resolution: mock behavior documented at `crates/cli-adapter/examples/mock_wire.rs:83-98`; once BI[24] lands, real events arrive with monotonically increasing timestamps and the same `grep` assertion still passes.
   - Verified by: `bash docs/features/cli-adapter/simulate.sh` — both watch scenarios (`status --watch`, `sessions --watch --json`) report 2+ events each, exit 5 on SIGINT.
+
+- **D-78** (High, 2026-08-06, reporter: agentide e2e test session) — `agentide init --data-dir <fresh>` fails with raw `ENOENT: no such file or directory, open '<dir>/gateway-secret'` and exit 1. The operator must `mkdir -p` the data dir first.
+  - Doc claim: `agentide --help` lists `agentide init [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]`; implicit user expectation is that init bootstraps the directory.
+  - Code reality: `packages/agentide/src/cli.ts:runInit` (L286-315) calls `createPlatform({ dataDir, ... })` directly. `createPlatform` → `loadOrCreateSecret` opens `<dir>/gateway-secret` (file) without ensuring the dir exists. Compare with `packages/agentide/src/start.ts:118-132` (CID:start-003) which has a friendly probe that prints `(create the directory first: mkdir -p <dir>)`.
+  - Why matters: first-run UX is broken. A new operator follows the help, runs `agentide init`, gets a raw ENOENT, and doesn't know they need to mkdir first. The CLI is the bootstrap path — it must be self-sufficient.
+  - Owner: agentide CLI pack (next).
+  - To fix: at the top of `runInit`, do `await fs.mkdir(dataDir, { recursive: true })` (Node `fs/promises`; the CLI is Node-only). Or, at minimum, emit the same `mkdir -p` hint that `start` does.
+  - Related: D-79 (init only seeds the dir for `/gateway-secret`; the file itself gets created on first write).
+
+- **D-79** (Critical, 2026-08-06, reporter: agentide e2e test session) — `agentide invoke <business-cap>` over the CLI unconditionally returns `GATEWAY_SESSION_REQUIRED`. The CLI never auto-creates a session.
+  - Doc claim: `agentide --help` shows `agentide invoke <cap> [--args '<json>'] [--session <id>] [--mode call|stream]`. The `--session` flag is optional with no entry-level help, implying auto-mint.
+  - Code reality: `packages/agentide/src/consumer.ts:runInvoke` accepts `--session` but never mints one when omitted. Same for all remote commands that need a session. The published dashboard and the SDK clients (sdk-node / sdk-browser) own session lifecycle; the CLI does not.
+  - Why matters: blocks every CLI-driven business invocation. The published 0.3.1 `agentide` binary cannot drive a single business cap without a session id, but no CLI surface produces one. The CLI is unusable for the headline use case.
+  - Owner: agentide CLI pack (next).
+  - To fix: in `runInvoke`, when `--session` is omitted, call `session.create` first, capture the id, send the invoke frame with that session id, return the result. Single round-trip. Optionally expose `agentide session create` as a top-level alias for operators who want to batch multiple calls in one session.
+  - Verified by: e2e test `agentide/docs/testing/e2e-2026-08-06.sh` Section 6 — every `agentide invoke` returned `GATEWAY_SESSION_REQUIRED` against an otherwise-working gateway + example app.
+
+- **D-80** (High, 2026-08-06, reporter: agentide e2e test session) — CLI help says `--url <ws://host/ws>` with no port. The SDK door (default 7350) does NOT accept the CLI consumer protocol; only the websocket adapter port (7300) does. Operators following the help hit a silent 15-second timeout.
+  - Doc claim: `agentide --help` → `common flags: --url <ws://host/ws> --token <jwt|path:/...> --json` (no port, no protocol note).
+  - Code reality: `agentide start` banner shows `mcp :7100, ws :7300, sdk :7350`. `--port-sdk` is opt-in (`packages/agentide/src/start.ts:87-114`); when enabled, two websocket doors are bound. The SDK door is the backend-runtime door for `sdk-node`/`sdk-browser` with the `{type:"sdk.auth"}` first-frame protocol. The CLI consumer (`packages/agentide/src/consumer.ts:runConsumer` → `createWsClient` → `adapter-websocket/dist/client.js`) speaks the standard consumer protocol and only the :7300 adapter accepts it.
+  - Why matters: silent failure on the first remote command. A new operator follows the help, points at the host (and ignores the port), and the CLI waits forever for the WS handshake. The example app's `.env` uses `ws://127.0.0.1:7350` (correct for SDKs) — the help gives no hint that the CLI uses a different port.
+  - Owner: agentide CLI pack (next).
+  - To fix: update the help line to `agentide --url <ws://gateway-host:7300/ws>`. Better: detect the protocol mismatch in `client.open()` and emit a clear error like `error: --url points to the SDK door (port 7350); the CLI consumer needs the websocket adapter (port 7300).`
+  - Verified by: e2e test — `agentide sessions --url ws://127.0.0.1:7350/ws --token ...` hangs 15s with no output; same command on `:7300/ws` returns `[]` in <100ms.
+
+- **D-81** (Medium, 2026-08-06, reporter: agentide e2e test session) — `agentide status` (no `--data-dir`) defaults to `./.agentide/data` relative cwd. When the gateway was started with `--data-dir=<somewhere>`, `status` from any other cwd fails with `ENOENT ./ .agentide/data/gateway-secret`.
+  - Doc claim: `agentide status [--data-dir <path>] [--pid-file <path>] [--url ...] [--token ...] [--json]` — implies a usable default.
+  - Code reality: `packages/agentide/src/cli.ts:runStatus` builds the platform with the default data-dir resolver which is `cwd + '/.agentide/data'`. The pid file lives at `/tmp/agentide.pid` by default and does NOT track the data-dir the child was started with.
+  - Why matters: `status` is brittle. Operators must remember the `--data-dir` they started with and pass it again. The pid file is the canonical artifact — it should carry the data-dir so `status` can recover it.
+  - Owner: agentide CLI pack (next).
+  - To fix: at start time, write the data-dir into the pid file (or a sibling `.json` next to the pid file). `status` reads the pid file, restores the data-dir, and runs.
+
+- **D-82** (Medium, 2026-08-06, reporter: agentide e2e test session) — `dashboard-core` `@spanexx/dashboard-core@0.0.4` (and the 0.0.2 referenced in the release notes) serves the P3 placeholder `app.js` (81 bytes) instead of the real client. Re-confirmed in 0.3.1.
+  - Doc claim: dashboard serves the full SPA client.
+  - Code reality: `packages/dashboard-core/src/server.ts:resolveAssetsDir()` builds its candidate list from the server's `__dirname` (e.g. `here/assets`, `here/../src/assets`, `here/../assets`, `cwd`). After `npm install -g @spanexx/dashboard-core`, the published layout is `node_modules/@spanexx/dashboard-core/src/assets/` — none of the candidates match. HTML loads; the JS client is the 81-byte placeholder.
+  - Why matters: dashboard renders but the SPA is non-functional. Operators see the title and assume the dashboard is working.
+  - Owner: dashboard-core pack (next).
+  - To fix: add the post-publish path to `resolveAssetsDir`'s candidates (or determine the real path via `require.resolve("@spanexx/dashboard-core/package.json")` and walk up to its root). Cut a `dashboard-core` patch release.
+  - Verified by: e2e test — `curl -s http://127.0.0.1:7200/assets/app.js` returns 81 bytes starting with `// P3 placeholder — P4 will replace with the full vanilla-JS dashboard client.`
+
+- **D-83** (Low, 2026-08-06, reporter: agentide e2e test session) — `agentide stop` exits 0 vs 1 inconsistently for the same "nothing running" state.
+  - Doc reality: `packages/agentide/src/cli.ts:runStop` (CID:start-009) branches — pid file present + pid dead → rc 0 with "already not running. Pid file removed."; pid file missing → rc 1 with "no gateway running (no pid file at /tmp/agentide.pid)".
+  - Why matters: minor DX. Both states convey "nothing to stop." Operators scripting `agentide stop && do_x` get a non-zero exit when the pid file is missing but zero when the pid is dead.
+  - Owner: agentide CLI pack (next).
+  - To fix: unify on one exit code (0 is friendlier for `&&` chains) for both branches, or document the distinction.
+
+- **D-84** (Low, 2026-08-06, reporter: agentide e2e test session) — `agentide client grant` requires `--tenant` and `--name` (not `--client-id --scope` as the broader help block suggests). No per-subcommand help exists, so the operator guesses.
+  - Doc reality: `agentide client --help` shows six subcommands in one row without flag details. `client grant` legitimately needs different flags than the rest of the client subcommands.
+  - Why matters: minor. First-time guess work for the grant subcommand.
+  - Owner: agentide CLI pack (next).
+  - To fix: per-subcommand help (`agentide client grant --help`) showing only the flags each subcommand needs.
 
 ---
 

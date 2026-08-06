@@ -38,6 +38,7 @@ const REPO_ROOT = path.resolve(HERE, "../../../../packages");
 const PACKAGES_DIR = REPO_ROOT;
 const DOCS_WORKFLOWS = path.resolve(HERE, "../../../../.github");
 const PACKAGES_AGENTIDE = path.resolve(HERE, "../../../");
+void PACKAGES_AGENTIDE;
 const AGENTIDE_SCRIPTS = path.resolve(HERE, "../../../scripts");
 
 const CJS_DIRS = ["sdk-node-cjs", "event-bus-cjs", "sdk-browser-cjs", "agentide-cjs"];

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, writeFileSync, chmodSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveConfig, ConfigError, Source } from "../config.js";
+import { resolveConfig, Source } from "../config.js";
 
 interface TempHome {
   dir: string;

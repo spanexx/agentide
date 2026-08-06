@@ -27,6 +27,7 @@ class InMemoryFs implements FileSystem {
 }
 
 const TEST_SECRET = new TextEncoder().encode("test-secret-key-for-unit-tests-only!!");
+void TEST_SECRET;
 
 describe("agentide factory wiring (P6 dashboard-core)", () => {
   it("starts the dashboard static server when dashboardPort is set", async () => {

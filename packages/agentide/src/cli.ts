@@ -7,9 +7,10 @@ import { homedir } from "node:os";
 import { createPlatform } from "./factory.js";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import { hasUrlSource } from "./config.js";
 import { runConsumer } from "./consumer.js";
-import { runStart, runStop, runDetachedStart } from "./start.js";
+import { runStop, runDetachedStart } from "./start.js";
 import { printTokenWithClear } from "./lifecycle.js";
 import { AuditWriter } from "@spanexx/gateway-core";
 import type { CliOptions, CliResult } from "./cli-types.js";
@@ -78,7 +79,12 @@ function readPackageVersion(): string {
   try {
     for (const url of resolvePackageJsonCandidates()) {
       try {
-        const raw = readFileSync(url, "utf-8") as string;
+        // CID:cli-version-002 - convert file:// URL to a real path before
+        // reading. readFileSync on a file:// URL throws ENOENT on
+        // older Node and is unreliable across versions; fileURLToPath
+        // gives us a stable absolute path on all supported Node versions.
+        const path = url.startsWith("file://") ? fileURLToPath(url) : url;
+        const raw = readFileSync(path, "utf-8") as string;
         const pkg = JSON.parse(raw) as { version?: string };
         if (typeof pkg.version === "string") {
           cachedVersion = pkg.version;
