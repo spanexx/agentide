@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "src/assets",
     "src"
   ],
   "scripts": {
@@ -23,6 +24,7 @@
     "test:watch": "vitest",
     "lint": "eslint src",
     "typecheck": "tsc --build --pretty",
+    "sim": "node scripts/serve-sim.mjs",
     "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {

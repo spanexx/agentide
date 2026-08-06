@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentide Dashboard — post-impl simulation</title>
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>
+    .row { padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .row.pass b { color: var(--ok); }
+    .row.fail b { color: var(--err); }
+    .muted { color: var(--muted); }
+    pre { background: var(--bg); padding: 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 11.5px; max-height: 200px; overflow: auto; }
+    #conn { font-family: monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Agentide Dashboard — post-impl simulation</h1>
+    <span class="pill connecting" id="conn">running scenarios</span>
+    <span class="muted">gateway: <span id="gw"></span></span>
+  </header>
+
+  <p class="muted">
+    Open <code>?gateway=ws://...&token=...</code> to point at a running gateway. The sim drives
+    the real dashboard-core WS client (loaded from the package's assets/) against the live adapter,
+    exercising S1–S11 from the PRD-TRD §Simulation Contract.
+  </p>
+
+  <div id="root">
+    <section class="panel">
+      <h2>Scenarios <span class="live">live</span></h2>
+      <div class="body" id="results"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Live mirror <span class="live">live</span></h2>
+      <div class="body">
+        <p class="muted">The page mounts the real dashboard layout below so you can also
+          see the four panels + drill-down work end-to-end.</p>
+        <div class="grid">
+          <section class="panel"><h2>Active Sessions</h2><div class="body" id="sessions"></div></section>
+          <section class="panel"><h2>Installed Plugins</h2><div class="body" id="plugins"></div></section>
+          <section class="panel"><h2>Capabilities</h2><div class="body" id="capabilities"></div></section>
+          <section class="panel"><h2>Runtime Health</h2><div class="body" id="health"></div></section>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Wire log <span class="live">live</span></h2>
+      <pre id="log"></pre>
+    </section>
+  </div>
+
+  <script src="/assets/app.js"></script>
+  <script src="./simulate.js"></script>
+</body>
+</html>
