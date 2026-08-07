@@ -19,6 +19,8 @@
 //   - 127.0.0.1:7300 — WebSocket adapter (for CLI, dashboard, agents)
 //   - 127.0.0.1:7350 — Backend runtime (for sdk-node/sdk-browser — the
 //                       SDK door; first-frame protocol is {type:"sdk.auth"})
+//   - 127.0.0.1:7400 — REST adapter (POST /invoke + GET /capabilities,
+//                       Bearer JWT per request, kernel-verified lazy)
 //
 // Auth:
 //   The gateway signs JWTs with a secret stored in ./data/gateway-secret.
@@ -63,6 +65,12 @@ const platform = await createPlatform({
   // Both adapters default to ON; explicit here for clarity.
   adapterMcp: { host: '127.0.0.1', port: 7100 },
   adapterWs: { host: '127.0.0.1', port: 7300 },
+  // REST adapter (A9) — third door. POST /invoke + GET /capabilities,
+  // Bearer JWT per request, kernel-verified (A8 lazy path). Default
+  // off; opt-in via adapterRestPort. Sits at 7400 (RESERVED — must
+  // never collide with MCP 7100 / dashboard 7200 / WS 7300 / SDK 7350).
+  adapterRestPort: 7400,
+  adapterRestHost: '127.0.0.1',
   // BI[cjs-sdk-bootstrap] Phase 1: the canonical dev bootstrap opens the
   // SDK door so the example app (and any back-end consumer) has a reachable
   // target. CLI `agentide start` keeps the door closed by default; opt-in
@@ -72,7 +80,7 @@ const platform = await createPlatform({
   backendRuntimePort: 7350,
 });
 
-console.log('[gateway] platform up — mcp :7100, ws :7300, sdk :7350');
+console.log('[gateway] platform up — mcp :7100, ws :7300, sdk :7350, rest :7400');
 
 // Graceful shutdown — closes the adapters (releasing the ports) and lets
 // in-flight invocations drain before the process exits.
