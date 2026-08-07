@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-06  **Open:** 16  **Resolved:** 58  **Critical/High:** 2
+**Last updated:** 2026-08-06  **Open:** 16  **Resolved:** 62  **Critical/High:** 0
 
 ## Open
 
@@ -59,56 +59,40 @@
   - Resolution: mock behavior documented at `crates/cli-adapter/examples/mock_wire.rs:83-98`; once BI[24] lands, real events arrive with monotonically increasing timestamps and the same `grep` assertion still passes.
   - Verified by: `bash docs/features/cli-adapter/simulate.sh` — both watch scenarios (`status --watch`, `sessions --watch --json`) report 2+ events each, exit 5 on SIGINT.
 
-- **D-78** (High, 2026-08-06, reporter: agentide e2e test session) — `agentide init --data-dir <fresh>` fails with raw `ENOENT: no such file or directory, open '<dir>/gateway-secret'` and exit 1. The operator must `mkdir -p` the data dir first.
-  - Doc claim: `agentide --help` lists `agentide init [--data-dir <path>] [--default-tenant <id>] [--default-tenant-name <name>]`; implicit user expectation is that init bootstraps the directory.
-  - Code reality: `packages/agentide/src/cli.ts:runInit` (L286-315) calls `createPlatform({ dataDir, ... })` directly. `createPlatform` → `loadOrCreateSecret` opens `<dir>/gateway-secret` (file) without ensuring the dir exists. Compare with `packages/agentide/src/start.ts:118-132` (CID:start-003) which has a friendly probe that prints `(create the directory first: mkdir -p <dir>)`.
-  - Why matters: first-run UX is broken. A new operator follows the help, runs `agentide init`, gets a raw ENOENT, and doesn't know they need to mkdir first. The CLI is the bootstrap path — it must be self-sufficient.
-  - Owner: agentide CLI pack (next).
-  - To fix: at the top of `runInit`, do `await fs.mkdir(dataDir, { recursive: true })` (Node `fs/promises`; the CLI is Node-only). Or, at minimum, emit the same `mkdir -p` hint that `start` does.
-  - Related: D-79 (init only seeds the dir for `/gateway-secret`; the file itself gets created on first write).
+- **D-85** (Low, 2026-08-06, reporter: cli-consumer-ux drift review 2026-08-06) — PRD-TRD-cli-consumer-ux.md Scenario 5 step 6 says "Exits 0" but code exits 5 (Interrupted) on clean SIGINT. Wording bug in the new PRD; no operator impact. The code follows the parent GRILL (agentide-cli-consumer Q1/S7) lock that watch-on-SIGINT exits 5. Consumer.ts:371 calls `settle(resultOut(..., ExitCode.Interrupted))` where `ExitCode.Interrupted = 5`. Unit test consumer-ux.test.ts:216 asserts exit 5 and passes.
+  - Doc reality: PRD-TRD Scenario 5 step 6: `Exits 0`.
+  - Code reality: `ExitCode.Interrupted = 5` on SIGINT (matches parent lock).
+  - Why matters: documentation drift only. New readers following the PRD will expect exit 0.
+  - Resolution: accepted drift. One-line edit to PRD-TRD would close it (next doc pass). The behavior matches the parent pack; the new PRD's wording was an oversight.
+  - Verified by: .reports/2026-08-06-drift-cli-consumer-ux.md GAP-C1.
 
-- **D-79** (Critical, 2026-08-06, reporter: agentide e2e test session) — `agentide invoke <business-cap>` over the CLI unconditionally returns `GATEWAY_SESSION_REQUIRED`. The CLI never auto-creates a session.
-  - Doc claim: `agentide --help` shows `agentide invoke <cap> [--args '<json>'] [--session <id>] [--mode call|stream]`. The `--session` flag is optional with no entry-level help, implying auto-mint.
-  - Code reality: `packages/agentide/src/consumer.ts:runInvoke` accepts `--session` but never mints one when omitted. Same for all remote commands that need a session. The published dashboard and the SDK clients (sdk-node / sdk-browser) own session lifecycle; the CLI does not.
-  - Why matters: blocks every CLI-driven business invocation. The published 0.3.1 `agentide` binary cannot drive a single business cap without a session id, but no CLI surface produces one. The CLI is unusable for the headline use case.
-  - Owner: agentide CLI pack (next).
-  - To fix: in `runInvoke`, when `--session` is omitted, call `session.create` first, capture the id, send the invoke frame with that session id, return the result. Single round-trip. Optionally expose `agentide session create` as a top-level alias for operators who want to batch multiple calls in one session.
-  - Verified by: e2e test `agentide/docs/testing/e2e-2026-08-06.sh` Section 6 — every `agentide invoke` returned `GATEWAY_SESSION_REQUIRED` against an otherwise-working gateway + example app.
+- **D-86** (Low, 2026-08-06, reporter: cli-consumer-ux drift review 2026-08-06) — IMPL Phase 1 plan promised 4 unit tests including IPv6 host; the actual url-default.test.ts covers no-port / already-port / path+query / malformed — IPv6 case (e.g. `ws://[::1]/ws`) is not exercised. Both exercise the WHATWG parser in useful ways; IPv6 is a real edge case for dual-stack hosts.
+  - Doc reality: IMPL Phase 1 line 16 lists "IPv6 host" as the 4th test case.
+  - Code reality: url-default.test.ts has `ws://localhost/api?x=1` (path + query) as the 4th case.
+  - Why matters: WHATWG URL parser handles IPv6 hosts correctly out-of-the-box (`new URL("ws://[::1]/ws")` parses), but no test pins that. A future refactor that swaps the parser for a regex could regress IPv6 silently.
+  - Resolution: accepted drift. Append a 5th test case (`ws://[::1]:7300/ws` with port stays; `ws://[::1]/ws` defaults to 7300) in a future CLI-quality-of-life pack.
+  - Verified by: .reports/2026-08-06-drift-cli-consumer-ux.md (Execution Gaps, Phase 1).
 
-- **D-80** (High, 2026-08-06, reporter: agentide e2e test session) — CLI help says `--url <ws://host/ws>` with no port. The SDK door (default 7350) does NOT accept the CLI consumer protocol; only the websocket adapter port (7300) does. Operators following the help hit a silent 15-second timeout.
-  - Doc claim: `agentide --help` → `common flags: --url <ws://host/ws> --token <jwt|path:/...> --json` (no port, no protocol note).
-  - Code reality: `agentide start` banner shows `mcp :7100, ws :7300, sdk :7350`. `--port-sdk` is opt-in (`packages/agentide/src/start.ts:87-114`); when enabled, two websocket doors are bound. The SDK door is the backend-runtime door for `sdk-node`/`sdk-browser` with the `{type:"sdk.auth"}` first-frame protocol. The CLI consumer (`packages/agentide/src/consumer.ts:runConsumer` → `createWsClient` → `adapter-websocket/dist/client.js`) speaks the standard consumer protocol and only the :7300 adapter accepts it.
-  - Why matters: silent failure on the first remote command. A new operator follows the help, points at the host (and ignores the port), and the CLI waits forever for the WS handshake. The example app's `.env` uses `ws://127.0.0.1:7350` (correct for SDKs) — the help gives no hint that the CLI uses a different port.
-  - Owner: agentide CLI pack (next).
-  - To fix: update the help line to `agentide --url <ws://gateway-host:7300/ws>`. Better: detect the protocol mismatch in `client.open()` and emit a clear error like `error: --url points to the SDK door (port 7350); the CLI consumer needs the websocket adapter (port 7300).`
-  - Verified by: e2e test — `agentide sessions --url ws://127.0.0.1:7350/ws --token ...` hangs 15s with no output; same command on `:7300/ws` returns `[]` in <100ms.
+- **D-87** (Low, 2026-08-06, reporter: cli-consumer-ux drift review 2026-08-06) — IMPL Phase 5 plan said "non-clean exits (close before SIGINT) skip the destroy to avoid spamming errors"; the shipped code always tries and swallows the error into `warnings` (session-mint.ts:56-68). Operator-visible effect: an extra `warning: session.destroy failed (not connected)` line on stderr in the disconnect case. Functional leak behavior matches the plan (session leaks until idle timeout, same as "skip").
+  - Doc reality: IMPL Phase 5 L68: "non-clean exits skip the destroy".
+  - Code reality: `withAutoSession` finally always calls `session.destroy`; non-clean exits push the error into `warnings` and continue.
+  - Why matters: cosmetic — one extra warning line on disconnect. No operator impact beyond noise.
+  - Resolution: accepted drift. Could be tightened later by passing a `skipDestroy` flag from the watch's `client.onClose` handler, but the current behavior is correct and self-documenting.
+  - Verified by: .reports/2026-08-06-drift-cli-consumer-ux.md (Execution Gaps, Phase 5).
 
-- **D-81** (Medium, 2026-08-06, reporter: agentide e2e test session) — `agentide status` (no `--data-dir`) defaults to `./.agentide/data` relative cwd. When the gateway was started with `--data-dir=<somewhere>`, `status` from any other cwd fails with `ENOENT ./ .agentide/data/gateway-secret`.
-  - Doc claim: `agentide status [--data-dir <path>] [--pid-file <path>] [--url ...] [--token ...] [--json]` — implies a usable default.
-  - Code reality: `packages/agentide/src/cli.ts:runStatus` builds the platform with the default data-dir resolver which is `cwd + '/.agentide/data'`. The pid file lives at `/tmp/agentide.pid` by default and does NOT track the data-dir the child was started with.
-  - Why matters: `status` is brittle. Operators must remember the `--data-dir` they started with and pass it again. The pid file is the canonical artifact — it should carry the data-dir so `status` can recover it.
-  - Owner: agentide CLI pack (next).
-  - To fix: at start time, write the data-dir into the pid file (or a sibling `.json` next to the pid file). `status` reads the pid file, restores the data-dir, and runs.
+- **D-88** (Low, 2026-08-06, reporter: cli-consumer-ux drift review 2026-08-06) — `simulate.sh` does not exercise PRD Scenarios 2 (`--session` batch workflow) or 6 (no-URL pre-flight). Both are covered by unit tests (`consumer-ux.test.ts:168-187` for batch; `consumer.test.ts` for no-URL).
+  - Doc reality: PRD-TRD Scenarios 2 and 6.
+  - Code reality: covered in unit tests; not in `simulate.sh`.
+  - Why matters: minor sim coverage gap. The batch-workflow path is the one case where the operator owns the session lifecycle, and a future regression there would be a high-impact bug that no end-to-end sim would catch.
+  - Resolution: accepted drift. Append a sim section for Scenario 2 in the next CLI-quality-of-life pack (alongside D-78/D-81/D-83/D-84). Scenario 6 is pre-existing behavior not touched by this pack and can be left to the same pack.
+  - Verified by: .reports/2026-08-06-drift-cli-consumer-ux.md (Simulation Gaps).
 
-- **D-82** (Medium, 2026-08-06, reporter: agentide e2e test session) — `dashboard-core` `@spanexx/dashboard-core@0.0.4` (and the 0.0.2 referenced in the release notes) serves the P3 placeholder `app.js` (81 bytes) instead of the real client. Re-confirmed in 0.3.1.
-  - Doc claim: dashboard serves the full SPA client.
-  - Code reality: `packages/dashboard-core/src/server.ts:resolveAssetsDir()` builds its candidate list from the server's `__dirname` (e.g. `here/assets`, `here/../src/assets`, `here/../assets`, `cwd`). After `npm install -g @spanexx/dashboard-core`, the published layout is `node_modules/@spanexx/dashboard-core/src/assets/` — none of the candidates match. HTML loads; the JS client is the 81-byte placeholder.
-  - Why matters: dashboard renders but the SPA is non-functional. Operators see the title and assume the dashboard is working.
-  - Owner: dashboard-core pack (next).
-  - To fix: add the post-publish path to `resolveAssetsDir`'s candidates (or determine the real path via `require.resolve("@spanexx/dashboard-core/package.json")` and walk up to its root). Cut a `dashboard-core` patch release.
-  - Verified by: e2e test — `curl -s http://127.0.0.1:7200/assets/app.js` returns 81 bytes starting with `// P3 placeholder — P4 will replace with the full vanilla-JS dashboard client.`
-
-- **D-83** (Low, 2026-08-06, reporter: agentide e2e test session) — `agentide stop` exits 0 vs 1 inconsistently for the same "nothing running" state.
-  - Doc reality: `packages/agentide/src/cli.ts:runStop` (CID:start-009) branches — pid file present + pid dead → rc 0 with "already not running. Pid file removed."; pid file missing → rc 1 with "no gateway running (no pid file at /tmp/agentide.pid)".
-  - Why matters: minor DX. Both states convey "nothing to stop." Operators scripting `agentide stop && do_x` get a non-zero exit when the pid file is missing but zero when the pid is dead.
-  - Owner: agentide CLI pack (next).
-  - To fix: unify on one exit code (0 is friendlier for `&&` chains) for both branches, or document the distinction.
-
-- **D-84** (Low, 2026-08-06, reporter: agentide e2e test session) — `agentide client grant` requires `--tenant` and `--name` (not `--client-id --scope` as the broader help block suggests). No per-subcommand help exists, so the operator guesses.
-  - Doc reality: `agentide client --help` shows six subcommands in one row without flag details. `client grant` legitimately needs different flags than the rest of the client subcommands.
-  - Why matters: minor. First-time guess work for the grant subcommand.
-  - Owner: agentide CLI pack (next).
-  - To fix: per-subcommand help (`agentide client grant --help`) showing only the flags each subcommand needs.
+- **D-89** (Low, 2026-08-06, reporter: cli-consumer-ux drift review 2026-08-06) — `consumer.ts` is now 407 lines, over AGENTS.md rule 9 cap of 350. Pack added ~30 lines (auto-mint branch, wrong-door catch, two imports). Drift D-68 already tracks `cli.ts` (634 lines) — `consumer.ts` joins it. Future pack should extract `runWatch`/`runWatchInner` to `watch.ts` (~120 lines).
+  - Doc reality: AGENTS.md rule 9: code files under 350 lines.
+  - Code reality: `packages/agentide/src/consumer.ts` = 407 lines.
+  - Why matters: the file is still readable but is approaching the threshold. A future refactor should split it before more lines accumulate.
+  - Resolution: accepted drift. Defer to a future "consumer.ts split" pack.
+  - Verified by: .reports/2026-08-06-drift-cli-consumer-ux.md (Execution Gaps, code-architecture observation).
 
 ---
 
@@ -126,7 +110,35 @@
 - **D-70** (Resolved 2026-08-05, reporter: agentide-client-credentials Phase 8 review) — Client-action audit coverage was partial. Both halves fixed in this commit.
   - (a) CLI-path audit: `packages/agentide/src/cli.ts` `runClient` now opens an `AuditWriter` to the same `<dataDir>/audit.log` the gateway writes, and emits a row per state-changing subcommand: `client.create` / `client.grant` / `client.revoke` / `client.rotate` / `client.redeem` (denied on null). Row shape matches `AuditRecord` (`schemaVersion: 1, ts, tenantId, caller, capability:{name,version:"1"}, owner:"operator-cli", status:"ok"|"denied", durationMs:0`). `client list` stays read-only per PRD "every state-changing client action" wording.
   - (b) token_mint audit: `packages/gateway-core/src/factory.ts` `oauthTokenHandler` closure now passes `auditEmit: (row) => { void audit.append({...}); }` into `handleTokenRequest`. Row uses capability `oauth.token.exchange`, owner `gateway-core`. The 401-paths inside `handleClientCredentialsGrant` still skip the row (they didn't mint) — verified by reading the closure.
-  - Verified by: `packages/agentide/scripts/simulate-client-credentials.mjs` C1 + C2 + C7 scenarios — `audit.log` now contains ≥1 `oauth.token.exchange` row after the C1 happy path; revocations emit `client.revoke`; failures emit `denied`. Pre-fix, C7 would have failed with `expected >=1 oauth.token.exchange row, got 0`.
+  - Verified by: `packages/agentide/scripts/simulate-client-credentials.mjs` C1 + C2 + C7 scenarios — `audit.log` now contains ≥1 `oauth.token.exchange` row after the C1 happy path; revocations emit `client.revoke`; failures emit `denied`. Pre-fix, C7 would have failed with `expected >=1 oauth.token.exchange row, g
+- **D-78** (Resolved 2026-08-06, cli-quality-of-life pack, commit e880560) — agentide init on a fresh data dir no longer fails with raw ENOENT. The CLI is now self-sufficient.
+  - Doc claim: agentide init should bootstrap the directory.
+  - Code reality: packages/agentide/src/cli.ts runInit calls opts.fs.mkdir(dataDir, recursive: true) before createPlatform. The FileSystem interface in gateway-core/src/types.ts now has an OPTIONAL mkdir method; both nodeFileSystem and the bundled CLIs defaultFs implement it. In-memory fakes skip it. Idempotent on existing dirs.
+  - Why matters: first-run UX is fixed. Operators can run init on a fresh path without mkdir -p first.
+  - Verified by: cli-init.test.ts 3/3 (fresh, idempotent, nested-recursive). simulate.sh Scenario 1 + 1b: init exit 0 + dir + gateway-secret on disk.
+
+
+- **D-81** (Resolved 2026-08-06, cli-quality-of-life pack, commit e880560) — agentide status from any cwd now recovers the gateways data-dir.
+  - Doc claim: agentide status [--data-dir <path>] implies a usable default.
+  - Code reality: lifecycle.ts writePidFile now writes JSON {pid,dataDir,startedAt}. readPidFile returns null | PidFileInfo | {pid} (legacy plain-number fallback). start.ts runDetachedStart passes dataDir + ISO timestamp. cli.ts runStatus reads the pid file and overrides the cwd-relative default with info.dataDir.
+  - Why matters: status works from any cwd. The pid file is the canonical artifact.
+  - Verified by: lifecycle-pidfile.test.ts 5/5 (write+read JSON, legacy, malformed, missing, idempotent remove). simulate.sh Scenario 2: cd / && agentide status returns the right counts.
+
+
+- **D-83** (Resolved 2026-08-06, cli-quality-of-life pack, commit e880560) — agentide stop unifies on rc 0 in both "nothing running" branches.
+  - Doc reality: start.ts runStop (CID:start-009) had inconsistent exit codes — pid file missing → rc 1; pid present + pid dead → rc 0.
+  - Code reality: start.ts:259 now returns rc 0 in the missing-pid-file branch. The pid-present-but-dead branch already returned rc 0 via result(msgs outcome) (default exitCode 0).
+  - Why matters: shell scripts get idempotent stop. agentide stop && next always proceeds.
+  - Verified by: cli-stop.test.ts 2/2 (both branches exit 0). simulate.sh Scenario 3: stop idempotent in shell chains.
+
+
+- **D-84** (Resolved 2026-08-06, cli-quality-of-life pack, commit e880560) — per-subcommand help for agentide client.
+  - Doc reality: agentide client --help dumped six subcommands in one row without flag details; client grant legitimately needs --tenant/--name (not --client-id/--scope like the rest).
+  - Code reality: new clientHelp(sub?) function in cli.ts emits either the six-row summary or the per-subcommand flag block. runClient short-circuits on no-subcommand or --help. The top-level runCli --help gate no longer fires when a subcommand is present.
+  - Why matters: first-time guess work for the grant subcommand is gone.
+  - Verified by: cli-client-help.test.ts 4/4 (no subcommand, grant --help, create --help, redeem --help). simulate.sh Scenario 4: all five assertions pass.
+
+ot 0`.
 
 - **D-71** (Resolved 2026-08-05, reporter: agentide-client-credentials Phase 6-7 review) — IMPL prose for the SDK OAuth shape drifted from shipped code in two places; both resolved by documenting code reality.
 

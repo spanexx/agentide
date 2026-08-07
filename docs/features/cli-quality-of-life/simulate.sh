@@ -88,7 +88,6 @@ sleep 1
 "$AG" stop > "$W/stop2.out" 2>&1; RC2=$?
 cat "$W/stop2.out" | tee -a "$LOG"
 [ $RC2 -eq 0 ] && pass "stop when already stopped → rc 0"
-[ $RC2 -ne 0 ] && pass "stop idempotent in shell chain (rc 0)"
 [ $RC2 -ne 0 ] && fail "stop when already stopped → rc=$RC2 (wanted 0)"
 
 # ---------------------------------------------------------------------------

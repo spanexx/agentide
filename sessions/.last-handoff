@@ -1,123 +1,77 @@
-# websocket-adapter: IMPL approved, Phase 1 shipped (8/8 green) — Phases 2-9 next
+# Handoff — 2026-08-06: cli-consumer-ux SHIPPED (commit 1a6bfca)
 
-## What happened this session
+## What was built
 
-Feature-pipeline run for the WebSocket adapter pack (wayfinder map W1-W6 locked,
-`docs/wayfinder/websocket-adapter/map.md` — ALL tickets closed).
+Pack `cli-consumer-ux` — UX revisit of `agentide-cli-consumer` (row 28 of the
+backlog). Fixes two operator-blocking issues from the 2026-08-06 e2e test:
 
-- **GRILL ✅** `docs/features/websocket-adapter/GRILL-websocket-adapter.txt` (23 Q&As)
-- **Pre-impl sim ✅** `docs/features/websocket-adapter/simulate-pre.html` (24/24 Playwright, user-reviewed, restyled)
-- **PRD-TRD ✅ Approved** `docs/features/websocket-adapter/PRD-TRD-websocket-adapter.md`
-  (port **7300** confirmed 2026-08-03; 14 scenarios; ConnectionRecord design)
-- **IMPL ✅ Approved** `docs/features/websocket-adapter/IMPL-websocket-adapter.md` —
-  user said "approved" → implementation started
-- **opensrc gate done**: ws 8.21.1 source fetched (`opensrc path ws --cwd agentide` →
-  `~/.opensrc/repos/github.com/websockets/ws/8.21.1`); findings recorded in IMPL
-  Dependency Analysis section
+* **D-79 (Critical):** `agentide invoke <business-cap>` now auto-mints a
+  session via `session.create`+invoke+`session.destroy` when `--session`
+  is omitted. Supplied `--session` is reused (no destroy). Driven by
+  `packages/agentide/src/session-mint.ts` (`withAutoSession`).
+* **D-80 (High):** `--url` with no port defaults to `7300` (websocket
+  adapter / consumer door). Pointing at the SDK door `7350` emits a
+  clear `error: --url points to the SDK door (port 7350); the CLI
+  consumer needs the websocket adapter (port 7300).` and exits 2 —
+  detected by a 3s auth-handshake timeout in the WS client
+  (`WsDoorMismatchError`). Driven by
+  `packages/agentide/src/url-default.ts` (`applyPortDefault`) and
+  `packages/adapter-websocket/src/client.ts` (`authTimeoutMs`).
+* **Q3 (watch lifecycle):** `agentide watch` auto-mints, keeps the
+  session alive for the watch lifetime, destroys on clean exit.
+  Driven by `runWatch` in `packages/agentide/src/consumer.ts`.
 
-## Implementation state (Phase 1 COMPLETE — verified green)
+## What the next session should do
 
-New package `packages/adapter-websocket/` created (all uncommitted):
-- `package.json` — name `@platform/adapter-websocket`, deps: `ws ^8.18.0` +
-  workspace `errors`/`event-bus`/`gateway-core`; devDeps mirror backend-runtime
-- `tsconfig.json` — extends root base, references errors/event-bus/gateway-core
-- `src/types.ts` — `DEFAULT_CONFIG` (host 127.0.0.1, port 7300, 1 MiB × 2,
-  stats 1000ms, pre-auth 30s, heartbeat 30s/10s), `WebSocketAdapterConfig`,
-  `ConnectionRecord` (state machine, subs Map, queue, timers), all 16 wire
-  frame types (ClientFrame/ServerFrame), `AUTH_ERROR_CODES` (5 lowercase
-  phrases), `WebSocketAdapter` interface
-- `src/errors.ts` — `WS_ERROR_CODES` (5 codes: WS_INVALID_TOPIC, WS_FORBIDDEN,
-  WS_INVALID_FRAME, WS_INTERNAL, WS_FRAME_TOO_LARGE)
-- `src/__tests__/types.test.ts` — 8 tests, **ALL PASS**
-- Root `tsconfig.json` — added `packages/adapter-websocket` reference
-- `pnpm-lock.yaml` modified (workspace install — up to date)
+The pack is SHIPPED. The user is in good shape. The next natural pack
+is a **CLI quality-of-life** that closes the still-open drifts:
 
-**Phase 1 gate: PASSED** — `cd agentide && pnpm exec vitest run packages/adapter-websocket` → 1 file, 8 tests.
+* D-78 (Medium) — `agentide init --data-dir <fresh>` fails with raw
+  ENOENT. Should mkdir or print the same hint `start` does.
+* D-81 (Medium) — `agentide status` (no --data-dir) defaults to
+  cwd-relative `./.agentide/data`. Fails when start was elsewhere.
+  Pid file should track data-dir.
+* D-83 (Low) — `agentide stop` exit codes inconsistent (0 vs 1) for
+  same "nothing running" state.
+* D-84 (Low) — `client grant` flag mismatch (CLI expects
+  --tenant/--name, not --client-id/--scope); no per-subcommand help.
 
-## ⚠️ CRITICAL — vitest root quirk
+Plus the cli-consumer-ux accepted drifts:
 
-`pnpm test -w @platform/adapter-websocket` (and any `pnpm test` run from INSIDE
-the package dir) prints **"No test files found"** — the root `vitest.config.ts`
-include (`packages/*/src/**/*.test.ts`) is relative to the agentide root, but
-vitest infers root from cwd. **The repo convention: run vitest from the agentide
-ROOT**: `pnpm exec vitest run packages/adapter-websocket`, or root `pnpm test`
-(all packages, `--passWithNoTests`). Same applies to backend-runtime — do NOT
-"fix" package test scripts.
+* D-85 (Low) — PRD Scenario 5 wording fixed; mark resolved.
+* D-86 (Low) — IPv6 host test added in this session; mark resolved.
+* D-87 (Low) — Phase 5 always-destroy warning; acceptable, no action.
+* D-88 (Low) — Scenario 2 batch sim section added; mark resolved.
+* D-89 (Low) — consumer.ts 407 lines, over AGENTS.md rule 9 cap of 350.
+  Future pack should extract runWatch/runWatchInner to watch.ts.
 
-## Phase 2-9 roadmap (from IMPL, TDD red-green per phase)
+## Artifacts (all under agentide/)
 
-1. **P2 `src/auth.ts`** — verifyToken (gateway-core), `originMatches`
-   (**split at `*.` via indexOf — NEVER `.slice(1)`; the sim's slice bug ate the
-   'h' of `https://`**; exact OR single-label right-anchored wildcard), pre-auth
-   state machine (30s → close 1008; non-auth frames silently dropped),
-   refresh = atomic claim swap carrying subs/in-flight/queue/connectionId,
-   emits `event.connection.rotated` (internal, NOT relayed), no re-auth/prune
-2. **P3 `src/registry.ts`** — ConnectionRegistry add/remove/get/snapshot/prune
-3. **P4 `src/fanout.ts`** — per (conn × pattern) `eventBus.subscribe` with
-   unsubscribe handle stored on record; **relay NEVER awaits socket.send**
-   (bus dispatches with Promise.allSettled); `event.*` filtered (defense-in-
-   depth — bus already blocks external publishes via RESERVED_INTERNAL_PREFIX);
-   per-pattern authz at subscribe: `checkAuthz(scope, ["platform.<first>.read"])`
-   (bare `*` → `platform.*.read`); batch all-or-nothing; dedupe idempotent;
-   unsubscribe of never-subscribed → ok
-4. **P5 `src/invoke.ts`** — invoke frame → `gateway.handleInvocation`; error
-   PASSTHROUGH (no third vocabulary; e.g. GATEWAY_SESSION_NOT_FOUND passes
-   verbatim on invoke.error); correlationId echo verbatim; stream mode wraps
-   single-shot kernel call → `invoke.partial`×N + `invoke.end`; partials ride
-   the same queue
-5. **P6 `src/queue.ts`** — FIFO byte-budget queue, drop-OLDEST keep-newest while
-   over `maxBufferedBytes`, cumulative `dropped`, stats frame ~1s after first
-   drop (arm/disarm one-shot), drain via socket.send
-6. **P7 `src/server.ts`** — `createWebSocketAdapter(gateway, eventBus, cfg)`;
-   `ws.WebSocketServer` with **`maxPayload: maxFrameBytes` EXPLICITLY** (ws
-   default is 100 MiB!); upgrade `req.headers.origin` captured on
-   `connection(ws, req)`; heartbeat `socket.ping()` + `on('pong')` → close
-   1011 (autoPong default true); outbound over-cap → error frame + 1009;
-   `stop()` snapshot/unsubscribe/close/clear timers; `src/index.ts` re-exports
-7. **P8 agentide wiring** — factory `adapterWs !== false` default ON, `wsPort`
-   default 7300, start after gateway+backend-runtime, stop reverse, expose
-   `platform.wsAdapter`, reuse bootstrapped secret; `types.ts` + `cli.ts`
-   (opts out) + `index.ts` re-exports + `__tests__/websocket-adapter.test.ts`
-8. **P9 post-impl sim** — `packages/agentide/scripts/simulate-websocket-adapter.mjs`
-   (DIFFERENT script from simulate-pre.html; drive real adapter; PRD
-   scenarios 1-14)
+| Path | What |
+|---|---|
+| `docs/features/cli-consumer-ux/GRILL-cli-consumer-ux.txt` | Locked decisions Q1, Q2, Q3 |
+| `docs/features/cli-consumer-ux/PRD-TRD-cli-consumer-ux.md` | Contract (6 scenarios) |
+| `docs/features/cli-consumer-ux/IMPL-cli-consumer-ux.md` | 5 phases, all complete |
+| `docs/features/cli-consumer-ux/simulate.sh` | **Canonical** post-impl sim — 32 PASS / 1 FAIL (the 1 FAIL is pre-existing D-82 dashboard app.js placeholder) |
+| `docs/features/cli-consumer-ux/archive/simulate-pre.sh` | Archived design-time sim |
+| `.reports/2026-08-06-drift-cli-consumer-ux.md` | Drift check verdict: **Minor Drift** (5 gaps, all accepted) |
+| `docs/drift.md` | D-78..D-89 logged (D-85, D-86, D-88 already fixed in this session) |
+| `docs/Feature_Backlog.md` | Row 30 added (cli-consumer-ux) |
+| `docs/testing/2026-08-06-issues.md` + `e2e-2026-08-06.sh` | The discovery artifacts (still in the repo, may want to consolidate) |
+| Commit `1a6bfca` | feat(agentide): CLI consumer UX — auto-mint session, default port, wrong-door error |
+| Commit `a164d33` | chore(backlog): mark cli-consumer-ux SHIPPED |
 
-Then: `feature-pipeline-review` sub-agent, drift check (`drift read`), `update-backlog`,
-git-flow commits (docs + code separately — root repo vs agentide repo).
+## Test status
 
-## Locked contract in one screen (full detail: map.md / PRD-TRD / GRILL)
+* Full suite: 105/105 files, 975/975 tests pass.
+* Precommit: 0 warnings, 0 errors.
+* Post-impl sim: 32 PASS / 1 FAIL (D-82 dashboard placeholder, pre-existing).
 
-- Flat JSON-text envelope, **16 frame types**, no JSON-RPC, no version field v1
-- Auth: JWT first message after open; `auth.ok {connectionId, claims}` |
-  `auth.error {code, message}` + close **1008**; pre-auth timeout 30s;
-  refresh = `auth` anytime, atomic, no re-auth, no prune
-- Origin: per-token `expectedOrigins` claim (D-50 — mint side NOT built;
-  adapter is ENFORCER only, browser clients stay denied until dashboard lands);
-  Node (no Origin) bypass; mismatch → "origin mismatch" + 1008
-- Subs: verbatim bus topics, `*` final segment only (validatePattern reuse),
-  per-pattern authz `platform.<first>.read`, `event.*` reserved, no session
-  scoping, no count cap, prune on close
-- Pull: universal `invoke` (mode call|stream), `invoke.*` echo correlationId
-- Backpressure: 1 MiB/conn, drop-oldest FIFO, `stats {dropped}` ~1/s cumulative
-- Close codes: 1008 auth / 1011 heartbeat / 1009 frame too large
+## Useful skills for the next session
 
-## Git state (agentide repo, HEAD 4b173b2 main)
-
-- Modified: docs/CONTEXT.md, docs/architecture/Agentide.md (sdk-browser T7
-  fixes), docs/gateway-core (deleted — pre-existing), docs/wayfinder/browser-
-  runtime/map.md, pnpm-lock.yaml, tsconfig.json
-- Untracked: docs/features/websocket-adapter/ (GRILL/sim/PRD-TRD/IMPL — ALL
-  uncommitted), docs/wayfinder/websocket-adapter/, packages/adapter-websocket/
-- NO commit requested yet; git-flow comes after shipping (per skill)
-- Parallel: cli-adapter pack in flight (PRD approved, IMPL draft, 7 crates
-  opensrc'd — separate branch of work, don't touch)
-- HTTP server on :7947 may still run (agentide/docs) — safe to kill
-- Browser page on simulate-pre.html (not shared) — stale, ignore
-
-## For the next session
-
-Skills: situation-awareness → tdd (red-green per phase) → typecheck → git-flow
-(after ship) → feature-pipeline-review → update-backlog → drift read before any
-doc edit. Caveman mode + log-prompt + plain-english-first per AGENTS.md.
-Use `pnpm exec vitest run packages/adapter-websocket` from agentide root.
-D-50 NOT this pack's scope. Do not touch cli-adapter branch of work.
+* `situation-awareness` — bootstrap the next session.
+* `grill-with-docs` — if the next pack is the CLI quality-of-life,
+  start with a GRILL on D-78/D-81/D-83/D-84 + the D-78 init-mkdir fix.
+* `git-flow save / ship` — when committing the next pack.
+* `feature-pipeline-review` — drift check after next pack.
+* `update-backlog` — to mark D-78 etc. resolved.

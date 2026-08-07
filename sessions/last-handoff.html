@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>agentide — Session Handoff · 2026-08-06</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{borderRadius:{lg:'0.5rem',md:'calc(0.5rem - 2px)',sm:'calc(0.5rem - 4px)'},fontFamily:{sans:['system-ui','-apple-system','sans-serif']}}}}
+</script>
+<style>
+:root{--bg:hsl(0 0% 3.9%);--fg:hsl(0 0% 98%);--card:hsl(0 0% 6%);--border:hsl(240 3.7% 15.9%);--muted:hsl(0 0% 14.9%);--muted-fg:hsl(0 0% 63.9%);--primary:hsl(217.2 91.2% 59.8%);--warn:hsl(38 92% 50%);--ok:hsl(142 71% 45%)}
+[data-theme="light"]{--bg:hsl(0 0% 100%);--fg:hsl(240 10% 3.9%);--card:hsl(0 0% 96.1%);--border:hsl(240 5.9% 90%);--muted:hsl(240 4.8% 85%);--muted-fg:hsl(240 3.8% 46.1%);--primary:hsl(217.2 91.2% 59.8%);--warn:hsl(38 92% 50%);--ok:hsl(142 71% 45%)}
+body{background:var(--bg);color:var(--fg)}.bg-card{background:var(--card)}
+</style>
+</head>
+<body class="antialiased">
+<div class="max-w-3xl mx-auto px-4 py-8 space-y-6">
+
+  <div class="text-center space-y-1.5 relative">
+    <button id="themeToggle" class="absolute right-0 top-0 p-2 rounded-md hover:opacity-80 transition-opacity cursor-pointer" onclick="toggleTheme()" style="border:1px solid var(--border);background:var(--card)">
+      <span id="moonIcon" style="display:flex;color:var(--fg)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      </span>
+      <span id="sunIcon" style="display:none;color:var(--fg)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+      </span>
+    </button>
+    <h1 class="text-xl font-bold tracking-tight" style="color:var(--primary)">agentide — Session Handoff</h1>
+    <p class="text-xs" style="color:var(--muted-fg)">2026-08-06 · post-SHIPPED release cut + 3 bugs found + 2 skills updated</p>
+  </div>
+
+  <!-- Soul -->
+  <div class="bg-card border rounded-lg p-5" style="border-color:var(--border)">
+    <p class="text-sm leading-relaxed" style="color:var(--muted-fg)">
+      This was the "ship the thing" session, not the "build the thing" session. BI[13] dashboard-core had already been SHIPPED earlier in the day — six phases green, drift review verdict "Minor Drift," recon complete, archive settled. The work that remained was mechanical but loaded with sharp edges: cut a 0.3.0 release of the inner 14 packages, get dashboard-core's first publish out, and update the two repo-local skills so the next person (or the next agent) has an accurate operator playbook instead of a 2026-08-05 fossil. The mood was "let's not break it." Things broke anyway, and we found the fixes — three in a row. By the end the published versions matched the release-please intent and the skills reflect what actually worked.
+    </p>
+  </div>
+
+  <!-- What We Did -->
+  <div class="bg-card border rounded-lg p-5 space-y-3" style="border-color:var(--border)">
+    <h2 class="text-sm font-semibold" style="color:var(--fg)">What We Did</h2>
+    <div class="text-xs space-y-3" style="color:var(--muted-fg)">
+      <p><span style="color:var(--primary)">Cut the 0.3.0 / 0.3.1 release across all 15 packages.</span> The flow: local <code>npx release-please release-pr --token "$(gh auth token)"</code> → <code>gh pr merge --squash --admin --delete-branch</code> → <code>gh workflow run release.yml --ref main</code>. Three Release PRs (#53, #55, #56). Publish run 31100166271 succeeded for 15 of 15 in 1m11s. Verified via <code>npm view @spanexx/{agentide,gateway-core,dashboard-core} version</code> → 0.3.1 / 0.6.1 / 0.0.4.</p>
+      <p><span style="color:var(--primary)">Fixed a bundle-crash bug that blocked every agentide CLI subcommand.</span> Root cause: <code>packages/dashboard-core/src/server.ts</code> used <code>fileURLToPath(import.meta.url)</code> at module top level, but esbuild's <code>--format=cjs --platform=node</code> bundle replaces <code>import.meta.url</code> with <code>{}</code>. PR #54 introduced <code>packages/dashboard-core/src/fileloc.ts</code> with a bundle-safe fallback chain (import.meta.url → globalThis.__filename → process.cwd()) plus an <code>AGENTIDE_DASHBOARD_ASSETS</code> env override. Four tests cover the three paths.</p>
+      <p><span style="color:var(--primary)">Added the --dashboard-port CLI flag.</span> PR #54 added it to <code>cli.ts</code> and <code>start.ts</code> with the same validation pattern as <code>--port-sdk</code>. Also fixed a parser-level bug where <code>--flag=value</code> was silently stored as key <code>flag=value</code> instead of <code>flag: "value"</code> — that was why <code>--dashboard-port=7200</code> didn't bind 7200. The new parser splits on <code>=</code> (CID:cli-args-001).</p>
+      <p><span style="color:var(--primary)">Verified end-to-end.</span> <code>npm install -g</code> + <code>agentide start --dashboard-port=7200</code> → <code>ss -ltn | grep 7200</code> shows LISTEN, <code>GET /</code> returns the real 1052-byte HTML.</p>
+      <p><span style="color:var(--primary)">Updated two repo-local skills.</span> <code>ci-cd-agentide/SKILL.md</code> and <code>release-agentide/SKILL.md</code> at <code>/home/spanexx/Shared/Learn/Agent-Bridge-SDK/.agents/skills/</code>. Both were 2026-08-05 fossils; both are now full rewrites reflecting what actually shipped. The release-agentide skill documents the correct 4-step flow instead of the broken <code>git tag</code> shortcut.</p>
+    </div>
+  </div>
+
+  <!-- What We Found -->
+  <div class="bg-card border rounded-lg p-5 space-y-3" style="border-color:var(--border)">
+    <h2 class="text-sm font-semibold" style="color:var(--fg)">What We Found</h2>
+    <div class="text-xs space-y-3" style="color:var(--muted-fg)">
+      <p><span style="color:var(--warn)">Published dashboard-core serves placeholder app.js.</span> <code>curl http://127.0.0.1:7200/assets/app.js</code> returns 81 bytes of the inline P3 placeholder instead of the real 5.7 KB client. Cause: <code>fileloc.resolveAssetsDir()</code> doesn't match the post-publish layout. The server, HTML, and token-mint all work; only the JS client doesn't. <em>Open drift item — needs a dashboard-core release.</em></p>
+      <p><span style="color:var(--warn)">Release-please only counts commits scoped to a package path.</span> A <code>fix(agentide):</code> commit touching <code>packages/dashboard-core/src/fileloc.ts</code> bumps agentide but not dashboard-core. Worked around with a manual manifest bump in PR #55.</p>
+      <p><span style="color:var(--warn)">pnpm 11 -r publish SILENTLY SKIPS already-published versions.</span> The skip check runs BEFORE prepublishOnly, so no bump log line appears. We hit this twice; the recovery recipe is in commit <code>302d205</code>: sync <code>package.json</code> + <code>.github/release-please-manifest.json</code> to npm state, commit, re-dispatch.</p>
+      <p><span style="color:var(--warn)">--data-dir may be silently ignored.</span> <code>agentide start --data-dir=/tmp/ag-data</code> returned "./.agentide/data not writable" — the flag didn't reach the gateway start logic. Suspect in <code>start.ts</code>'s detached-child path. <em>Open drift item.</em></p>
+    </div>
+  </div>
+
+  <!-- How to Continue -->
+  <div class="bg-card border rounded-lg p-5 space-y-3" style="border-color:var(--border)">
+    <h2 class="text-sm font-semibold" style="color:var(--fg)">How to Continue</h2>
+    <div class="text-xs space-y-3" style="color:var(--muted-fg)">
+      <p><span style="color:var(--ok)">For the next release:</span> follow <code>release-agentide</code> literally — do NOT use <code>git tag &amp;&amp; git push --tags</code>. Use <code>gh workflow run release.yml --ref main</code> after merging the Release PR. Then run step 6 to sync local versions.</p>
+      <p><span style="color:var(--ok)">For the placeholder app.js:</span> fix is in <code>packages/dashboard-core/src/server.ts</code>'s <code>resolveAssetsDir()</code> — add the post-publish path. Test with <code>npm install -g @spanexx/dashboard-core@0.0.4 &amp;&amp; find /usr/local/lib/node_modules/@spanexx/dashboard-core -name 'app.js'</code>. Then cut a dashboard-core release.</p>
+      <p><span style="color:var(--ok)">For the --data-dir drift:</span> reproduce in latest agentide source, grep <code>start.ts</code> for <code>flags["data-dir"]</code> vs <code>dataDir</code> — there may be a parse mismatch in the detached-child path.</p>
+      <p><span style="color:var(--ok)">For future bundle-crash class bugs:</span> audit all packages for top-level <code>fileURLToPath(import.meta.url)</code> patterns; <code>fileloc.ts</code> handles all three modes (ESM source, CJS bundled, env override) and is the canonical replacement.</p>
+      <p><span style="color:var(--ok)">For session state:</span> fully committed to main (last commits: <code>e841e06</code> bundle fix, <code>fae3f2c</code> release merge, <code>24f95d0</code> dashboard-core bump, <code>301d205</code> version sync). Working tree was clean at handoff. Next release starts from a known-good baseline.</p>
+    </div>
+  </div>
+
+  <div class="text-center text-xs py-4" style="color:var(--muted-fg);opacity:.5">agentide · Session Handoff</div>
+</div>
+
+<script>
+function toggleTheme() {
+  const html=document.documentElement,moon=document.getElementById('moonIcon'),sun=document.getElementById('sunIcon');
+  if(html.getAttribute('data-theme')==='light'){html.removeAttribute('data-theme');moon.style.display='flex';sun.style.display='none';localStorage.setItem('theme','dark')}
+  else{html.setAttribute('data-theme','light');moon.style.display='none';sun.style.display='flex';localStorage.setItem('theme','light')}
+}
+(function(){const s=localStorage.getItem('theme');if(s==='light'){document.documentElement.setAttribute('data-theme','light');document.getElementById('moonIcon').style.display='none';document.getElementById('sunIcon').style.display='flex'}})();
+</script>
+</body>
+</html>
