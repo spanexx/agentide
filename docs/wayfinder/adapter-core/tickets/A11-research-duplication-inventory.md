@@ -1,9 +1,13 @@
 # A11 — Research: formal duplication inventory
 
 **Type:** `wayfinder:research` (AFK)
-**Status:** open
+**Status:** **closed** (resolved 2026-08-07)
 **Blocks:** — (informs A1–A8; does not gate)
 **Blocked by:** —
+
+## Resolution
+
+Inventory complete — `docs/wayfinder/adapter-core/research/A11-duplication-inventory.md` (branch `research/adapter-core-a11`, commit `345535f`). Headline: 16 duplicated pipeline files (11 WS + 5 MCP, 2,222 lines), 14 test files (1,830 lines), 2 sims. Corrections to charting context: `decodeScopeFromToken` (`translate.ts:54-73`) is the only unsigned-JWT duplication; Bearer extraction lives in `server.ts:44` (not translate.ts); `backend-runtime/src/verify.ts` (81 lines) is the only file-level copy. Kernel contracts NOT duplicated: 5.
 
 ## Question
 

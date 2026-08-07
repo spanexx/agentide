@@ -4,7 +4,7 @@
 > every Adapter (existing and future) stands on.
 >
 > **Status:** charting 2026-08-07 (destination locked via grill — defaults accepted).
-> Research tickets fired; frontier ticketed below.
+> Research resolved; frontier = A1.
 > Live tracker: this map + the child tickets under `tickets/`.
 
 ## Destination
@@ -61,15 +61,16 @@ resolves via this map's tickets.
 | # | Ticket | Type | Blocks |
 |---|---|---|---|
 | A1 | Shared package boundary | grilling (HITL) | A2–A9 |
-| A10 | Streaming/subscription patterns survey | research (AFK) | A4 |
-| A11 | Duplication inventory | research (AFK) | — |
+
+Closed: A10 (streaming patterns survey), A11 (duplication inventory) — see Decisions so far.
 
 Blocked elsewhere: A2, A3, A4, A5, A6 (by A1); A4 (by A10); A7, A8 (by A1 + A2–A6); A9
 (by A1).
 
 ## Decisions so far
 
-<!-- one line per closed ticket: title — gist of the answer -->
+- [A10 — Streaming/subscription patterns survey](../tickets/A10-research-streaming-patterns.md) — response channel with a terminal: `single | stream | subscribe`, primitives `emit/end/event` sharing one call id; unary = stream of length one, so kernel streaming later is additive by construction. Backpressure/authz/replay stay adapter-local in v1.
+- [A11 — Duplication inventory](../tickets/A11-research-duplication-inventory.md) — 16 duplicated files (2,222 lines: 11 WS + 5 MCP), 14 test files, 2 sims; only file-level copy is backend-runtime `verify.ts`; only unsigned-JWT duplication is `decodeScopeFromToken`; Bearer extraction is in `server.ts:44`, not translate.ts.
 
 ## Not yet specified
 

@@ -1,9 +1,13 @@
 # A10 — Research: streaming/subscription response patterns at adapter boundaries
 
 **Type:** `wayfinder:research` (AFK)
-**Status:** open
+**Status:** **closed** (resolved 2026-08-07)
 **Blocks:** A4
 **Blocked by:** —
+
+## Resolution
+
+Survey complete — `docs/wayfinder/adapter-core/research/A10-streaming-patterns.md` (branch `research/adapter-core-a10`, commit `ccde406`). Recommendation: a **response channel with a terminal** per invocation — declared mode `single | stream | subscribe`; three primitives (`emit(chunk)`, `end(result|error)`, `event(topic,payload)`), all chunks share one call `id`. gRPC proves unary = stream of length one, so kernel streaming later is **additive by construction** — no seam redesign. Adapters map chunks to their own frames (WS `invoke.partial`/`invoke.end`, MCP merges into one `CallToolResult`). Backpressure, topic authz, replay stay adapter-local for v1.
 
 ## Question
 
