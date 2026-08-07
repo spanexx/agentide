@@ -9,6 +9,7 @@
   "references": [
     { "path": "../errors" },
     { "path": "../event-bus" },
-    { "path": "../gateway-core" }
+    { "path": "../gateway-core" },
+    { "path": "../adapter-core" }
   ]
 }
