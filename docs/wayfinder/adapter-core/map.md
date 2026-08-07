@@ -60,15 +60,20 @@ resolves via this map's tickets.
 
 | # | Ticket | Type | Blocks |
 |---|---|---|---|
-| A1 | Shared package boundary | grilling (HITL) | A2–A9 |
+| A2 | Auth pipeline: verify-early vs verify-late | grilling (HITL) | A7, A8 |
+| A3 | Session resolution: passthrough vs auto-mint | grilling (HITL) | A7, A8 |
+| A4 | Response strategy seam | grilling (HITL) | A7, A8 |
+| A5 | Error envelope | grilling (HITL) | A7, A8 |
+| A6 | Capability lookup | grilling (HITL) | A7, A8 |
 
-Closed: A10 (streaming patterns survey), A11 (duplication inventory) — see Decisions so far.
+Closed: A10, A11 (research), A1 (boundary) — see Decisions so far.
 
-Blocked elsewhere: A2, A3, A4, A5, A6 (by A1); A4 (by A10); A7, A8 (by A1 + A2–A6); A9
-(by A1).
+Blocked: A4 (by A10 — resolved, now unblocked); A7, A8 (by A2–A6); A9 (by A1 — now
+unblocked).
 
 ## Decisions so far
 
+- [A1 — Shared package boundary](../tickets/A1-shared-package-boundary.md) — "own bytes" rule: parse/render stay in the door, everything between is shared (connection registry shared; MCP tool-card rendering stays in MCP). adapter-core imports gateway-core at runtime; doors import ONLY adapter-core (re-exports). One-call setup `createAdapterPipeline({gateway, config, input, output, errors, response})`; transport lifecycle stays with the door. adapter-core emits no events; kernel keeps observability. `delivery: decision-only`.
 - [A10 — Streaming/subscription patterns survey](../tickets/A10-research-streaming-patterns.md) — response channel with a terminal: `single | stream | subscribe`, primitives `emit/end/event` sharing one call id; unary = stream of length one, so kernel streaming later is additive by construction. Backpressure/authz/replay stay adapter-local in v1.
 - [A11 — Duplication inventory](../tickets/A11-research-duplication-inventory.md) — 16 duplicated files (2,222 lines: 11 WS + 5 MCP), 14 test files, 2 sims; only file-level copy is backend-runtime `verify.ts`; only unsigned-JWT duplication is `decodeScopeFromToken`; Bearer extraction is in `server.ts:44`, not translate.ts.
 
