@@ -60,16 +60,16 @@ resolves via this map's tickets.
 
 | # | Ticket | Type | Blocks |
 |---|---|---|---|
-| A4 | Response strategy seam | grilling (HITL) | A7, A8 |
 | A5 | Error envelope | grilling (HITL) | A7, A8 |
 | A6 | Capability lookup | grilling (HITL) | A7, A8 |
 
-Closed: A10, A11 (research), A1 (boundary), A2 (auth pipeline), A3 (session resolution) — see Decisions so far.
+Closed: A10, A11 (research), A1 (boundary), A2 (auth pipeline), A3 (session resolution), A4 (response strategy seam) — see Decisions so far.
 
-Blocked: A7, A8 (by A4–A6); A9 (by A1 — unblocked, defer to after migrations).
+Blocked: A7, A8 (by A5–A6); A9 (by A1 — unblocked, defer to after migrations).
 
 ## Decisions so far
 
+- [A4 — Response strategy seam](../tickets/A4-response-strategy-seam.md) — per-invocation `ResponseChannel` created by the door's strategy, driven by the pipeline; primitives `emit(chunk)` / `end(result|error)` / `event(topic,payload)` share one call id (A10 shape). Chunks are the shared intermediate; packaging (WS `invoke.partial`+`end`, MCP merge into one `CallToolResult`) stays in the door (A1 rule). `subscribe` frame = adapter-local v1, unchanged; channel `subscribe` mode = FUTURE (real capability stream, e.g. `gateway.watch`), not shipped dormant; graduates to core only with a second consumer. Backpressure = adapter-local v1 (`queue.ts` untouched; `emit` never awaited by pipeline). Kernel real streaming = additive by construction; terminal guarantees locked now (`end` exactly once, `emit` after `end` error, `event` before `end` only). `delivery: decision-only`.
 - [A3 — Session resolution](../tickets/A3-session-resolution.md) — pass-through only: adapter-core never decides a session exists, no `sessionPolicy`, no auto-mint helper; session lifecycle stays a consumer concern (`withAutoSession` in CLI stays put — zero-delta; D-91 is consumer-side, not adapter-core's). No sessionId → passthrough-undefined, kernel owns the verdict via `SESSION_LESS_CAPABILITIES` (read-only discovery + `session.*` lifecycle + `auth.token.*` proceed session-less; business caps with missing session → existing `GATEWAY_*` error, unchanged). No session lifecycle events (A1 lock); keep-alive is consumer policy (`session.touch` stays a capability). `delivery: decision-only`.
 - [A2 — Auth pipeline](../tickets/A2-auth-pipeline.md) — one knob `auth: { mode: "early" | "lazy" }`; early = verify once at open, identity cached for connection lifetime + optional pre-verify hook (origin binding) + pipeline `re-verify(token)` for refresh; lazy = kernel verifies per call. `decodeScopeFromToken` moves to core as `readClaims(token)` (shared with A6). Auth-failure behavior FROZEN — asserted today = frozen forever (close 1008s, auth.error text, ORIGIN_MISMATCH, MCP JSON-RPC errors, audit denied records). `delivery: decision-only`.
 - [A1 — Shared package boundary](../tickets/A1-shared-package-boundary.md) — "own bytes" rule: parse/render stay in the door, everything between is shared (connection registry shared; MCP tool-card rendering stays in MCP). adapter-core imports gateway-core at runtime; doors import ONLY adapter-core (re-exports). One-call setup `createAdapterPipeline({gateway, config, input, output, errors, response})`; transport lifecycle stays with the door. adapter-core emits no events; kernel keeps observability. `delivery: decision-only`.
