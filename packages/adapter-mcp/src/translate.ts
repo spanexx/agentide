@@ -22,6 +22,7 @@
 
 import type { Gateway, YamlValue } from "@spanexx/gateway-core";
 import { ERROR_CODES } from "@spanexx/errors";
+import { readClaims } from "@spanexx/adapter-core";
 import { gatewayErrorToJsonRpc, type JsonRpcError } from "./error-map.js";
 
 export { gatewayErrorToJsonRpc, type JsonRpcError } from "./error-map.js";
@@ -45,31 +46,14 @@ export function validateMeta(meta: Readonly<Record<string, YamlValue>> | undefin
   return protocol !== undefined && protocol !== null && capabilities !== undefined && capabilities !== null;
 }
 
-// CID:translate-003 - decodeScopeFromToken
-// Purpose: decode the (unsigned, but kernel-verified) JWT payload and return
-//   the caller's scope claim. Used to honor BI[7] tier filtering in
-//   capability.list. Any malformed input returns [] defensively.
-// Uses: base64url payload segment (signature verification stays in the kernel)
-// Used by: listTools
+// CID:translate-003 - decodeScopeFromToken (compat shim)
+// Purpose: shared claim reader. Implementation moved to @spanexx/adapter-core's
+//   readClaims (A6 lock; identical base64url payload parse + [] defensiveness).
+//   Kept as a thin export ONLY so the pre-migration test suite (which imports
+//   it by name) stays untouched — zero-delta rule; new code calls readClaims
+//   directly.
 export function decodeScopeFromToken(token: string): readonly string[] {
-  const parts = token.split(".");
-  if (parts.length < 2) return [];
-  let payload: string;
-  try {
-    payload = Buffer.from(parts[1] ?? "", "base64url").toString("utf8");
-  } catch {
-    return [];
-  }
-  let claims: object | undefined;
-  try {
-    claims = JSON.parse(payload);
-  } catch {
-    return [];
-  }
-  if (typeof claims !== "object" || claims === null) return [];
-  const scope = (claims as Readonly<Record<string, YamlValue>>)["scope"];
-  if (!Array.isArray(scope)) return [];
-  return scope.filter((s): s is string => typeof s === "string");
+  return readClaims(token).scope;
 }
 
 // CID:translate-004 - McpTool / ListToolsOutcome
@@ -139,7 +123,7 @@ export async function listTools(gateway: Gateway, token: string): Promise<ListTo
   const list = await gateway.handleInvocation({
     token,
     capability: { name: "capability.list" },
-    input: { scope: decodeScopeFromToken(token) },
+    input: { scope: readClaims(token).scope },
   });
   if ("error" in list) {
     return { ok: false, error: gatewayErrorToJsonRpc(list.error.code, list.error.message, "capability.list") };
