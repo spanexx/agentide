@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/spanexx/agentide/compare/adapter-websocket-v0.6.0...adapter-websocket-v0.7.0) (2026-08-07)
+
+
+### Features
+
+* **adapter-core:** ship shared server pipeline + migrate WS onto it ([0bc1046](https://github.com/spanexx/agentide/commit/0bc10463f5f41a85763018caa67dc5e87eb14cbc))
+
+
+### Bug Fixes
+
+* **adapter-websocket:** add adapter-core to tsconfig references (CI typecheck on fresh clone) ([1639f67](https://github.com/spanexx/agentide/commit/1639f670cc7c8d958583a147ad723568ade4fbdf))
+
 ## [0.6.0](https://github.com/spanexx/agentide/compare/adapter-websocket-v0.5.0...adapter-websocket-v0.6.0) (2026-08-07)
 
 
