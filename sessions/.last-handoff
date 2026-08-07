@@ -1,38 +1,82 @@
-# Handoff — 2026-08-07: Release 0.4.0 SHIPPED + release skills updated
+# Handoff — 2026-08-07: adapter-core wayfinder map mid-flight (A1+A2 locked, A3 next)
 
-## What happened this session
+## Where things stand
 
-1. **Release cut (milestone trigger).** `@spanexx/agentide@0.4.0`, `@spanexx/gateway-core@0.7.1`, `@spanexx/adapter-websocket@0.6.1` published to npm.
-   - Release PR #57 (https://github.com/spanexx/agentide/pull/57) merged squash → `9711a0a`.
-   - Per-package GitHub Releases: `agentide-v0.4.0`, `gateway-core-v0.7.0`, `adapter-websocket-v0.6.0`.
-   - Bump provenance (path-based attribution): `e880560` feat(agentide) touched gateway-core factory.ts (D-78 mkdir) → gateway-core 0.7.0; `1a6bfca` touched adapter-websocket → 0.6.0. Scope did NOT gate bumps — see D-90.
-   - Prepublish `+1` bumps: gateway-core 0.7.0→0.7.1, adapter-websocket 0.6.0→0.6.1 (agentide does not prepublish-bump).
+**Active effort:** wayfinder map for `@spanexx/adapter-core` — a shared package holding the
+invocation pipeline every Adapter (door) stands on. Map: `docs/wayfinder/adapter-core/map.md`;
+tickets under `docs/wayfinder/adapter-core/tickets/`. Local-markdown tracker convention
+(dashboard-core precedent). All charting + research committed; main @ `1d1c8cf`, pushed,
+clean except one user edit (below).
 
-2. **One failed dispatch, fixed.** First `release.yml` dispatch died 403 (D-69 trap): 9 of 15 packages were one patch behind npm (`errors` 0.4.0→0.4.1 collision). Fix committed `29765f4` (`fix(release): sync package.json + manifest to npm state` — repo versions set to npm versions so pnpm silent-skips them), re-dispatched → success.
+**Destination (locked):** adapter-core shipped; adapter-mcp + adapter-websocket server
+pipelines migrate onto it with **zero behavior delta** (asserted today = frozen forever);
+REST adapter (backlog row 10) as proof consumer → `delivery: feature-pipeline` at the end.
 
-3. **Skills updated** (both at `.agents/skills/` — outside any git repo, no commit needed):
-   - `release-agentide/SKILL.md`: keyring/sandbox auth trap + `gh api user` preflight; NEW step 2b repo-vs-npm drift preflight (prevents the 403); step 3 CRITICAL corrected (attribution by changed paths, not scope); PR-update race note (bot updates ~30-60s after push); sync-back scope note; 3 new common-error rows.
-   - `ci-cd-agentide/SKILL.md`: "Cut a release" step 2 corrected; new "Pre-flight before any release work" recipe; new trap row (sibling MINOR bumps).
+**Decisions locked (tickets — read before grilling):**
+- A10 (research) `tickets/A10-research-streaming-patterns.md` — response channel w/ terminal:
+  `single|stream|subscribe`, primitives emit/end/event, unary = stream of length one.
+- A11 (research) `tickets/A11-research-duplication-inventory.md` — 16 duplicated files
+  (2,222 lines), 14 test files, 2 sims.
+- A1 `tickets/A1-shared-package-boundary.md` — "own bytes" rule (parse/render stay in door,
+  everything between shared; MCP tool-card rendering stays in MCP; connection registry
+  shared). adapter-core imports gateway-core at runtime; **doors import ONLY adapter-core**
+  (re-exports). One-call setup `createAdapterPipeline({gateway, config, input, output,
+  errors, response})`; transport lifecycle stays with the door. adapter-core emits NO events.
+- A2 `tickets/A2-auth-pipeline.md` — `auth: { mode: "early" | "lazy" }` knob; early =
+  verify once at open, identity cached for connection lifetime + pre-verify hook (origin
+  binding) + `re-verify(token)` for refresh; lazy = kernel verifies per call.
+  `decodeScopeFromToken` → core as `readClaims(token)` (shared with A6). Auth failure
+  behavior FROZEN (close 1008s, auth.error text, ORIGIN_MISMATCH, MCP JSON-RPC errors,
+  audit denied records).
 
-4. **Drift D-90** logged (docs/drift.md, Open now 17): skill claim "scope gates bumps" vs reality "path-based attribution". Committed `45e9852` + pushed.
+Both grills appended to `docs/CONTEXT.md` Decisions Log (repo standing rule — do the same
+after each ticket).
 
-5. **Environment note:** gh token lives in OS keyring; sandbox blocks keyring socket. User disabled the sandbox — gh + git work unsandboxed now. If sandbox returns: `gh auth token > ~/.gh-token` then `gh auth login -h github.com --with-token < ~/.gh-token`.
+## Next session: claim A3 — Session resolution
 
-## Repo state
+Ticket: `tickets/A3-session-resolution.md` (open, unblocked — A1/A2 closed). Grilling
+format as before (grill-with-docs, one question at a time, plain English, user answers
+"i will go with your recommendation" — recommendation stands unless pushed back). Locked
+context it builds on: sessions passed through by adapters today (WS frame sessionId, MCP
+`_meta.dev.agentide/sessionId`); CLI consumer owns auto-mint (`agentide/src/session-mint.ts`,
+D-79); kernel never mints implicitly (`session.create` cap). Decide: passthrough-only vs
+auto-mint helper in adapter-core; "no sessionId" semantics; session lifecycle for watch.
 
-- `agentide` on `main` @ `45e9852`, pushed, clean (sessions files dirty after this handoff — commit them).
-- Outer `Agent-Bridge-SDK/` not a git repo (skills, prompt-log.md live there).
-- No open `autorelease: pending` PRs. CI green. NPM_TOKEN present. Ruleset active, workflow perms `write`.
+Then frontier order: A4 (response strategy — A10 research ready), A5 (error envelope), A6
+(capability lookup — includes readClaims), then A7 (WS migration) + A8 (MCP migration), A9
+(REST proof). One ticket per session. After closing: update ticket (Status closed +
+Resolution + delivery tag), map Decisions-so-far + frontier table, CONTEXT.md Decisions Log,
+commit `docs(wayfinder): close A<N> …`.
 
-## Pending items (pick any)
+## Standing facts (verified, no need to re-dig)
 
-1. **Backlog row 31** — from cli-quality-of-life handoff, still open (~5 min, `update-backlog` skill).
-2. **D-85 doc fix** — PRD-TRD-cli-consumer-ux Scenario 5 step 6: "Exits 0" → "Exits 5" (one line, closes drift).
-3. **D-86** — append IPv6 test case to `packages/agentide/test/url-default.test.ts` (`ws://[::1]:7300/ws`).
-4. **D-88** — simulate.sh Scenario 2 section (batch `--session` workflow).
-5. **consumer.ts split pack** — 407 lines > 350 cap (D-89, D-68 for cli.ts): extract `runWatch`/`runWatchInner` → `watch.ts`. Full feature-pipeline pack (GRILL → PRD-TRD → IMPL → sim → drift → handoff).
-6. **dashboard-core placeholder app.js** — open drift item, fix in a future dashboard-core release (fileloc.ts resolution post-publish).
+- Kernel contracts: `CanonicalInvocation` (`gateway-core/src/types.ts:56`, token REQUIRED,
+  kernel verifies), `CanonicalResponse`, `GatewayErrorPayload`, `verifyToken`
+  (`gateway-core/src/auth.ts:51`), `originMatches` (`@spanexx/origin`). Kernel is
+  single-shot; streaming = adapter-side packaging (`adapter-websocket/src/invoke.ts:56`).
+- CLI consumer imports `createWsClient, WsInvokeError, WsDoorMismatchError` from
+  adapter-websocket (client half stays put). Backend-runtime `verify.ts` = deliberate local
+  copy (out of scope).
+- Publish pipeline: 16th package (release-please-config, release.yml filter,
+  prepare-publish.sh, no-cjs pin).
+- D-94 logged: glossary "only door" line vs MCP direct handleInvocation — reword CONTEXT.md
+  Adapter row once A1's boundary ships.
 
-## Useful skills
+## Watch-outs
 
-`situation-awareness` (bootstrap), `update-backlog` (#1), `git-flow` (commits), `feature-pipeline` (#5), `release-agentide` + `ci-cd-agentide` (next release — preflight 2b now catches the 403 drift), `drift` (D-85/86/88 closeouts).
+- **`docs/architecture/Goals.md` has a USER edit in progress** (Primary Goal → "Build the
+  runtime for autonomous organizations.") — uncommitted, DO NOT touch/revert; surface only.
+- **Example app** (`example/`) has uncommitted changes: heavy console tracing
+  (`platform.agent.ts` [cap]/[sdk] logs + service logs), .env refreshed (backup .env.bak),
+  SDK refs swapped to registry (`^0.2.0`). User's call whether to keep/commit.
+- Sandbox was disabled by the user this session — terminal runs unsandboxed (gh keyring
+  works). If sandbox returns: `gh auth token > ~/.gh-token` then
+  `gh auth login -h github.com --with-token < ~/.gh-token`.
+- D-91 (narrow-token auto-mint gap) + D-93 (JWT exp in ms) open; example app logs a D-93
+  note at boot.
+
+## Skills for next session
+
+`situation-awareness` (bootstrap), `grill-with-docs` + `wayfinder` (A3), `domain-modeling`
+if terms drift, `drift` (before doc edits), `git-flow` for commits (or direct commit+push
+as this session did — precommit hook runs typecheck/lint/build).
