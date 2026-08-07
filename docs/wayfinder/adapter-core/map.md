@@ -3,8 +3,8 @@
 > **Map title:** adapter-core — finding the way to a shipped `@spanexx/adapter-core` that
 > every Adapter (existing and future) stands on.
 >
-> **Status:** charting 2026-08-07 (destination locked via grill — defaults accepted).
-> Research resolved; frontier = A1.
+> **Status:** shipped (A7 closed 2026-08-07) — frontier = A8.
+> Research resolved; build frontier = A8 (MCP migration) → A9 (REST proof adapter).
 > Live tracker: this map + the child tickets under `tickets/`.
 
 ## Destination
@@ -60,20 +60,22 @@ resolves via this map's tickets.
 
 | # | Ticket | Type | Blocks |
 |---|---|---|---|
-| A7 | WS server migration | build (AFK) | — |
 | A8 | MCP migration | build (AFK) | — |
 | A9 | REST proof adapter | build (AFK) | — |
 
-Design frontier (A1–A6) fully locked. Build tickets A7/A8 migrate the doors onto
-adapter-core with zero behavior delta; A9 proves the pipeline with a third,
-REST-shaped consumer (`delivery: feature-pipeline`).
+Design frontier (A1–A6) fully locked. A7 (WS server migration) shipped 2026-08-07 with
+zero observable delta — gates held (core 50/50, WS 54/54 unedited, sim 37/37, full repo
+1039/1039, post-impl sim 24/24 PASS, scenarios S1–S8 satisfied). A8 migrates MCP onto
+the same foundation; A9 proves the pipeline with a third, REST-shaped consumer
+(`delivery: feature-pipeline`).
 
-Closed: A10, A11 (research), A1 (boundary), A2 (auth pipeline), A3 (session resolution), A4 (response strategy seam), A5 (error envelope), A6 (capability lookup) — see Decisions so far.
+Closed: A1 (boundary), A2 (auth pipeline), A3 (session resolution), A4 (response strategy seam), A5 (error envelope), A6 (capability lookup), A7 (WS server migration) — see Decisions so far.
 
-Blocked: A7, A8 (by A1–A6 — all closed; unblocked); A9 (by A1 — unblocked, defer to after migrations). Future items beyond v1: `future.md`.
+Future items beyond v1: `future.md`.
 
 ## Decisions so far
 
+- [A7 — WS server migration](../tickets/A7-ws-server-migration.md) — `@spanexx/adapter-core` v0.1.0 ships; WS door (`auth.ts`, `invoke.ts`, `registry.ts`) delegates to core while keeping its own bytes (W1–W6 envelope, close 1008/1009/1011, `AUTH_ERROR_CODES`, `WS_ERROR_CODES`, `WS_INTERNAL` invalidFrame, 1MiB queue, fanout). **Seven shared primitives:** `readClaims`, `createAuthPolicy` (early mode), `createErrorConverter` (shared `-32006` + `${code}: ${message}` fallback + door-configurable `defaultError`), `createResponseChannel` (per-invocation, end exactly-once, emit/event only before end), generic `RecordRegistry<T>` (factory template), `createAdapterPipeline` (A1 seam: gateway + ErrorConverter + door-sink factory), `createCapabilityLookup` (A6: list/describe, scope via `readClaims(token).scope`, tier filter delegated to kernel). **Zero-edit gate held:** `__tests__/` + `client.ts` untouched; `packages/agentide/src/consumer.ts` untouched. **Gates green:** core 50/50, WS 54/54 unedited, sim 37/37, full repo 1039/1039, post-impl sim 24/24 PASS (PRD scenarios S1–S8). Source: `docs/features/adapter-core/{PRD-TRD,IMPL,simulate.sh}`. `delivery: shipped`.
 - [A6 — Capability lookup](../tickets/A6-capability-lookup.md) — lean `list(token)` + `describe(name, token)` in core; NO tier logic in core (kernel `capability.list` already filters via `checkAuthz` — `factory.ts:554`); scope fed to kernel from `readClaims(token).scope`. Byte-identical migration: kernel order, verbatim fields, A5 converter, unedited MCP test suite as acceptance. `decodeScopeFromToken` → core `readClaims(token)` (A2 lock; full claims object; MCP thin alias or call-site swap; `[]` defensiveness kept). WS gains the utility but wires NOTHING new in v1 (no discovery frame; `capability.list` already works via plain invoke). Future items → `future.md`. `delivery: decision-only`.
 - [A5 — Error envelope](../tickets/A5-error-envelope.md) — `GatewayErrorPayload` IS the shared envelope; adapter-core re-exports it + `ERROR_CODES` (doors import ONLY adapter-core). Converter shared, tables door-local via `errors: table` (WS passthrough = rendering policy, not table entry). Unmapped codes → shared default = MCP's existing fallback (`-32006` + `${code}: ${message}`), door-configurable; optional setup-time catalog warn. Error surface FROZEN — no WS close codes / MCP codes change under migration; existing error-path tests run with ZERO edits as acceptance (A2 freeze inherited). `delivery: decision-only`.
 - [A4 — Response strategy seam](../tickets/A4-response-strategy-seam.md) — per-invocation `ResponseChannel` created by the door's strategy, driven by the pipeline; primitives `emit(chunk)` / `end(result|error)` / `event(topic,payload)` share one call id (A10 shape). Chunks are the shared intermediate; packaging (WS `invoke.partial`+`end`, MCP merge into one `CallToolResult`) stays in the door (A1 rule). `subscribe` frame = adapter-local v1, unchanged; channel `subscribe` mode = FUTURE (real capability stream, e.g. `gateway.watch`), not shipped dormant; graduates to core only with a second consumer. Backpressure = adapter-local v1 (`queue.ts` untouched; `emit` never awaited by pipeline). Kernel real streaming = additive by construction; terminal guarantees locked now (`end` exactly once, `emit` after `end` error, `event` before `end` only). `delivery: decision-only`.

@@ -1,9 +1,15 @@
 # A7 — WebSocket server migration plan
 
 **Type:** `wayfinder:grilling` (HITL)
-**Status:** open
+**Status:** **closed** (resolved 2026-08-07)
 **Blocks:** — (delivery after A2–A6 resolve)
 **Blocked by:** A1, A2, A3, A4, A5, A6
+
+`delivery: shipped` — WS server pipeline migrated onto `@spanexx/adapter-core` v0.1.0
+with zero observable delta. See `docs/features/adapter-core/{PRD-TRD,IMPL}-adapter-core.md`
+for the locked plan and `docs/features/adapter-core/simulate.sh` for the post-impl sim
+(24/24 PASS, all PRD scenarios S1–S8 satisfied). Gates held: core 50/50, WS 54/54
+unedited, sim 37/37, full repo 1039/1039, build clean.
 
 ## Question
 
