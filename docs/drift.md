@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-07  **Open:** 26  **Resolved:** 62  **Critical/High:** 0
+**Last updated:** 2026-08-07  **Open:** 25  **Resolved:** 63  **Critical/High:** 0
 
 ## Open
 
@@ -41,13 +41,7 @@
   - Why matters: release-blocking for the pack — adapter-core would build but never publish.
   - Owner: release pipeline.
   - To fix: code — add `packages/adapter-core` to config + manifest (0.1.0) + both workflow filters after gateway-core (dep order). Done 2026-08-07.
-- **D-94** (Low, 2026-08-07, reporter: adapter-core wayfinder charting) — CONTEXT.md glossary claims "All v1 client doors ride the websocket-adapter wire (W1–W6) … 'the only door' (dashboard, CLI `platform`)" — but `adapter-mcp` does NOT ride the WS wire: it calls `gateway.handleInvocation` directly in-process (`packages/adapter-mcp/src/translate.ts:213`). The claim is true for the doors it names (dashboard + CLI consumer use `createWsClient`) but false as "all" doors.
-  - Doc claim: `docs/CONTEXT.md` line 30 (Adapter row: "All v1 client doors ride the websocket-adapter wire (W1–W6) … 'the only door'").
-  - Code reality: `adapter-mcp/src/translate.ts:213` (`gateway.handleInvocation(invocation)`); `adapter-websocket/src/invoke.ts:37` (same pattern for WS); both in-process in `createPlatform`.
-  - Why matters: the glossary's framing hides the real common door — the Canonical Invocation model (`gateway-core/src/types.ts:56-62`) — and misleads future adapter work into thinking everything must go through the WS wire.
-  - Owner: adapter-core effort (A1).
-  - To fix: doc — reword the Adapter row once A1 locks the shared-pipeline boundary ("every Adapter translates its transport onto the canonical Capability Invocation packet; WS wire clients (dashboard, CLI) ride the websocket-adapter envelope").
-  - Related: docs/wayfinder/adapter-core/map.md (A1).
+- Related: docs/wayfinder/adapter-core/map.md (A1).
 
 - **D-93** (Medium, 2026-08-07, reporter: example-app logging pass) — gateway-minted JWTs encode `iat`/`exp` in epoch MILLISECONDS, not seconds. RFC 7519 expects NumericDate = seconds; any standard JWT library validating `exp` reads ms as seconds → expiry lands in year ~58568 → token treated as effectively never-expiring (and `iat` in the far future trips `iat`-future checks in some libs).
   - Doc claim: JWT is a standard token (`example/README.md` "a real JWT minted by its own `gateway.issueToken` API"; `docs/architecture/Agentide.md` security sections imply standard JWT semantics).
@@ -174,6 +168,12 @@
 ---
 
 ## Resolved
+
+- **D-94** (Low, 2026-08-07, reporter: adapter-core wayfinder charting) — CONTEXT.md glossary claimed "All v1 client doors ride the websocket-adapter wire (W1–W6) … 'the only door'" — but `adapter-mcp` calls `gateway.handleInvocation` directly in-process, not via the WS wire.
+  - Doc claim: `docs/CONTEXT.md` line 30 (Adapter row, pre-fix).
+  - Code reality: `adapter-mcp/src/translate.ts:213` + `adapter-websocket/src/invoke.ts:37` — both call the canonical invocation in-process.
+  - To fix: doc — reword the Adapter row: common door = the canonical Capability Invocation; wire clients (dashboard, CLI consumer) ride the W1–W6 envelope.
+  - Verified: reworded 2026-08-07 (CONTEXT.md Adapter row — in-process Adapters call the Gateway directly; the Invocation model is the common door); adapter-core shipped (0.2.1) makes this the operative reality. Commit: docs(CONTEXT): adapter row — common door is the Invocation model (D-94 resolved).
 
 - **D-75** (Resolved 2026-08-05, drop-cjs-siblings pack) — `packages/sdk-browser-cjs` had a broken build chain: its mirrored source imported `@spanexx/backend-runtime`, which had no CJS sibling. Closed by deleting the package entirely — the drop-cjs-siblings pack removed all four `*-cjs` trees (`sdk-node-cjs`, `event-bus-cjs`, `sdk-browser-cjs`, `agentide-cjs`) in favor of a single ESM surface with a `require` condition (Node >= 22.12 `require(esm)`). The build chain no longer exists to be broken.
   - Verified by: `no-cjs-residue.test.ts` CID:drop-cjs-residue-001 (no `-cjs` workspace trees exist); commit `feat(release): drop CJS siblings entirely (Phase 2/5)`.
