@@ -22,7 +22,6 @@ import { ERROR_CODES } from "@spanexx/errors";
 import type { RestAdapter, RestAdapterConfig } from "./types.js";
 import { handleInvoke } from "./invoke.js";
 import { handleGetCapabilities } from "./capabilities.js";
-import { restErrorConverter } from "./errors.js";
 
 export const DEFAULT_REST_ADAPTER_HOST = "127.0.0.1";
 export const DEFAULT_REST_ADAPTER_PORT = 7400;
@@ -60,11 +59,11 @@ function writeRouteNotFound(req: IncomingMessage, res: ServerResponse): void {
 export function createRestAdapter(gateway: Gateway, config: RestAdapterConfig = {}): Adapter & RestAdapter {
   const host = config.host ?? DEFAULT_REST_ADAPTER_HOST;
   const requestedPort = config.port ?? DEFAULT_REST_ADAPTER_PORT;
-  // restErrorConverter is the door's converter — pre-built so the router
-  // renders the door-fabricated route-not-found body without going through
-  // the pipeline. The handlers use the same instance via the shared seam.
-  const errors = restErrorConverter;
-  void errors; // router doesn't reference it directly; document for future ops
+  // restErrorConverter is the door's converter — the handlers (handleInvoke,
+  // handleGetCapabilities) default to this same singleton via
+  // `errors: ErrorConverter = restErrorConverter`. The router renders the
+  // door-fabricated route-not-found body via writeRouteNotFound directly,
+  // so no top-level binding is needed here.
 
   let server: http.Server | undefined;
   let boundPort = requestedPort;

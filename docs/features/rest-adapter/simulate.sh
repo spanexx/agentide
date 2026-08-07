@@ -83,22 +83,28 @@ ok "createRestAdapter ready on 127.0.0.1:${READY_PORT} (pid ${SIM_PID})"
 
 BASE="http://127.0.0.1:${READY_PORT}"
 
-# Helper: curl with a JSON-body POST that prints HTTP status + body
-# for the caller to assert on.
+# Helpers: drive a real request through the helper's createRestAdapter
+# (running on the port printed by the helper's READY line). They:
+#   - write the body to /tmp/sim-body.$$
+#   - write the response headers to /tmp/sim-hdrs.$$
+#   - set $out (HTTP status) and $ctype (content-type header)
+#   - print the body to stdout for the run transcript
+# Each scenario greps /tmp/sim-body.$$ for body-shape assertions, and the
+# content-type assertion is folded into the pass condition (PRD §Simulation
+# Contract requires (a) status, (b) body shape, (c) content-type).
 post_invoke() {
-  local name="$1"
-  local token="$2"
-  local body="$3"
+  local token="$1"
+  local body="$2"
   local hdr=()
   if [ -n "$token" ]; then
     hdr=(-H "authorization: Bearer ${token}")
   fi
-  curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-    -H "content-type: application/json" "${hdr[@]}" -d "$body"
-  echo
+  out=$(curl -sS -o /tmp/sim-body.$$ -D /tmp/sim-hdrs.$$ -w "%{http_code}" \
+    -X POST "${BASE}/invoke" \
+    -H "content-type: application/json" "${hdr[@]}" -d "$body")
+  ctype=$(grep -i "^content-type:" /tmp/sim-hdrs.$$ | head -1 | sed -E 's/^[Cc]ontent-[Tt]ype:[[:space:]]*//' | tr -d '\r')
   cat /tmp/sim-body.$$
   echo
-  rm -f /tmp/sim-body.$$
 }
 
 get_capabilities() {
@@ -107,114 +113,141 @@ get_capabilities() {
   if [ -n "$token" ]; then
     hdr=(-H "authorization: Bearer ${token}")
   fi
-  curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" "${BASE}/capabilities" "${hdr[@]}"
-  echo
+  out=$(curl -sS -o /tmp/sim-body.$$ -D /tmp/sim-hdrs.$$ -w "%{http_code}" \
+    "${BASE}/capabilities" "${hdr[@]}")
+  ctype=$(grep -i "^content-type:" /tmp/sim-hdrs.$$ | head -1 | sed -E 's/^[Cc]ontent-[Tt]ype:[[:space:]]*//' | tr -d '\r')
   cat /tmp/sim-body.$$
   echo
-  rm -f /tmp/sim-body.$$
 }
+
+get_route() {
+  local path="$1"
+  local token="$2"
+  local hdr=()
+  if [ -n "$token" ]; then
+    hdr=(-H "authorization: Bearer ${token}")
+  fi
+  out=$(curl -sS -o /tmp/sim-body.$$ -D /tmp/sim-hdrs.$$ -w "%{http_code}" \
+    "${BASE}${path}" "${hdr[@]}")
+  ctype=$(grep -i "^content-type:" /tmp/sim-hdrs.$$ | head -1 | sed -E 's/^[Cc]ontent-[Tt]ype:[[:space:]]*//' | tr -d '\r')
+  cat /tmp/sim-body.$$
+  echo
+}
+
+EXPECTED_CTYPE="application/json; charset=utf-8"
+rm -f /tmp/sim-body.$$ /tmp/sim-hdrs.$$
 
 # ─── Scenarios ────────────────────────────────────────────────────────
 
 echo
 echo "S1 — POST /invoke capability.list → 200 {output: cards}"
 echo "-------------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-  -H "authorization: Bearer ${SCOPED_TOKEN}" -H "content-type: application/json" \
-  -d '{"capability":"capability.list","input":{}}')
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "200" ] && echo "$body" | grep -q '"output"' && echo "$body" | grep -q 'capability.list' \
-  && ok "200 + {output:[...cards]}" || bad "got status=$out body=$body"
+post_invoke "$SCOPED_TOKEN" '{"capability":"capability.list","input":{}}'
+if [ "$out" = "200" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q '"output"' /tmp/sim-body.$$ && grep -q 'capability.list' /tmp/sim-body.$$; then
+  ok "200 + content-type + {output:[...cards]}"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S2 — POST /invoke product.list + sessionId → 200 {output: products}"
 echo "-------------------------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-  -H "authorization: Bearer ${SCOPED_TOKEN}" -H "content-type: application/json" \
-  -d '{"capability":"product.list","input":{},"sessionId":"s-1"}')
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "200" ] && echo "$body" | grep -q '"output"' && echo "$body" | grep -q '"id":"p1"' \
-  && ok "200 + {output:[{id:p1,...}]}" || bad "got status=$out body=$body"
+post_invoke "$SCOPED_TOKEN" '{"capability":"product.list","input":{},"sessionId":"s-1"}'
+if [ "$out" = "200" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q '"output"' /tmp/sim-body.$$ && grep -q '"id":"p1"' /tmp/sim-body.$$; then
+  ok "200 + content-type + {output:[{id:p1,...}]}"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S3 — POST /invoke without token → 401 TOKEN_INVALID"
 echo "---------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-  -H "content-type: application/json" -d '{"capability":"product.list","input":{},"sessionId":"s-1"}')
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "401" ] && echo "$body" | grep -q 'GATEWAY_TOKEN_INVALID' \
-  && ok "401 + TOKEN_INVALID body" || bad "got status=$out body=$body"
+post_invoke "" '{"capability":"product.list","input":{},"sessionId":"s-1"}'
+if [ "$out" = "401" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q 'GATEWAY_TOKEN_INVALID' /tmp/sim-body.$$; then
+  ok "401 + content-type + TOKEN_INVALID body"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S4 — POST /invoke with expired token → 401 TOKEN_EXPIRED"
 echo "-------------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-  -H "authorization: Bearer ${EXPIRED_TOKEN}" -H "content-type: application/json" \
-  -d '{"capability":"product.list","input":{},"sessionId":"s-1"}')
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "401" ] && echo "$body" | grep -q 'GATEWAY_TOKEN_EXPIRED' \
-  && ok "401 + TOKEN_EXPIRED body" || bad "got status=$out body=$body"
+post_invoke "$EXPIRED_TOKEN" '{"capability":"product.list","input":{},"sessionId":"s-1"}'
+if [ "$out" = "401" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q 'GATEWAY_TOKEN_EXPIRED' /tmp/sim-body.$$; then
+  ok "401 + content-type + TOKEN_EXPIRED body"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S5 — POST /invoke with empty-scope token → 403 INSUFFICIENT_SCOPE"
 echo "----------------------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-  -H "authorization: Bearer ${NOSCOPE_TOKEN}" -H "content-type: application/json" \
-  -d '{"capability":"product.list","input":{},"sessionId":"s-1"}')
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "403" ] && echo "$body" | grep -q 'GATEWAY_INSUFFICIENT_SCOPE' \
-  && ok "403 + INSUFFICIENT_SCOPE body" || bad "got status=$out body=$body"
+post_invoke "$NOSCOPE_TOKEN" '{"capability":"product.list","input":{},"sessionId":"s-1"}'
+if [ "$out" = "403" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q 'GATEWAY_INSUFFICIENT_SCOPE' /tmp/sim-body.$$; then
+  ok "403 + content-type + INSUFFICIENT_SCOPE body"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S6 — POST /invoke product.list without sessionId → 400 SESSION_REQUIRED"
 echo "-----------------------------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-  -H "authorization: Bearer ${SCOPED_TOKEN}" -H "content-type: application/json" \
-  -d '{"capability":"product.list","input":{}}')
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "400" ] && echo "$body" | grep -q 'GATEWAY_SESSION_REQUIRED' \
-  && ok "400 + SESSION_REQUIRED body" || bad "got status=$out body=$body"
+post_invoke "$SCOPED_TOKEN" '{"capability":"product.list","input":{}}'
+if [ "$out" = "400" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q 'GATEWAY_SESSION_REQUIRED' /tmp/sim-body.$$; then
+  ok "400 + content-type + SESSION_REQUIRED body"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S7 — POST /invoke does.not.exist → 404 CAPABILITY_NOT_FOUND"
 echo "-----------------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-  -H "authorization: Bearer ${SCOPED_TOKEN}" -H "content-type: application/json" \
-  -d '{"capability":"does.not.exist","input":{},"sessionId":"s-1"}')
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "404" ] && echo "$body" | grep -q 'GATEWAY_CAPABILITY_NOT_FOUND' \
-  && ok "404 + CAPABILITY_NOT_FOUND body" || bad "got status=$out body=$body"
+post_invoke "$SCOPED_TOKEN" '{"capability":"does.not.exist","input":{},"sessionId":"s-1"}'
+if [ "$out" = "404" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q 'GATEWAY_CAPABILITY_NOT_FOUND' /tmp/sim-body.$$; then
+  ok "404 + content-type + CAPABILITY_NOT_FOUND body"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S8 — GET /capabilities → 200 {capabilities: cards}"
 echo "--------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" "${BASE}/capabilities" \
-  -H "authorization: Bearer ${SCOPED_TOKEN}")
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "200" ] && echo "$body" | grep -q '"capabilities"' && echo "$body" | grep -q 'capability.list' \
-  && ok "200 + {capabilities:[...]}" || bad "got status=$out body=$body"
+get_capabilities "$SCOPED_TOKEN"
+if [ "$out" = "200" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q '"capabilities"' /tmp/sim-body.$$ && grep -q 'capability.list' /tmp/sim-body.$$; then
+  ok "200 + content-type + {capabilities:[...]}"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S9 — POST /invoke test.rate-limit → 429 RATE_LIMIT_EXCEEDED"
 echo "-----------------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-  -H "authorization: Bearer ${SCOPED_TOKEN}" -H "content-type: application/json" \
-  -d '{"capability":"test.rate-limit","input":{},"sessionId":"s-1"}')
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "429" ] && echo "$body" | grep -q 'GATEWAY_RATE_LIMIT_EXCEEDED' \
-  && ok "429 + RATE_LIMIT_EXCEEDED body" || bad "got status=$out body=$body"
+post_invoke "$SCOPED_TOKEN" '{"capability":"test.rate-limit","input":{},"sessionId":"s-1"}'
+if [ "$out" = "429" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q 'GATEWAY_RATE_LIMIT_EXCEEDED' /tmp/sim-body.$$; then
+  ok "429 + content-type + RATE_LIMIT_EXCEEDED body"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S10 — POST /invoke test.handler-error → 500 HANDLER_TIMEOUT (retryable: true)"
 echo "----------------------------------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" -X POST "${BASE}/invoke" \
-  -H "authorization: Bearer ${SCOPED_TOKEN}" -H "content-type: application/json" \
-  -d '{"capability":"test.handler-error","input":{},"sessionId":"s-1"}')
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-if [ "$out" = "500" ] && echo "$body" | grep -q 'GATEWAY_HANDLER_TIMEOUT' && echo "$body" | grep -q '"retryable":true'; then
-  ok "500 + HANDLER_TIMEOUT + retryable:true"
+post_invoke "$SCOPED_TOKEN" '{"capability":"test.handler-error","input":{},"sessionId":"s-1"}'
+if [ "$out" = "500" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q 'GATEWAY_HANDLER_TIMEOUT' /tmp/sim-body.$$ \
+   && grep -q '"retryable":true' /tmp/sim-body.$$; then
+  ok "500 + content-type + HANDLER_TIMEOUT + retryable:true"
 else
-  bad "got status=$out body=$body"
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
 fi
 
 # ─── Routing sanity ───────────────────────────────────────────────────
@@ -222,19 +255,24 @@ fi
 echo
 echo "S11 — routing: GET /capabilities/{name} → 404 INVALID_REQUEST (D-100 deferral)"
 echo "----------------------------------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" "${BASE}/capabilities/some.capability" \
-  -H "authorization: Bearer ${SCOPED_TOKEN}")
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "404" ] && echo "$body" | grep -q 'GATEWAY_INVALID_REQUEST' \
-  && ok "404 + INVALID_REQUEST body (route not registered)" || bad "got status=$out body=$body"
+get_route "/capabilities/some.capability" "$SCOPED_TOKEN"
+if [ "$out" = "404" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q 'GATEWAY_INVALID_REQUEST' /tmp/sim-body.$$; then
+  ok "404 + content-type + INVALID_REQUEST body (route not registered)"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 echo
 echo "S12 — routing: GET /unknown → 404 INVALID_REQUEST"
 echo "-------------------------------------------------"
-out=$(curl -sS -o /tmp/sim-body.$$ -w "%{http_code}" "${BASE}/unknown")
-body=$(cat /tmp/sim-body.$$); rm -f /tmp/sim-body.$$
-[ "$out" = "404" ] && echo "$body" | grep -q 'GATEWAY_INVALID_REQUEST' \
-  && ok "404 + INVALID_REQUEST body" || bad "got status=$out body=$body"
+get_route "/unknown" ""
+if [ "$out" = "404" ] && [ "$ctype" = "$EXPECTED_CTYPE" ] \
+   && grep -q 'GATEWAY_INVALID_REQUEST' /tmp/sim-body.$$; then
+  ok "404 + content-type + INVALID_REQUEST body"
+else
+  bad "status=$out ctype=$ctype body=$(cat /tmp/sim-body.$$)"
+fi
 
 # ─── Tear down ────────────────────────────────────────────────────────
 

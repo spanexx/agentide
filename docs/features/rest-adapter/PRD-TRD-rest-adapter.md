@@ -20,6 +20,13 @@ registry, the same session model** — differing only in its transport bytes.
 
 ## Behavioral Spec
 
+> **Note on body shapes:** The bodies shown in each scenario below are
+> illustrative of the kernel's `output` (or error) values, not the wire
+> envelope. The canonical wire shape is `{output: <kernel output>}` on
+> success and `{code, message, details, retryable}` on error — see
+> IMPL §"API Contracts". Scenarios 1, 2, 8 wrap the kernel output as
+> `{output: [...cards...]}` etc.
+
 ### Scenario 1 — Happy path: invoke a session-less capability
 
 **Given** a valid Bearer JWT with `platform.*.read` scope

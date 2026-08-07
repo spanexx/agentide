@@ -158,12 +158,10 @@ Linear. Each phase is green-at-each-step (matches the A7 / A8 precedent).
 ## Test Strategy
 
 - **Unit tests** in `packages/adapter-rest/src/__tests__/`:
-  - `parse.test.ts` — body parser, bearer extraction.
-  - `router.test.ts` — request routing by method + path.
-  - `status-map.test.ts` — every entry from the locked table renders the expected status.
-  - `invoke.test.ts` — POST /invoke handler with a fake gateway.
-  - `capabilities.test.ts` — GET /capabilities handler.
-  - `server.test.ts` — full server boot on a free port.
+  - `status-map.test.ts` — every entry from the locked table renders the expected status; body shape stays `{code, message, details, retryable}` verbatim.
+  - `invoke.test.ts` — POST /invoke handler with a fake gateway; body-parser assertions on invalid JSON / missing capability folded in (Phase 3 + Phase 5 router coverage).
+  - `capabilities.test.ts` — GET /capabilities handler with a fake gateway.
+  - `server.test.ts` — full server boot on a free port; router 404 assertions on `GET /invoke`, `POST /unknown`, `GET /capabilities/{name}` folded in (Phase 5).
 - **Post-impl sim** at `docs/features/rest-adapter/simulate.sh` — drives a real `createRestAdapter`
   + `createPlatform({adapterRestPort: 7400})`, walks the 10 PRD-TRD scenarios via `curl`.
 - **Cross-pack gate** — `pnpm test` full repo green (no regression to WS / MCP / dashboard).
