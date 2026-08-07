@@ -3,7 +3,9 @@
 > **Map title:** adapter-core — finding the way to a shipped `@spanexx/adapter-core` that
 > every Adapter (existing and future) stands on.
 >
-> **Status:** shipped (A7 closed 2026-08-07) — frontier = A8.
+> **Status:** milestone reached 2026-08-07 — `@spanexx/adapter-core` SHIPPED + released
+> (0.2.1) + post-release validated (22/0/2). Map dormant; remaining frontier = **A8 (MCP
+> migration)** → **A9 (REST proof adapter)** for a future effort session.
 > Research resolved; build frontier = A8 (MCP migration) → A9 (REST proof adapter).
 > Drift review 2026-08-07: **Minor Drift — ship**; sim script + docs fixed, drifts
 > D-95..D-99 logged, publish pipeline wired (16th package).
@@ -76,6 +78,8 @@ Closed: A1 (boundary), A2 (auth pipeline), A3 (session resolution), A4 (response
 Future items beyond v1: `future.md`.
 
 ## Decisions so far
+
+- [A7 — WebSocket server migration](../tickets/A7-ws-server-migration.md) — **DELIVERED**: pack shipped `0bc1046`, drift review 2026-08-07 (Minor Drift — ship), fixes in `c7d968b` + `1639f67`, released as part of v0.2.1/0.7.1 publish (PR #58), post-release validated 22/0/2 (incl. adapter-core under the hood). Zero-delta held end-to-end.
 
 - [A7 — WS server migration](../tickets/A7-ws-server-migration.md) — `@spanexx/adapter-core` v0.1.0 ships; WS door (`auth.ts`, `invoke.ts`, `registry.ts`) delegates to core while keeping its own bytes (W1–W6 envelope, close 1008/1009/1011, `AUTH_ERROR_CODES`, `WS_ERROR_CODES`, `WS_INTERNAL` invalidFrame, 1MiB queue, fanout). **Seven shared primitives:** `readClaims`, `createAuthPolicy` (early mode), `createErrorConverter` (shared `-32006` + `${code}: ${message}` fallback + door-configurable `defaultError`), `createResponseChannel` (per-invocation, end exactly-once, emit/event only before end), generic `RecordRegistry<T>` (factory template), `createAdapterPipeline` (A1 seam: gateway + ErrorConverter + door-sink factory), `createCapabilityLookup` (A6: list/describe, scope via `readClaims(token).scope`, tier filter delegated to kernel). **Zero-edit gate held:** `__tests__/` + `client.ts` untouched; `packages/agentide/src/consumer.ts` untouched. **Gates green:** core 50/50, WS 54/54 unedited, sim 37/37, full repo 1039/1039, post-impl sim 24/24 PASS (PRD scenarios S1–S8). Source: `docs/features/adapter-core/{PRD-TRD,IMPL,simulate.sh}`. `delivery: shipped`.
 - [A6 — Capability lookup](../tickets/A6-capability-lookup.md) — lean `list(token)` + `describe(name, token)` in core; NO tier logic in core (kernel `capability.list` already filters via `checkAuthz` — `factory.ts:554`); scope fed to kernel from `readClaims(token).scope`. Byte-identical migration: kernel order, verbatim fields, A5 converter, unedited MCP test suite as acceptance. `decodeScopeFromToken` → core `readClaims(token)` (A2 lock; full claims object; MCP thin alias or call-site swap; `[]` defensiveness kept). WS gains the utility but wires NOTHING new in v1 (no discovery frame; `capability.list` already works via plain invoke). Future items → `future.md`. `delivery: decision-only`.
