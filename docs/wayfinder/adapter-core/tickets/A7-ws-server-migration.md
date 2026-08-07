@@ -1,0 +1,35 @@
+# A7 — WebSocket server migration plan
+
+**Type:** `wayfinder:grilling` (HITL)
+**Status:** open
+**Blocks:** — (delivery after A2–A6 resolve)
+**Blocked by:** A1, A2, A3, A4, A5, A6
+
+## Question
+
+How does `adapter-websocket`'s server-side pipeline move onto adapter-core while the
+wire client + W1–W6 envelope stay in the package — with every existing test and the
+`simulate-websocket-adapter.mjs` sim green?
+
+## Context
+
+- Package surface today (`index.ts`): server = `createWebSocketAdapter`,
+  `authenticateToken`, `ConnectionRegistry`, `WS_ERROR_CODES`; client = `createWsClient`,
+  `WsInvokeError`, `WsDoorMismatchError` (imported by `agentide/src/consumer.ts` — must
+  not move).
+- Server files: `auth.ts` (→ A2), `invoke.ts` (→ A4/A5), `errors.ts` (→ A5),
+  `queue.ts`/`fanout.ts` (→ A4), `registry.ts` (bookkeeping — shared or stays?),
+  `protocol.ts` (envelope — stays), `server.ts` (wiring — mostly stays).
+- Tests: auth, invoke, fanout, client, client-timeout, + protocol/server/registry
+  suites; sim `simulate-websocket-adapter.mjs` (31 assertions).
+
+## Sub-questions
+
+1. File-by-file move map: which files shrink, which move, which stay — with the public
+   exports that must remain for the client half?
+2. Do `ConnectionRegistry` + queueing become adapter-core primitives (shared with
+   future adapters) or stay adapter-local?
+3. Test strategy: move tests with the code, or keep adapter tests as black-box contract
+   tests over the new imports?
+4. Migration order within the package (e.g. errors → auth → invoke) that keeps every
+   intermediate commit green?

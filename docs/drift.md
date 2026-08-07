@@ -1,7 +1,15 @@
 # Drift Log
-**Last updated:** 2026-08-07  **Open:** 20  **Resolved:** 62  **Critical/High:** 0
+**Last updated:** 2026-08-07  **Open:** 21  **Resolved:** 62  **Critical/High:** 0
 
 ## Open
+
+- **D-94** (Low, 2026-08-07, reporter: adapter-core wayfinder charting) — CONTEXT.md glossary claims "All v1 client doors ride the websocket-adapter wire (W1–W6) … 'the only door' (dashboard, CLI `platform`)" — but `adapter-mcp` does NOT ride the WS wire: it calls `gateway.handleInvocation` directly in-process (`packages/adapter-mcp/src/translate.ts:213`). The claim is true for the doors it names (dashboard + CLI consumer use `createWsClient`) but false as "all" doors.
+  - Doc claim: `docs/CONTEXT.md` line 30 (Adapter row: "All v1 client doors ride the websocket-adapter wire (W1–W6) … 'the only door'").
+  - Code reality: `adapter-mcp/src/translate.ts:213` (`gateway.handleInvocation(invocation)`); `adapter-websocket/src/invoke.ts:37` (same pattern for WS); both in-process in `createPlatform`.
+  - Why matters: the glossary's framing hides the real common door — the Canonical Invocation model (`gateway-core/src/types.ts:56-62`) — and misleads future adapter work into thinking everything must go through the WS wire.
+  - Owner: adapter-core effort (A1).
+  - To fix: doc — reword the Adapter row once A1 locks the shared-pipeline boundary ("every Adapter translates its transport onto the canonical Capability Invocation packet; WS wire clients (dashboard, CLI) ride the websocket-adapter envelope").
+  - Related: docs/wayfinder/adapter-core/map.md (A1).
 
 - **D-93** (Medium, 2026-08-07, reporter: example-app logging pass) — gateway-minted JWTs encode `iat`/`exp` in epoch MILLISECONDS, not seconds. RFC 7519 expects NumericDate = seconds; any standard JWT library validating `exp` reads ms as seconds → expiry lands in year ~58568 → token treated as effectively never-expiring (and `iat` in the far future trips `iat`-future checks in some libs).
   - Doc claim: JWT is a standard token (`example/README.md` "a real JWT minted by its own `gateway.issueToken` API"; `docs/architecture/Agentide.md` security sections imply standard JWT semantics).
