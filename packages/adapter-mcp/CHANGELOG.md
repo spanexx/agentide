@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/spanexx/agentide/compare/adapter-mcp-v0.6.0...adapter-mcp-v0.7.0) (2026-08-07)
+
+
+### Features
+
+* **adapter-core:** A8 MCP migration + A9 REST adapter pack ([#59](https://github.com/spanexx/agentide/issues/59)) ([25ae5a0](https://github.com/spanexx/agentide/commit/25ae5a0be2825a1dfa19be02acc95d8ca974d3b9))
+
 ## [0.6.0](https://github.com/spanexx/agentide/compare/adapter-mcp-v0.5.1...adapter-mcp-v0.6.0) (2026-08-07)
 
 
