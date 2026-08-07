@@ -1,77 +1,38 @@
-# Handoff — 2026-08-06: cli-consumer-ux SHIPPED (commit 1a6bfca)
+# Handoff — 2026-08-07: Release 0.4.0 SHIPPED + release skills updated
 
-## What was built
+## What happened this session
 
-Pack `cli-consumer-ux` — UX revisit of `agentide-cli-consumer` (row 28 of the
-backlog). Fixes two operator-blocking issues from the 2026-08-06 e2e test:
+1. **Release cut (milestone trigger).** `@spanexx/agentide@0.4.0`, `@spanexx/gateway-core@0.7.1`, `@spanexx/adapter-websocket@0.6.1` published to npm.
+   - Release PR #57 (https://github.com/spanexx/agentide/pull/57) merged squash → `9711a0a`.
+   - Per-package GitHub Releases: `agentide-v0.4.0`, `gateway-core-v0.7.0`, `adapter-websocket-v0.6.0`.
+   - Bump provenance (path-based attribution): `e880560` feat(agentide) touched gateway-core factory.ts (D-78 mkdir) → gateway-core 0.7.0; `1a6bfca` touched adapter-websocket → 0.6.0. Scope did NOT gate bumps — see D-90.
+   - Prepublish `+1` bumps: gateway-core 0.7.0→0.7.1, adapter-websocket 0.6.0→0.6.1 (agentide does not prepublish-bump).
 
-* **D-79 (Critical):** `agentide invoke <business-cap>` now auto-mints a
-  session via `session.create`+invoke+`session.destroy` when `--session`
-  is omitted. Supplied `--session` is reused (no destroy). Driven by
-  `packages/agentide/src/session-mint.ts` (`withAutoSession`).
-* **D-80 (High):** `--url` with no port defaults to `7300` (websocket
-  adapter / consumer door). Pointing at the SDK door `7350` emits a
-  clear `error: --url points to the SDK door (port 7350); the CLI
-  consumer needs the websocket adapter (port 7300).` and exits 2 —
-  detected by a 3s auth-handshake timeout in the WS client
-  (`WsDoorMismatchError`). Driven by
-  `packages/agentide/src/url-default.ts` (`applyPortDefault`) and
-  `packages/adapter-websocket/src/client.ts` (`authTimeoutMs`).
-* **Q3 (watch lifecycle):** `agentide watch` auto-mints, keeps the
-  session alive for the watch lifetime, destroys on clean exit.
-  Driven by `runWatch` in `packages/agentide/src/consumer.ts`.
+2. **One failed dispatch, fixed.** First `release.yml` dispatch died 403 (D-69 trap): 9 of 15 packages were one patch behind npm (`errors` 0.4.0→0.4.1 collision). Fix committed `29765f4` (`fix(release): sync package.json + manifest to npm state` — repo versions set to npm versions so pnpm silent-skips them), re-dispatched → success.
 
-## What the next session should do
+3. **Skills updated** (both at `.agents/skills/` — outside any git repo, no commit needed):
+   - `release-agentide/SKILL.md`: keyring/sandbox auth trap + `gh api user` preflight; NEW step 2b repo-vs-npm drift preflight (prevents the 403); step 3 CRITICAL corrected (attribution by changed paths, not scope); PR-update race note (bot updates ~30-60s after push); sync-back scope note; 3 new common-error rows.
+   - `ci-cd-agentide/SKILL.md`: "Cut a release" step 2 corrected; new "Pre-flight before any release work" recipe; new trap row (sibling MINOR bumps).
 
-The pack is SHIPPED. The user is in good shape. The next natural pack
-is a **CLI quality-of-life** that closes the still-open drifts:
+4. **Drift D-90** logged (docs/drift.md, Open now 17): skill claim "scope gates bumps" vs reality "path-based attribution". Committed `45e9852` + pushed.
 
-* D-78 (Medium) — `agentide init --data-dir <fresh>` fails with raw
-  ENOENT. Should mkdir or print the same hint `start` does.
-* D-81 (Medium) — `agentide status` (no --data-dir) defaults to
-  cwd-relative `./.agentide/data`. Fails when start was elsewhere.
-  Pid file should track data-dir.
-* D-83 (Low) — `agentide stop` exit codes inconsistent (0 vs 1) for
-  same "nothing running" state.
-* D-84 (Low) — `client grant` flag mismatch (CLI expects
-  --tenant/--name, not --client-id/--scope); no per-subcommand help.
+5. **Environment note:** gh token lives in OS keyring; sandbox blocks keyring socket. User disabled the sandbox — gh + git work unsandboxed now. If sandbox returns: `gh auth token > ~/.gh-token` then `gh auth login -h github.com --with-token < ~/.gh-token`.
 
-Plus the cli-consumer-ux accepted drifts:
+## Repo state
 
-* D-85 (Low) — PRD Scenario 5 wording fixed; mark resolved.
-* D-86 (Low) — IPv6 host test added in this session; mark resolved.
-* D-87 (Low) — Phase 5 always-destroy warning; acceptable, no action.
-* D-88 (Low) — Scenario 2 batch sim section added; mark resolved.
-* D-89 (Low) — consumer.ts 407 lines, over AGENTS.md rule 9 cap of 350.
-  Future pack should extract runWatch/runWatchInner to watch.ts.
+- `agentide` on `main` @ `45e9852`, pushed, clean (sessions files dirty after this handoff — commit them).
+- Outer `Agent-Bridge-SDK/` not a git repo (skills, prompt-log.md live there).
+- No open `autorelease: pending` PRs. CI green. NPM_TOKEN present. Ruleset active, workflow perms `write`.
 
-## Artifacts (all under agentide/)
+## Pending items (pick any)
 
-| Path | What |
-|---|---|
-| `docs/features/cli-consumer-ux/GRILL-cli-consumer-ux.txt` | Locked decisions Q1, Q2, Q3 |
-| `docs/features/cli-consumer-ux/PRD-TRD-cli-consumer-ux.md` | Contract (6 scenarios) |
-| `docs/features/cli-consumer-ux/IMPL-cli-consumer-ux.md` | 5 phases, all complete |
-| `docs/features/cli-consumer-ux/simulate.sh` | **Canonical** post-impl sim — 32 PASS / 1 FAIL (the 1 FAIL is pre-existing D-82 dashboard app.js placeholder) |
-| `docs/features/cli-consumer-ux/archive/simulate-pre.sh` | Archived design-time sim |
-| `.reports/2026-08-06-drift-cli-consumer-ux.md` | Drift check verdict: **Minor Drift** (5 gaps, all accepted) |
-| `docs/drift.md` | D-78..D-89 logged (D-85, D-86, D-88 already fixed in this session) |
-| `docs/Feature_Backlog.md` | Row 30 added (cli-consumer-ux) |
-| `docs/testing/2026-08-06-issues.md` + `e2e-2026-08-06.sh` | The discovery artifacts (still in the repo, may want to consolidate) |
-| Commit `1a6bfca` | feat(agentide): CLI consumer UX — auto-mint session, default port, wrong-door error |
-| Commit `a164d33` | chore(backlog): mark cli-consumer-ux SHIPPED |
+1. **Backlog row 31** — from cli-quality-of-life handoff, still open (~5 min, `update-backlog` skill).
+2. **D-85 doc fix** — PRD-TRD-cli-consumer-ux Scenario 5 step 6: "Exits 0" → "Exits 5" (one line, closes drift).
+3. **D-86** — append IPv6 test case to `packages/agentide/test/url-default.test.ts` (`ws://[::1]:7300/ws`).
+4. **D-88** — simulate.sh Scenario 2 section (batch `--session` workflow).
+5. **consumer.ts split pack** — 407 lines > 350 cap (D-89, D-68 for cli.ts): extract `runWatch`/`runWatchInner` → `watch.ts`. Full feature-pipeline pack (GRILL → PRD-TRD → IMPL → sim → drift → handoff).
+6. **dashboard-core placeholder app.js** — open drift item, fix in a future dashboard-core release (fileloc.ts resolution post-publish).
 
-## Test status
+## Useful skills
 
-* Full suite: 105/105 files, 975/975 tests pass.
-* Precommit: 0 warnings, 0 errors.
-* Post-impl sim: 32 PASS / 1 FAIL (D-82 dashboard placeholder, pre-existing).
-
-## Useful skills for the next session
-
-* `situation-awareness` — bootstrap the next session.
-* `grill-with-docs` — if the next pack is the CLI quality-of-life,
-  start with a GRILL on D-78/D-81/D-83/D-84 + the D-78 init-mkdir fix.
-* `git-flow save / ship` — when committing the next pack.
-* `feature-pipeline-review` — drift check after next pack.
-* `update-backlog` — to mark D-78 etc. resolved.
+`situation-awareness` (bootstrap), `update-backlog` (#1), `git-flow` (commits), `feature-pipeline` (#5), `release-agentide` + `ci-cd-agentide` (next release — preflight 2b now catches the 403 drift), `drift` (D-85/86/88 closeouts).
