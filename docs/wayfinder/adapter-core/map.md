@@ -64,8 +64,7 @@ resolves via this map's tickets.
 
 | # | Ticket | Type | Blocks |
 |---|---|---|---|
-| A8 | MCP migration | build (AFK) | — |
-| A9 | REST proof adapter | build (AFK) | — |
+| A9 | REST proof adapter | grilling (HITL) → delivery | — (delivery: feature-pipeline, backlog row 10) |
 
 Design frontier (A1–A6) fully locked. A7 (WS server migration) shipped 2026-08-07 with
 zero observable delta — gates held (core 50/50, WS 54/54 unedited, sim 37/37, full repo
@@ -79,6 +78,7 @@ Future items beyond v1: `future.md`.
 
 ## Decisions so far
 
+- [A8 — MCP migration plan](../tickets/A8-mcp-migration.md) — locked 2026-08-07: MCP becomes the first real `lazy` auth consumer (kernel per-call verify; closes the D-95 deferral); door keeps transport + MCP-shaped rendering + error table + OAuth routes; acceptance = unedited tests (4 files, 8 PRD scenarios) + 8/8 sim, lazy gets its own new test; five green-at-each-step commits (claims → envelope → lookup → pipeline/strategy → real lazy). `delivery: feature-pipeline`.
 - [A7 — WebSocket server migration](../tickets/A7-ws-server-migration.md) — **DELIVERED**: pack shipped `0bc1046`, drift review 2026-08-07 (Minor Drift — ship), fixes in `c7d968b` + `1639f67`, released as part of v0.2.1/0.7.1 publish (PR #58), post-release validated 22/0/2 (incl. adapter-core under the hood). Zero-delta held end-to-end.
 
 - [A7 — WS server migration](../tickets/A7-ws-server-migration.md) — `@spanexx/adapter-core` v0.1.0 ships; WS door (`auth.ts`, `invoke.ts`, `registry.ts`) delegates to core while keeping its own bytes (W1–W6 envelope, close 1008/1009/1011, `AUTH_ERROR_CODES`, `WS_ERROR_CODES`, `WS_INTERNAL` invalidFrame, 1MiB queue, fanout). **Seven shared primitives:** `readClaims`, `createAuthPolicy` (early mode), `createErrorConverter` (shared `-32006` + `${code}: ${message}` fallback + door-configurable `defaultError`), `createResponseChannel` (per-invocation, end exactly-once, emit/event only before end), generic `RecordRegistry<T>` (factory template), `createAdapterPipeline` (A1 seam: gateway + ErrorConverter + door-sink factory), `createCapabilityLookup` (A6: list/describe, scope via `readClaims(token).scope`, tier filter delegated to kernel). **Zero-edit gate held:** `__tests__/` + `client.ts` untouched; `packages/agentide/src/consumer.ts` untouched. **Gates green:** core 50/50, WS 54/54 unedited, sim 37/37, full repo 1039/1039, post-impl sim 24/24 PASS (PRD scenarios S1–S8). Source: `docs/features/adapter-core/{PRD-TRD,IMPL,simulate.sh}`. `delivery: shipped`.

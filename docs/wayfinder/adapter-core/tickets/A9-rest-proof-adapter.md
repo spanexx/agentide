@@ -1,9 +1,9 @@
 # A9 — REST proof adapter: spec on the shared foundation
 
 **Type:** `wayfinder:grilling` (HITL)
-**Status:** open
+**Status:** **in progress** (claimed 2026-08-07 — discovery phase)
 **Blocks:** — (delivery: feature-pipeline, backlog row 10)
-**Blocked by:** A1
+**Blocked by:** A1, A9-R1
 
 ## Question
 
