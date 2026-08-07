@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/spanexx/agentide/compare/agentide-v0.3.1...agentide-v0.4.0) (2026-08-07)
+
+
+### Features
+
+* **agentide:** CLI consumer UX — auto-mint session, default port, wrong-door error (D-79, D-80) ([1a6bfca](https://github.com/spanexx/agentide/commit/1a6bfca5d444ec362db0a2bf6d83cd25c78af37e))
+* **agentide:** CLI quality-of-life — init mkdir, JSON pid file, stop rc 0, client help (D-78, D-81, D-83, D-84) ([e880560](https://github.com/spanexx/agentide/commit/e880560b0934f7b45398caa14d17424ceb5d52d3))
+
+
+### Bug Fixes
+
+* **agentide:** session-mint ownerId+adapterType, session.destroy wire shape, IPv6 tests ([f2430cc](https://github.com/spanexx/agentide/commit/f2430ccf48684b44edd96430df2b18d7030819e2))
+* **release:** bump local versions for next publish ([#56](https://github.com/spanexx/agentide/issues/56)) ([85727ca](https://github.com/spanexx/agentide/commit/85727ca4e86d24b04f1b0c2f1e572dba85c604cc))
+
 ## [0.3.1](https://github.com/spanexx/agentide/compare/agentide-v0.3.0...agentide-v0.3.1) (2026-08-06)
 
 

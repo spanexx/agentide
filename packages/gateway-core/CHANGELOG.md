@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/spanexx/agentide/compare/gateway-core-v0.6.0...gateway-core-v0.7.0) (2026-08-07)
+
+
+### Features
+
+* **agentide:** CLI quality-of-life — init mkdir, JSON pid file, stop rc 0, client help (D-78, D-81, D-83, D-84) ([e880560](https://github.com/spanexx/agentide/commit/e880560b0934f7b45398caa14d17424ceb5d52d3))
+
+
+### Bug Fixes
+
+* **release:** bump local versions for next publish ([#56](https://github.com/spanexx/agentide/issues/56)) ([85727ca](https://github.com/spanexx/agentide/commit/85727ca4e86d24b04f1b0c2f1e572dba85c604cc))
+
 ## [0.6.0](https://github.com/spanexx/agentide/compare/gateway-core-v0.5.1...gateway-core-v0.6.0) (2026-08-06)
 
 
