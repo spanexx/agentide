@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/spanexx/agentide/compare/adapter-websocket-v0.5.0...adapter-websocket-v0.6.0) (2026-08-07)
+
+
+### Features
+
+* **agentide:** CLI consumer UX — auto-mint session, default port, wrong-door error (D-79, D-80) ([1a6bfca](https://github.com/spanexx/agentide/commit/1a6bfca5d444ec362db0a2bf6d83cd25c78af37e))
+
 ## [0.5.0](https://github.com/spanexx/agentide/compare/adapter-websocket-v0.4.1...adapter-websocket-v0.5.0) (2026-08-06)
 
 
