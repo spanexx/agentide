@@ -1,18 +1,19 @@
 {
-  "packages/agentide": "0.4.0",
-  "packages/gateway-core": "0.7.0",
   "packages/adapter-core": "0.2.0",
-  "packages/sdk-node": "0.2.0",
-  "packages/sdk-browser": "0.2.0",
   "packages/adapter-mcp": "0.6.0",
+  "packages/adapter-rest": "0.1.0",
   "packages/adapter-websocket": "0.7.0",
+  "packages/agentide": "0.4.0",
   "packages/backend-runtime": "0.6.0",
   "packages/capability-registry": "0.6.0",
-  "packages/event-bus": "0.2.0",
-  "packages/origin": "0.5.0",
+  "packages/dashboard-core": "0.0.4",
   "packages/errors": "0.5.0",
+  "packages/event-bus": "0.2.0",
+  "packages/gateway-core": "0.7.0",
+  "packages/origin": "0.5.0",
   "packages/platform-capabilities": "0.6.0",
   "packages/plugin-manager": "0.6.0",
-  "packages/session-manager": "0.6.0",
-  "packages/dashboard-core": "0.0.4"
+  "packages/sdk-browser": "0.2.0",
+  "packages/sdk-node": "0.2.0",
+  "packages/session-manager": "0.6.0"
 }
