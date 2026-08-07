@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/adapter-mcp",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": false,
   "description": "MCP adapter — exposes the Agentide gateway as MCP tools over Streamable HTTP (POST /mcp).",
   "type": "module",
