@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/plugin-manager",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": false,
   "description": "Install/update/uninstall plugins from a Plugin Manifest. Three plugin types: runtime, service, observer.",
   "type": "module",
