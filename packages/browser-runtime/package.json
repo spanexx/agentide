@@ -29,12 +29,12 @@
     "playwright-core": "1.62.1"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
-    "@typescript-eslint/eslint-plugin": "^8.65.0",
-    "@typescript-eslint/parser": "^8.65.0",
-    "eslint": "^10.8.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
-    "yaml": "^2.8.0"
+    "@types/node": "workspace:*",
+    "@typescript-eslint/eslint-plugin": "workspace:*",
+    "@typescript-eslint/parser": "workspace:*",
+    "eslint": "workspace:*",
+    "typescript": "workspace:*",
+    "vitest": "workspace:*",
+    "yaml": "workspace:*"
   }
 }

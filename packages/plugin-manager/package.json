@@ -26,17 +26,17 @@
     "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
-    "yaml": "^2.6.0",
+    "yaml": "workspace:*",
     "@spanexx/capability-registry": "workspace:*",
     "@spanexx/event-bus": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
-    "eslint": "^10.8.0",
-    "@typescript-eslint/parser": "^8.65.0",
-    "@typescript-eslint/eslint-plugin": "^8.65.0"
+    "@types/node": "workspace:*",
+    "typescript": "workspace:*",
+    "vitest": "workspace:*",
+    "eslint": "workspace:*",
+    "@typescript-eslint/parser": "workspace:*",
+    "@typescript-eslint/eslint-plugin": "workspace:*"
   },
   "license": "MIT",
   "keywords": [

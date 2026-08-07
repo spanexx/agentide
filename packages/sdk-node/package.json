@@ -1,7 +1,7 @@
 {
   "name": "@spanexx/sdk-node",
   "version": "0.2.0",
-  "description": "Backend SDK for Agentide — register business capabilities with the Gateway, execute handlers, emit events.",
+  "description": "Backend SDK for Agentide \u2014 register business capabilities with the Gateway, execute handlers, emit events.",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.js",
@@ -37,18 +37,18 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@spanexx/event-bus": "^0.0.1",
-    "ws": "^8.18.0",
-    "yaml": "^2.6.0"
+    "@spanexx/event-bus": "workspace:*",
+    "ws": "workspace:*",
+    "yaml": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "@types/ws": "^8.5.13",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
-    "eslint": "^10.8.0",
-    "@typescript-eslint/parser": "^8.65.0",
-    "@typescript-eslint/eslint-plugin": "^8.65.0"
+    "@types/node": "workspace:*",
+    "@types/ws": "workspace:*",
+    "typescript": "workspace:*",
+    "vitest": "workspace:*",
+    "eslint": "workspace:*",
+    "@typescript-eslint/parser": "workspace:*",
+    "@typescript-eslint/eslint-plugin": "workspace:*"
   },
   "engines": {
     "node": ">=22.12"

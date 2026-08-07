@@ -1,8 +1,8 @@
 {
   "name": "@spanexx/adapter-mcp",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": false,
-  "description": "MCP adapter — exposes the Agentide gateway as MCP tools over Streamable HTTP (POST /mcp).",
+  "description": "MCP adapter \u2014 exposes the Agentide gateway as MCP tools over Streamable HTTP (POST /mcp).",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -26,18 +26,18 @@
     "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "workspace:*",
     "@spanexx/errors": "workspace:*",
     "@spanexx/gateway-core": "workspace:*",
     "@spanexx/adapter-core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "@typescript-eslint/eslint-plugin": "^8.65.0",
-    "@typescript-eslint/parser": "^8.65.0",
-    "eslint": "^10.8.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
+    "@types/node": "workspace:*",
+    "@typescript-eslint/eslint-plugin": "workspace:*",
+    "@typescript-eslint/parser": "workspace:*",
+    "eslint": "workspace:*",
+    "typescript": "workspace:*",
+    "vitest": "workspace:*",
     "@spanexx/backend-runtime": "workspace:*",
     "@spanexx/capability-registry": "workspace:*",
     "@spanexx/event-bus": "workspace:*",

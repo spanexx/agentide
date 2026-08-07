@@ -1,7 +1,7 @@
 {
   "name": "@spanexx/sdk-browser",
   "version": "0.2.0",
-  "description": "Browser SDK for Agentide — the DOM is the manifest. Annotate elements with data-sdk-cap, createSdk observes and registers capabilities, invocations fan out as CustomEvents.",
+  "description": "Browser SDK for Agentide \u2014 the DOM is the manifest. Annotate elements with data-sdk-cap, createSdk observes and registers capabilities, invocations fan out as CustomEvents.",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.js",
@@ -38,15 +38,15 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "@spanexx/event-bus": "^0.0.1"
+    "@spanexx/event-bus": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
-    "jsdom": "^30.0.1",
-    "eslint": "^10.8.0",
-    "@typescript-eslint/parser": "^8.65.0",
-    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "typescript": "workspace:*",
+    "vitest": "workspace:*",
+    "jsdom": "workspace:*",
+    "eslint": "workspace:*",
+    "@typescript-eslint/parser": "workspace:*",
+    "@typescript-eslint/eslint-plugin": "workspace:*",
     "@spanexx/backend-runtime": "workspace:*"
   },
   "engines": {
