@@ -1,7 +1,15 @@
 # Drift Log
-**Last updated:** 2026-08-07  **Open:** 19  **Resolved:** 62  **Critical/High:** 0
+**Last updated:** 2026-08-07  **Open:** 20  **Resolved:** 62  **Critical/High:** 0
 
 ## Open
+
+- **D-93** (Medium, 2026-08-07, reporter: example-app logging pass) — gateway-minted JWTs encode `iat`/`exp` in epoch MILLISECONDS, not seconds. RFC 7519 expects NumericDate = seconds; any standard JWT library validating `exp` reads ms as seconds → expiry lands in year ~58568 → token treated as effectively never-expiring (and `iat` in the far future trips `iat`-future checks in some libs).
+  - Doc claim: JWT is a standard token (`example/README.md` "a real JWT minted by its own `gateway.issueToken` API"; `docs/architecture/Agentide.md` security sections imply standard JWT semantics).
+  - Code reality: `packages/gateway-core/src/factory.ts:265` → `exp: clock.now() + (req.expiresInMs ?? DEFAULT_TOKEN_TTL_MS)` with `clock.now()` in ms; `oauth-token-handler.ts:89` comment "// epoch ms, matching TokenClaims elsewhere in gateway-core" — deliberate internal convention, non-standard externally. Verified live 2026-08-07: minted token `iat=1786081669885 exp=1786085269885` (Δ = 3 600 000 ms = 1h).
+  - Why matters: gateway-internal validation is self-consistent, but any external consumer (SDK, dashboard, third-party auth middleware) validating with a standard JWT lib silently disables expiry. Security-adjacent; also confuses log parsers (example app logged exp as year +058568).
+  - Owner: gateway-core (token mint).
+  - To fix: emit seconds (`Math.floor(clock.now()/1000)`) in the signed claims AND keep the internal expiry check in the same unit; add a test pinning `exp-iat === 3600` (seconds). Check `types.ts:122` comment + all consumers (session-mint, oauth handlers) for ms assumptions.
+  - Related: example app logs a D-93 note when ms-exp detected (`example/src/platform/platform.agent.ts`).
 
 - **D-91** (Medium, 2026-08-07, reporter: post-release-validation 0.4.0 smoke test) — `agentide invoke` with a narrow-scope token cannot reach any business capability: the auto-mint path (D-79) requires `session.create`, which a business-only token lacks, so even an IN-SCOPE cap (`product.list` with scope `product.list product.get`) is denied `GATEWAY_INSUFFICIENT_SCOPE — caller lacks required scope for "session.create"`. Deny-by-default works (out-of-scope `order.create` also denied), but the help text implies `--session` is optional for any token.
   - Doc claim: `agentide --help` → `invoke <cap> [--args ...] [--session <id>] [--mode call|stream]` — optional flag, no session-scope caveat (`packages/agentide/src/cli.ts` help block; verified 0.4.0).
