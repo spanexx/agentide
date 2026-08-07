@@ -1,7 +1,15 @@
 # Drift Log
-**Last updated:** 2026-08-06  **Open:** 16  **Resolved:** 62  **Critical/High:** 0
+**Last updated:** 2026-08-07  **Open:** 17  **Resolved:** 62  **Critical/High:** 0
 
 ## Open
+
+- **D-90** (Low, 2026-08-07, reporter: agentide 0.4.0 release session) — `ci-cd-agentide` + `release-agentide` skills claim release-please attributes commits to packages by conventional-commit scope ("a `fix(agentide):` commit touching `packages/dashboard-core/src/` will NOT bump `dashboard-core` — only `agentide`"). The repo's actual config (`.github/release-please-config.json`, `release-type: node`, no `node-workspace` plugin) attributes commits by **changed file paths**; the scope only formats the changelog line (`**agentide:**`). Observed 2026-08-07: `e880560 feat(agentide):` (touched `packages/gateway-core/src/factory.ts` mkdir) bumped gateway-core 0.7.0; `1a6bfca feat(agentide):` (touched `packages/adapter-websocket/`) bumped adapter-websocket 0.6.0; `85727ca fix(release):` (touched agentide/gateway-core/dashboard-core package.jsons) bumped agentide + gateway-core patches in the original PR #57.
+  - Doc claim: `.agents/skills/ci-cd-agentide/SKILL.md` "Cut a release" step 2 + `.agents/skills/release-agentide/SKILL.md` step 3 "CRITICAL: release-please only counts commits whose scope matches a package path".
+  - Code reality: `.github/release-please-config.json` (15 packages, flat string manifest); PR #57 bump set: agentide 0.4.0, gateway-core 0.7.0, adapter-websocket 0.6.0; gateway-core changelog lists the `**agentide:**` commit under Features.
+  - Why matters: an agent following the skill misreads correct bumps as wrong (or distrusts the Release PR). Corollary: any feat commit that touches sibling package files inflates those packages to a MINOR — cross-package edits in a feat must be reviewed before merge.
+  - Owner: cross-pack audit (skills).
+  - To fix: doc — corrected both skills 2026-08-07 (attribution by changed paths; scope = changelog formatting only); added pre-dispatch repo-vs-npm drift check, keyring/sandbox auth note, and Release-PR update race note.
+  - Verified by: PR #57 changelog sections; `git show e880560/1a6bfca/85727ca --stat`.
 
 - **D-51** (Low, 2026-08-06, reporter: dashboard-core drift review 2026-08-06-121223) — Scenario 3 wording in PRD-TRD says "prepends the record" but the implementation (`packages/dashboard-core/src/assets/wire.js:101-106` → `invoke4(true)`) re-issues `session.list` / `plugin.list` / `capability.list` / `system.health` and replaces the snapshot arrays wholesale. User-visible result is identical (new row appears at the top because `session.list` is creation-ordered), but the implementation path is a full refetch, not an incremental prepend. Acceptable: refetch is the canonical live path for v1, simpler than per-event diffs, and the `dashboard.view.*` cap contract makes incremental updates unnecessary at the wrapper boundary.
   - Doc claim: PRD-TRD §Scenario 3 "prepends the record" (and AC-3.1 "row appears in Sessions within one second").
