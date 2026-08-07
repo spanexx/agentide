@@ -1,10 +1,10 @@
 {
-  "packages/agentide": "0.4.0",
+  "packages/agentide": "0.5.0",
   "packages/gateway-core": "0.7.0",
-  "packages/adapter-core": "0.2.0",
+  "packages/adapter-core": "0.3.0",
   "packages/sdk-node": "0.2.0",
   "packages/sdk-browser": "0.2.0",
-  "packages/adapter-mcp": "0.6.0",
+  "packages/adapter-mcp": "0.7.0",
   "packages/adapter-websocket": "0.7.0",
   "packages/backend-runtime": "0.6.0",
   "packages/capability-registry": "0.6.0",
