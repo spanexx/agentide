@@ -54,6 +54,9 @@ export const MCP_ERROR_TABLE: ErrorTable = {
   [ERROR_CODES.SDK_UNREACHABLE]: (payload) => ({ code: -32005, message: payload.message }),
   [ERROR_CODES.INTERNAL_ERROR]: (payload) => ({ code: -32006, message: payload.message }),
   [ERROR_CODES.HANDLER_ERROR]: (payload) => ({ code: -32006, message: payload.message }),
+  // HANDLER_TIMEOUT: preserve the kernel code so the MCP sink can render
+  // an isError:true result (matches the pre-migration callTool special path).
+  [ERROR_CODES.HANDLER_TIMEOUT]: (payload) => ({ code: payload.code, message: payload.message }),
 };
 
 // Shared converter instance with the door's table (Phase 4 pipeline path).
