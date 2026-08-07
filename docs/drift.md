@@ -1,7 +1,22 @@
 # Drift Log
-**Last updated:** 2026-08-07  **Open:** 17  **Resolved:** 62  **Critical/High:** 0
+**Last updated:** 2026-08-07  **Open:** 19  **Resolved:** 62  **Critical/High:** 0
 
 ## Open
+
+- **D-91** (Medium, 2026-08-07, reporter: post-release-validation 0.4.0 smoke test) — `agentide invoke` with a narrow-scope token cannot reach any business capability: the auto-mint path (D-79) requires `session.create`, which a business-only token lacks, so even an IN-SCOPE cap (`product.list` with scope `product.list product.get`) is denied `GATEWAY_INSUFFICIENT_SCOPE — caller lacks required scope for "session.create"`. Deny-by-default works (out-of-scope `order.create` also denied), but the help text implies `--session` is optional for any token.
+  - Doc claim: `agentide --help` → `invoke <cap> [--args ...] [--session <id>] [--mode call|stream]` — optional flag, no session-scope caveat (`packages/agentide/src/cli.ts` help block; verified 0.4.0).
+  - Code reality: `packages/agentide/src/consumer.ts` withAutoSession always mints when `--session` omitted; gateway enforces the token's scope on `session.create` (verified live 0.4.0 against example app).
+  - Why matters: operators minting narrow business tokens (Goals §7 security-by-default) can't drive the CLI headline use case at all; they must either grant `session.create` (broadening the token) or mint `*`. No documented path exists.
+  - Owner: agentide CLI pack (next).
+  - To fix: (a) doc — add the session-scope caveat to `invoke` help; (b) code — consider auto-mint with the caller's existing session scope checked per-cap, or surface a targeted error `error: invoke auto-mint needs session.create scope (grant it or pass --session)`. Decide in next CLI pack.
+  - Related: D-79, D-80.
+
+- **D-92** (Low, 2026-08-07, reporter: post-release-validation 0.4.0 smoke test) — `agentide capability list --owner <id>` silently no-ops on remote entries: no capability entry exposes an `owner` field over the wire, so the filter matches nothing (or is ignored) and platform caps print regardless.
+  - Doc claim: `agentide --help` → `capability {list|describe} [--owner <string>] [--tier ...]` (`packages/agentide/src/cli.ts` help block; verified 0.4.0).
+  - Code reality: live `capability list --owner nestjs-ecommerce --json` returned all platform caps; `capabilities --json` output contains zero `"owner"` keys (verified 0.4.0 against example app).
+  - Why matters: operators cannot filter business vs platform caps remotely; discovery UX gap (Vision capability-first).
+  - Owner: agentide CLI pack (next).
+  - To fix: expose `owner` (e.g. `app:<id>` / `platform`) in `capability.list` responses, then let `--owner` filter on the client. Or drop `--owner` from help until wired.
 
 - **D-90** (Low, 2026-08-07, reporter: agentide 0.4.0 release session) — `ci-cd-agentide` + `release-agentide` skills claim release-please attributes commits to packages by conventional-commit scope ("a `fix(agentide):` commit touching `packages/dashboard-core/src/` will NOT bump `dashboard-core` — only `agentide`"). The repo's actual config (`.github/release-please-config.json`, `release-type: node`, no `node-workspace` plugin) attributes commits by **changed file paths**; the scope only formats the changelog line (`**agentide:**`). Observed 2026-08-07: `e880560 feat(agentide):` (touched `packages/gateway-core/src/factory.ts` mkdir) bumped gateway-core 0.7.0; `1a6bfca feat(agentide):` (touched `packages/adapter-websocket/`) bumped adapter-websocket 0.6.0; `85727ca fix(release):` (touched agentide/gateway-core/dashboard-core package.jsons) bumped agentide + gateway-core patches in the original PR #57.
   - Doc claim: `.agents/skills/ci-cd-agentide/SKILL.md` "Cut a release" step 2 + `.agents/skills/release-agentide/SKILL.md` step 3 "CRITICAL: release-please only counts commits whose scope matches a package path".
