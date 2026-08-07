@@ -5,6 +5,8 @@
 >
 > **Status:** shipped (A7 closed 2026-08-07) — frontier = A8.
 > Research resolved; build frontier = A8 (MCP migration) → A9 (REST proof adapter).
+> Drift review 2026-08-07: **Minor Drift — ship**; sim script + docs fixed, drifts
+> D-95..D-99 logged, publish pipeline wired (16th package).
 > Live tracker: this map + the child tickets under `tickets/`.
 
 ## Destination

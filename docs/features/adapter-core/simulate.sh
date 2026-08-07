@@ -11,6 +11,10 @@ CORE="$ROOT/packages/adapter-core"
 WS="$ROOT/packages/adapter-websocket"
 PASS=0; FAIL=0
 
+# vitest 4 prints ANSI colors even when piped, breaking "Tests N passed" greps.
+# Strip ANSI escapes everywhere test/sim output is matched (S2/S7 false-FAIL fix, 2026-08-07).
+strip_ansi() { sed -e 's/\x1b\[[0-9;]*m//g'; }
+
 ok()   { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 bad()  { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 
@@ -36,13 +40,13 @@ grep -q "GatewayErrorPayload" "$CORE/src/index.ts" && ok "re-export: GatewayErro
 echo
 echo "S7 — core ships its own unit tests (moved logic, green)"
 echo "--------------------------------------------------------"
-core_tests=$(cd "$ROOT" && pnpm vitest run packages/adapter-core 2>&1 | grep -oE "Tests +[0-9]+ passed" | grep -oE "[0-9]+")
+core_tests=$(cd "$ROOT" && pnpm vitest run packages/adapter-core 2>&1 | strip_ansi | grep -oE "Tests +[0-9]+ passed" | grep -oE "[0-9]+")
 [ -n "${core_tests:-}" ] && ok "core suite green ($core_tests tests)" || bad "core suite not green"
 
 echo
 echo "S2 — WS suite passes UNEDITED (migration oracle)"
 echo "------------------------------------------------"
-ws_tests=$(cd "$ROOT" && pnpm vitest run packages/adapter-websocket 2>&1 | grep -oE "Tests +[0-9]+ passed" | grep -oE "[0-9]+")
+ws_tests=$(cd "$ROOT" && pnpm vitest run packages/adapter-websocket 2>&1 | strip_ansi | grep -oE "Tests +[0-9]+ passed" | grep -oE "[0-9]+")
 [ -n "${ws_tests:-}" ] && ok "WS suite green ($ws_tests tests)" || bad "WS suite failed"
 if [ -z "$(cd "$ROOT" && git diff --stat -- packages/adapter-websocket/__tests__ packages/adapter-websocket/src/client.ts)" ]; then
   ok "zero edits: __tests__/ + client.ts untouched (git diff empty)"
@@ -54,7 +58,7 @@ echo
 echo "S3 — wire simulation unchanged (same script, same assertions)"
 echo "--------------------------------------------------------------"
 sim_out=$(cd "$ROOT" && node packages/agentide/scripts/simulate-websocket-adapter.mjs 2>&1)
-echo "$sim_out" | grep -q "0 failed" && ok "sim green (was 31 pre-migration; count may grow)" || bad "sim failed: $(echo "$sim_out" | tail -1)"
+echo "$sim_out" | strip_ansi | grep -q "0 failed" && ok "sim green (was 31 pre-migration; count may grow)" || bad "sim failed: $(echo "$sim_out" | tail -1)"
 
 echo
 echo "S4 — public surface identical (index.ts exports pre/post)"

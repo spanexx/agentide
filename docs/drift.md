@@ -1,8 +1,46 @@
 # Drift Log
-**Last updated:** 2026-08-07  **Open:** 21  **Resolved:** 62  **Critical/High:** 0
+**Last updated:** 2026-08-07  **Open:** 26  **Resolved:** 62  **Critical/High:** 0
 
 ## Open
 
+- **D-95** (Low, 2026-08-07, reporter: adapter-core drift review) — PRD-TRD describes `lazy` auth mode as a distinct behavior; the shipped `auth-policy.ts` default is `early` and `lazy` behaves identically in v1 (deferral noted in code). Kernel-verifies-per-call is the intended future, not currently reachable.
+  - Doc claim: PRD-TRD-adapter-core.md:108 — "`{mode: "early" | "lazy"}` knob; early verifies once at open and caches identity" (implies lazy ≠ early).
+  - Code reality: `packages/adapter-core/src/auth-policy.ts:65` (`mode: options.mode ?? "early"`); `auth-policy.ts:4-5,63` — lazy noted as deferred, identical to early today.
+  - Why matters: documentation-only; no operator sees a difference. The knob's promised lazy path exists as a stub.
+  - Owner: adapter-core (A8 when MCP migrates — MCP may be the first true lazy consumer).
+  - To fix: code — implement lazy verification (skip pipeline verify; kernel per-call) when A8 lands, or doc — mark the knob `early`-only in v1.
+  - Verified by: adapter-core drift review 2026-08-07 (Contract Gap).
+
+- **D-96** (Low, 2026-08-07, reviewer: adapter-core drift review) — A1's locked 6-key `createAdapterPipeline({gateway, config, input, output, errors, response})` shipped as `{gateway, errors, response}` with per-invocation `input`/`output` flowing through `PipelineInvocation` args; `config` passthrough omitted in v1. PRD-TRD now reflects the shipped shape.
+  - Doc claim: PRD-TRD-adapter-core.md:116 (updated 2026-08-07 to shipped shape; original A1 ticket stated the 6-key form).
+  - Code reality: `packages/adapter-core/src/pipeline.ts:15-21` — `AdapterPipelineOptions {gateway, response, errors}`; `PipelineInvocation` carries name/input/token/sessionId/mode per request; A1 mapping documented in the file header.
+  - Why matters: shape is contract — a future door (A9 REST) must code to the shipped 3-key form, not the map's original wording.
+  - Owner: adapter-core.
+  - To fix: doc — done 2026-08-07 (PRD-TRD + IMPL updated).
+  - Verified by: adapter-core drift review; pipeline.ts source.
+
+- **D-97** (Low, 2026-08-07, reviewer: adapter-core drift review) — IMPL Phase 7 planned the pipeline wiring in `packages/adapter-websocket/src/server.ts`; it landed in `invoke.ts` (server.ts keeps transport lifecycle). IMPL updated 2026-08-07.
+  - Doc claim: IMPL-adapter-core.md:93 (pre-fix) — "Edit `server.ts` — transportation lifecycle stays, invocation path uses pipeline handlers".
+  - Code reality: `packages/adapter-websocket/src/invoke.ts` carries the `createAdapterPipeline` call; `server.ts` untouched by migration (git show 0bc1046 --stat).
+  - Why matters: doc-only; next reader of IMPL would look in the wrong file.
+  - Owner: adapter-core.
+  - To fix: doc — done (IMPL Phase 7 updated).
+  - Verified by: drift review 2026-08-07.
+
+- **D-98** (Low, 2026-08-07, reviewer: adapter-core drift review) — the WebSocket door imports `originMatches` from `@spanexx/gateway-core` re-export, not from adapter-core — a one-import exception to A1's "doors import only adapter-core". Accepted under the zero-delta rule (moving it would touch origin-binding code with no behavior gain).
+  - Doc claim: A1 lock — "doors import ONLY adapter-core (re-exports)" (`docs/CONTEXT.md` Decisions Log 2026-08-07).
+  - Code reality: `packages/adapter-websocket/src/auth.ts` — `import { ERROR_CODES, originMatches, verifyToken, ... } from "@spanexx/gateway-core"`.
+  - Why matters: a single seam-outstanding; if a door needs the same primitive later, adapter-core should re-export it.
+  - Owner: adapter-core (A8 follow-up).
+  - To fix: code — adapter-core re-exports `originMatches`; WS door imports it from adapter-core (mechanical, zero-delta).
+  - Verified by: drift review 2026-08-07.
+
+- **D-99** (Medium, 2026-08-07, reviewer: adapter-core drift review) — `packages/adapter-core` is not in the publish pipeline: release-please-config.json lists 14 packages, missing the 16th (adapter-core @0.1.0); release.yml build/publish filters likewise. A release run would silently never publish adapter-core. Fixed 2026-08-07 (config + manifest + workflow filters).
+  - Doc claim: ci-cd-agentide skill — "15 packages published" / release-please config is the package list source.
+  - Code reality: `.github/release-please-config.json` (14 entries, no adapter-core); `.github/release-please-manifest.json` (none); `.github/workflows/release.yml:53,61` filters (no adapter-core).
+  - Why matters: release-blocking for the pack — adapter-core would build but never publish.
+  - Owner: release pipeline.
+  - To fix: code — add `packages/adapter-core` to config + manifest (0.1.0) + both workflow filters after gateway-core (dep order). Done 2026-08-07.
 - **D-94** (Low, 2026-08-07, reporter: adapter-core wayfinder charting) — CONTEXT.md glossary claims "All v1 client doors ride the websocket-adapter wire (W1–W6) … 'the only door' (dashboard, CLI `platform`)" — but `adapter-mcp` does NOT ride the WS wire: it calls `gateway.handleInvocation` directly in-process (`packages/adapter-mcp/src/translate.ts:213`). The claim is true for the doors it names (dashboard + CLI consumer use `createWsClient`) but false as "all" doors.
   - Doc claim: `docs/CONTEXT.md` line 30 (Adapter row: "All v1 client doors ride the websocket-adapter wire (W1–W6) … 'the only door'").
   - Code reality: `adapter-mcp/src/translate.ts:213` (`gateway.handleInvocation(invocation)`); `adapter-websocket/src/invoke.ts:37` (same pattern for WS); both in-process in `createPlatform`.

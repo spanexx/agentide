@@ -40,7 +40,7 @@ and `client.ts`.
 ### Scenario 3: wire simulation unchanged
 
 **When** `simulate-websocket-adapter.mjs` runs
-**Then** 31/31 assertions pass with the same script, same assertions.
+**Then** 37/37 assertions pass with the same script, same assertions.
 
 ### Scenario 4: public surface identical
 
@@ -84,7 +84,7 @@ pnpm --filter @spanexx/adapter-core build && pnpm --filter @spanexx/adapter-core
 # → core builds + own unit tests green            (S1, S7)
 pnpm vitest run packages/adapter-websocket
 # → ~54/54, zero edits to __tests__/              (S2)
-node packages/adapter-websocket/scripts/simulate-websocket-adapter.mjs
+node packages/agentide/scripts/simulate-websocket-adapter.mjs
 # → 31/31, same script                            (S3)
 # exports diff pre/post → identical list          (S4)
 # wire capture (auth phrase, invoke.partial/end, close 1008/1009/1011) → identical (S5)
@@ -106,16 +106,20 @@ node -e "import('@spanexx/adapter-core')" # capability lookup present, no WS wir
   over a caller-supplied record shape. WS `ConnectionRegistry` becomes a thin wrapper
   keeping the `ConnectionRecord` shape (`ws-<n>` ids, queue/stats/heartbeat fields).
 - Auth policy (A2): `{mode: "early" | "lazy"}` knob; early verifies once at open and
-  caches identity; auth-failure behavior frozen (wire phrases stay door-local).
+  caches identity (in the door's connection record); auth-failure behavior frozen
+  (wire phrases stay door-local). `lazy` mode in v1 behaves identically to `early` —
+  deferral noted in code (D-95); kernel-verifies-per-call is the documented future.
 - `createCapabilityLookup` (A6): `list(token)` → filtered list; `describe(name, token)`
   → single entry; scope via `readClaims(token).scope`; empty scope → `[]` defensive;
   no tier logic in core.
 
 ### API Contracts
 
-- `createAdapterPipeline({gateway, config, input, output, errors, response})` (A1) —
-  the shared invocation pipeline. Emits **no events**; imports `@spanexx/gateway-core`
-  at runtime.
+- `createAdapterPipeline({gateway, errors, response})` (A1) — the shared invocation
+  pipeline. Per-invocation input/output flow through the `invoke()` args
+  (`PipelineInvocation`); `config` passthrough omitted in v1 (A1's 6-key shape
+  simplified during IMPL — D-96). Emits **no events**; imports
+  `@spanexx/gateway-core` at runtime.
 - `readClaims(token)` — moved from MCP `decodeScopeFromToken` (base64url payload
   parsing, `[]` defensiveness). `decodeScopeFromToken` stays in MCP until A8.
 - Error converter (A5): shared converter + shared default fallback

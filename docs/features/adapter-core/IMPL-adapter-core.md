@@ -89,9 +89,14 @@ no opensrc run needed (Dependency Analysis skipped per IMPL-FORMAT).
 ### Phase 7: createAdapterPipeline wiring
 
 **Build:**
-- `src/pipeline.ts` — `createAdapterPipeline({gateway, config, input, output, errors, response})` (A1); imports `@spanexx/gateway-core` at runtime; emits **no events**.
-- Edit `packages/adapter-websocket/src/server.ts` — transport lifecycle stays, invocation path uses pipeline handlers (handles close codes 1008/1009/1011 unchanged).
-- Contract: PRD-TRD Scenario 3 (sim 31/31), Scenario 5 (wire bytes), Scenario 6 (consumers).
+- `src/pipeline.ts` — `createAdapterPipeline({gateway, errors, response})` (A1: 6-key
+  shape simplified in IMPL — `config` passthrough omitted, per-invocation
+  input/output flow through `PipelineInvocation` args — D-96); imports
+  `@spanexx/gateway-core` at runtime; emits **no events**.
+- Wire the invocation path in `packages/adapter-websocket/src/invoke.ts` (NOT
+  `server.ts` — landed there; transport lifecycle stays in `server.ts`, close codes
+  1008/1009/1011 unchanged — D-97).
+- Contract: PRD-TRD Scenario 3 (sim 37/37), Scenario 5 (wire bytes), Scenario 6 (consumers).
 
 **Verify:**
 - [ ] WS server tests pass **unedited**

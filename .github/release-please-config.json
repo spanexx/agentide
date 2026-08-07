@@ -2,6 +2,7 @@
   "packages": {
     "packages/agentide": { "package-name": "@spanexx/agentide" },
     "packages/gateway-core": { "package-name": "@spanexx/gateway-core" },
+    "packages/adapter-core": { "package-name": "@spanexx/adapter-core" },
     "packages/sdk-node": { "package-name": "@spanexx/sdk-node" },
     "packages/sdk-browser": { "package-name": "@spanexx/sdk-browser" },
     "packages/adapter-mcp": { "package-name": "@spanexx/adapter-mcp" },
