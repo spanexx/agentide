@@ -1,8 +1,8 @@
 {
-  "name": "@spanexx/adapter-websocket",
-  "version": "0.6.1",
+  "name": "@spanexx/adapter-core",
+  "version": "0.1.0",
   "private": false,
-  "description": "WebSocket adapter \u2014 the single door for SDKs (sdk-node, sdk-browser) and the agentide CLI. Push+pull on one socket, JWT-in-first-message, event subscription.",
+  "description": "Shared server-side invocation pipeline for door adapters — readClaims, auth policy, error converter, RecordRegistry, response channel, capability lookup. Doors import ONLY this package for shared logic (A1 own-bytes rule).",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -26,15 +26,11 @@
     "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
-    "ws": "^8.18.0",
     "@spanexx/errors": "workspace:*",
-    "@spanexx/event-bus": "workspace:*",
-    "@spanexx/gateway-core": "workspace:*",
-    "@spanexx/adapter-core": "workspace:*"
+    "@spanexx/gateway-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@types/ws": "^8.5.13",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
     "eslint": "^10.8.0",
@@ -45,9 +41,8 @@
   "keywords": [
     "agentide",
     "platform",
-    "websocket",
-    "ws",
-    "adapter"
+    "adapter",
+    "pipeline"
   ],
   "publishConfig": {
     "access": "public",

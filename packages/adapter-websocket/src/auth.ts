@@ -10,14 +10,8 @@
  * Quick lookup: rg -n "CID:auth-" packages/adapter-websocket/src/auth.ts
  */
 
-import {
-  ERROR_CODES,
-  originMatches,
-  verifyToken,
-  type Clock,
-  type TenantRecord,
-  type TokenClaims,
-} from "@spanexx/gateway-core";
+import { originMatches, type Clock, type TenantRecord, type TokenClaims } from "@spanexx/gateway-core";
+import { createAuthPolicy } from "@spanexx/adapter-core";
 import { AUTH_ERROR_CODES } from "./types.js";
 
 // CID:auth-002 - originMatches
@@ -44,26 +38,20 @@ export type AuthResult =
 //   + tenant state. The five lowercase phrase codes map 1:1 to auth.error frames
 //   on the wire (PRD W2 sub-Q 1 / scenarios 2 + 4).
 // Used by: server.ts processAuth
+//
+// A2 migration: the verification pipeline now lives in @spanexx/adapter-core
+// (createAuthPolicy, early mode — verify once at open, identity cached in the
+// door's ConnectionRecord). This file keeps the wire phrases (AUTH_ERROR_CODES
+// are lowercase door bytes) and maps the canonical policy reasons to them.
+const authPolicy = createAuthPolicy({ mode: "early" });
+
 export function authenticateToken(token: string | undefined, context: AuthContext): AuthResult {
-  if (token === undefined || token.length === 0) {
-    return { ok: false, code: AUTH_ERROR_CODES.TOKEN_MISSING };
-  }
-  const verified = verifyToken(token, context.clock, context.tokenSecret);
-  if (!verified.ok) {
-    return {
-      ok: false,
-      code: verified.code === ERROR_CODES.TOKEN_EXPIRED
-        ? AUTH_ERROR_CODES.TOKEN_EXPIRED
-        : AUTH_ERROR_CODES.TOKEN_INVALID,
-    };
-  }
-  const expectedOrigins = verified.claims.expectedOrigins ?? [];
-  if (!originMatches(context.origin, expectedOrigins)) {
-    return { ok: false, code: AUTH_ERROR_CODES.ORIGIN_MISMATCH };
-  }
-  const tenant = context.listTenants().find((record) => record.id === verified.claims.sub.tenantId);
-  if (tenant?.suspended === true) {
-    return { ok: false, code: AUTH_ERROR_CODES.TENANT_SUSPENDED };
-  }
-  return { ok: true, claims: verified.claims };
+  const result = authPolicy.authenticate(token, {
+    clock: context.clock,
+    tokenSecret: context.tokenSecret,
+    origin: context.origin,
+    listTenants: context.listTenants,
+  });
+  if (result.ok) return { ok: true, claims: result.claims };
+  return { ok: false, code: AUTH_ERROR_CODES[result.reason] };
 }

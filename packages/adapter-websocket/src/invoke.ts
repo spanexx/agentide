@@ -3,6 +3,12 @@
  * - invokeFrame: dispatch a single client `invoke` frame to gateway.handleInvocation, map response → wire frames
  * - parseInvokeFrame: validate the inbound `invoke` shape (correlationId, name, mode, optional input/sessionId)
  *
+ * A1/A4 migration: dispatch now delegates to @spanexx/adapter-core
+ * createAdapterPipeline. This file keeps the door bytes: the WS sink renders
+ * invoke.partial/invoke.end (stream) and invoke.result (call), errors pass
+ * through verbatim (PRD Scenario 11 — no third vocabulary), and internal
+ * failures render the WS_INTERNAL error frame (door-local try/catch, A5).
+ *
  * CID Index:
  * CID:invoke-001 -> invokeFrame
  * CID:invoke-002 -> parseInvokeFrame
@@ -11,10 +17,22 @@
  */
 
 import type { Gateway, YamlValue } from "@spanexx/gateway-core";
+import { createAdapterPipeline, createErrorConverter, type DoorError } from "@spanexx/adapter-core";
 import type { ConnectionRecord, InvokeFrame, ServerFrame } from "./types.js";
 import { enqueueFrame, type QueueOptions } from "./queue.js";
 
 export type InvokeOptions = QueueOptions;
+
+// WS door error table (A5): identity passthrough — gateway codes ride the
+// wire verbatim (PRD Scenario 11), so the shared converter's default is set
+// to carry code/message/details unchanged.
+const wsConverter = createErrorConverter({
+  defaultError: (payload) => ({
+    code: payload.code,
+    message: payload.message,
+    details: payload.details,
+  }),
+});
 
 // CID:invoke-001 - invokeFrame
 // Purpose: gateway translation surface for `invoke` frames (W1 REOPEN + W4).
@@ -33,41 +51,59 @@ export async function invokeFrame(
     enqueueFrame(record, invalidFrame("connection is not authenticated"), options);
     return;
   }
+  const pipeline = createAdapterPipeline({
+    gateway,
+    errors: wsConverter,
+    response: (correlationId) => wsSink(record, frame, correlationId, options),
+  });
   try {
-    const response = await gateway.handleInvocation({
-      token: record.token,
-      capability: { name: frame.name },
-      input: frame.input === undefined ? {} : frame.input,
-      ...(frame.sessionId === undefined ? {} : { sessionId: frame.sessionId }),
-    });
-    if ("error" in response) {
-      const errorFrame: ServerFrame = {
-        type: "invoke.error",
-        correlationId: frame.correlationId,
-        code: response.error.code,
-        message: response.error.message,
-        details: response.error.details,
-      };
-      enqueueFrame(record, errorFrame, options);
-      return;
-    }
-    if (frame.mode === "stream") {
-      enqueueFrame(record, {
-        type: "invoke.partial",
-        correlationId: frame.correlationId,
-        output: response.output,
-      }, options);
-      enqueueFrame(record, { type: "invoke.end", correlationId: frame.correlationId }, options);
-      return;
-    }
-    enqueueFrame(record, {
-      type: "invoke.result",
+    await pipeline.invoke({
       correlationId: frame.correlationId,
-      output: response.output,
-    }, options);
+      token: record.token,
+      name: frame.name,
+      input: frame.input,
+      sessionId: frame.sessionId,
+      mode: frame.mode,
+    });
   } catch {
     enqueueFrame(record, invalidFrame("invocation failed", "WS_INTERNAL"), options);
   }
+}
+
+// WS door sink (A4): packaging is door-local. Stream renders invoke.partial +
+// invoke.end; call renders invoke.result; errors render invoke.error verbatim.
+function wsSink(
+  record: ConnectionRecord,
+  frame: InvokeFrame,
+  correlationId: string,
+  options: InvokeOptions,
+) {
+  const streaming = frame.mode === "stream";
+  return {
+    emitChunk(chunk: YamlValue) {
+      enqueueFrame(record, { type: "invoke.partial", correlationId, output: chunk }, options);
+    },
+    emitEvent() {
+      // v1: no event frames in the invoke path (future.md #2/#4).
+    },
+    emitResult(output: YamlValue) {
+      if (streaming) {
+        enqueueFrame(record, { type: "invoke.end", correlationId }, options);
+        return;
+      }
+      enqueueFrame(record, { type: "invoke.result", correlationId, output }, options);
+    },
+    emitError(error: DoorError) {
+      const errorFrame: ServerFrame = {
+        type: "invoke.error",
+        correlationId,
+        code: error.code as string,
+        message: error.message,
+        details: error.details,
+      };
+      enqueueFrame(record, errorFrame, options);
+    },
+  };
 }
 
 // CID:invoke-002 - parseInvokeFrame
