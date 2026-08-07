@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/errors",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": false,
   "description": "Structured error type used across every Agentide package. Replaces thrown Error with {code, message, details?} shape.",
   "type": "module",
