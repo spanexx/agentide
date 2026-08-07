@@ -144,6 +144,21 @@ export interface CreatePlatformConfig {
    * compat — same shape as omitting `backendRuntimePort` or `adapterMcp`).
    */
   readonly dashboardPort?: number;
+
+  /**
+   * CID:platform-types-013 - adapterRestPort (REST adapter, A9)
+   * When set, createPlatform() auto-creates and starts the REST adapter
+   * (`@spanexx/adapter-rest`) which exposes POST /invoke + GET /capabilities
+   * over plain HTTP. Bearer JWT per request, kernel-verified (lazy path).
+   * Default 7400 when this flag is set; when undefined the door is NOT
+   * auto-created (preserves backward compat — same shape as omitting
+   * `adapterMcp` / `adapterWs`).
+   *
+   * Port 7400 is RESERVED for the REST adapter — must never collide with
+   * MCP (7100), dashboard (7200), WS (7300), or backend-runtime (7350).
+   */
+  readonly adapterRestPort?: number;
+  readonly adapterRestHost?: string;
 }
 
 // CID:platform-types-002 - Platform
@@ -176,6 +191,14 @@ export interface Platform {
    */
   readonly mcpAdapter?: import("@spanexx/adapter-mcp").McpAdapter;
   readonly wsAdapter?: import("@spanexx/adapter-websocket").WebSocketAdapter;
+  /**
+   * CID:platform-types-014 - restAdapter
+   * A9 (REST proof adapter): present when createPlatform was called with
+   *   adapterRestPort. Undefined otherwise. Exposed so tests and operators
+   *   can introspect the bound port and stop the adapter independently.
+   * Used by: integration tests, custom boot scripts.
+   */
+  readonly restAdapter?: import("@spanexx/adapter-rest").RestAdapter;
   /**
    * CID:platform-types-013 - dashboardServer
    * BI[13]: present when createPlatform() was called with dashboardPort.

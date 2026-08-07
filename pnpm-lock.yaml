@@ -138,6 +138,40 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(yaml@2.9.0))
 
+  packages/adapter-rest:
+    dependencies:
+      '@spanexx/adapter-core':
+        specifier: workspace:*
+        version: link:../adapter-core
+      '@spanexx/errors':
+        specifier: workspace:*
+        version: link:../errors
+      '@spanexx/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@spanexx/gateway-core':
+        specifier: workspace:*
+        version: link:../gateway-core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^8.65.0
+        version: 8.65.0(@typescript-eslint/parser@8.65.0(eslint@10.8.0)(typescript@5.9.3))(eslint@10.8.0)(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^8.65.0
+        version: 8.65.0(eslint@10.8.0)(typescript@5.9.3)
+      eslint:
+        specifier: ^10.8.0
+        version: 10.8.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(yaml@2.9.0))
+
   packages/adapter-websocket:
     dependencies:
       '@spanexx/adapter-core':
@@ -183,6 +217,9 @@ importers:
       '@spanexx/adapter-mcp':
         specifier: workspace:*
         version: link:../adapter-mcp
+      '@spanexx/adapter-rest':
+        specifier: workspace:*
+        version: link:../adapter-rest
       '@spanexx/adapter-websocket':
         specifier: workspace:*
         version: link:../adapter-websocket

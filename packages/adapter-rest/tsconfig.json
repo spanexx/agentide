@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../errors" },
+    { "path": "../event-bus" },
+    { "path": "../gateway-core" },
+    { "path": "../adapter-core" }
+  ]
+}

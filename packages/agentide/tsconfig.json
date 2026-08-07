@@ -14,6 +14,7 @@
     { "path": "../gateway-core" },
     { "path": "../adapter-mcp" },
     { "path": "../adapter-websocket" },
+    { "path": "../adapter-rest" },
     { "path": "../backend-runtime" }
   ]
 }

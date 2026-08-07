@@ -32,6 +32,7 @@ import { createGateway } from "@spanexx/gateway-core";
 import { createBackendRuntime, type BackendRuntime } from "@spanexx/backend-runtime";
 import { createMcpAdapter, type McpAdapter } from "@spanexx/adapter-mcp";
 import { createWebSocketAdapter, type WebSocketAdapter } from "@spanexx/adapter-websocket";
+import { createRestAdapter, type RestAdapter } from "@spanexx/adapter-rest";
 import {
   DASHBOARD_CAPS,
   DASHBOARD_CAPSESSION_LESS,
@@ -47,6 +48,10 @@ const DEFAULT_ADAPTER_MCP_PORT = 7100;
 const DEFAULT_ADAPTER_MCP_HOST = "127.0.0.1";
 const DEFAULT_ADAPTER_WS_PORT = 7300;
 const DEFAULT_ADAPTER_WS_HOST = "127.0.0.1";
+// CID:platform-factory-003 - REST adapter default host. Port is REQUIRED
+// (config.adapterRestPort) — the door is opt-in and the operator names the
+// port. Confirmed unallocated by A9-R1 §11 (7400 is the recommendation).
+const DEFAULT_ADAPTER_REST_HOST = "127.0.0.1";
 // CID:cjs-sdk-bootstrap-001 - backend-runtime default port. 7350 sits in the
 // 7xx0 band that 7100 (MCP) / 7200 (dashboard, reserved) / 7300 (adapter-
 // websocket) already use. The SDK's door (backend-runtime) speaks the
@@ -234,11 +239,30 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     await wsAdapter.start();
   }
 
+  // CID:platform-factory-003 - restAdapter wiring (A9)
+  // Auto-register the REST adapter per A9 lock when config.adapterRestPort is set.
+  // Bearer JWT per request, kernel-verified (lazy path) — no tokenSecret needed at
+  // the door. The door binds AFTER WS so the port 7300/7400 binding order is
+  // predictable; stop in reverse order (REST first, then WS).
+  let restAdapter: RestAdapter | undefined;
+  if (config.adapterRestPort !== undefined) {
+    restAdapter = createRestAdapter(gateway, {
+      host: config.adapterRestHost ?? DEFAULT_ADAPTER_REST_HOST,
+      port: config.adapterRestPort,
+    });
+    await restAdapter.start();
+  }
+
   let stopped = false;
   const stop = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
-    // Stop the MCP adapter FIRST (closes the HTTP port; in-flight JSON-RPC
+    // Stop the REST adapter FIRST (closes the HTTP port; in-flight
+    // requests get a clean "connection closed" response).
+    if (restAdapter !== undefined) {
+      await restAdapter.stop();
+    }
+    // Stop the MCP adapter NEXT (closes the HTTP port; in-flight JSON-RPC
     // requests get a clean "port closed" rather than waiting for the
     // runtime to drain).
     if (wsAdapter !== undefined) {
@@ -268,6 +292,7 @@ export async function createPlatform(config: CreatePlatformConfig): Promise<Plat
     backendRuntime,
     mcpAdapter,
     wsAdapter,
+    restAdapter,
     dashboardServer,
     stop,
   };
