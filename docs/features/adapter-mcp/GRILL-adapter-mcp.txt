@@ -1,0 +1,108 @@
+adapter-mcp migration onto adapter-core - Grill Notes
+=====================================================
+
+Status: Phase 0 grilling locked (2026-08-07, wayfinder A8 session)
+Date: 2026-08-07
+Source: docs/wayfinder/adapter-core/tickets/A8-mcp-migration.md (A1-A6 locks referenced)
+
+What this feature is about
+
+- Moves adapter-mcp's shared server-side logic (invocation forwarding, auth,
+  capability lookup, error conversion, claims reading, response routing) onto the
+  shipped @spanexx/adapter-core package, so the MCP door stands on the same
+  foundation as the WebSocket door.
+- Keeps every MCP-visible behavior byte-identical to today.
+- Turns on the real "lazy" auth mode for adapter-core (kernel verifies each call;
+  the door never caches identity) -- the first true lazy consumer, closing the
+  D-95 deferral.
+- Does NOT change the MCP wire, the 8 PRD scenarios, the tool cards, the OAuth
+  routes, or any JSON-RPC error code/message.
+
+Questions and answers locked so far
+
+1. "Q1 -- When MCP server moves to the shared foundation, does it become the
+   first actual 'lazy' mode, or also verify at the door like WebSocket?"
+Answer:
+- MCP becomes the first REAL lazy consumer. The door does no adapter-side
+  verification; the kernel verifies the bearer token per invocation (each MCP
+  request carries its own fresh token in the Authorization header; there is no
+  long-lived connection identity to cache).
+- adapter-core's lazy path is implemented for real (it happens to already be the
+  pipeline's shape -- pipeline forwards the token and the kernel verifies); the
+  door simply must NOT call any early-verify helper.
+- The new behavior gets its own new unit test (kernel-verifies-per-call proof).
+
+Why:
+- MCP sessions are stateless per request; per-request tokens are the natural
+  boundary, matching today's behavior exactly (MCP never verified at the door).
+- Closes drift D-95 (lazy was a stub behaving like early).
+- Every future request-based door (REST, Telegram) inherits the real path.
+- Zero-delta: same token, same kernel verification, same JSON-RPC errors.
+- Source: A8 resolution Q1; auth-policy.ts; pipeline.ts (input token -> handleinvocation).
+
+2. "Q2 -- What stays inside the MCP door after the migration?"
+Answer:
+- Four things stay in adapter-mcp:
+  1. The HTTP/SSE transport server (server.ts + startMcpHttpServer).
+  2. MCP-shaped rendering: template code and tool-card assembly stay in
+     translate.ts, plus the per-invocation response packaging (merge chunks
+     into one CallToolResult) as the door's response-channel strategy.
+  3. The local error table (error-map.ts) -- the mapping from the shared error
+     envelope to JSON-RPC shapes "-32100..-32006" stays a door file.
+  4. The OAuth/token routes (server.ts) -- transport-level identity flows are
+     door-specific (REST will have its own).
+- Everything else moves to (or through) adapter-core: invocation
+  (createAdapterPipeline.invoke), claims reader (readClaims), capability lookup
+  (createCapabilityLookup), error conversion (createErrorConverter with the
+  door's table), response delivery (per-invocation ResponseChannelSink).
+
+Why:
+- The "own-bytes" rule (A1): parse/render and transport-level auth belong to
+  the door; everything between is shared. Reused assertions: PRD-TRD adapter-core
+  SR lines, A1 lock, A4/A5/A6 resolutions.
+- Source: A8 lock; A1 lock; adapter-core index exports.
+
+3. "Q3 -- What is the acceptance bar for zero-delta?"
+Answer:
+- Existing MCP tests (4 files in adapter-mcp/src/__tests__; incl. the 8 PRD
+  scenarios) run UNEDITED and green.
+- Post-impl simulation simulate-mcp-adapter.mjs stays 8/8 (or higher if a new
+  scenario is added; existing scenario results byte-identical).
+- Every public export still consumed by packages/agentide (startMcpHttpServer)
+  exists and behaves identically.
+- The lazy-mode behavior is NEW, so it gets its OWN new test (not covered by
+  existing assertions).
+- Anything NOT asserted may change in structure, not behavior.
+
+Why:
+- Same rule as the WS migration: "asserted today = frozen forever" (A2 lock,
+  applied to MCP in A7's acceptance harness).
+- Source: A8 lock; A2 zero-delta freeze; A7 post-review practice.
+
+4. "Q4 -- Migration order so each step stays green?"
+Answer:
+- Five green-at-each-step commits:
+  P1 claims: MCP's decodeScopeFromToken replaced by adapter-core readClaims
+       (listTools scope behavior identical).
+  P2 error: error-map.ts becomes the door's table for createErrorConverter
+       (shared converter; wire codes/messages unchanged, gatewayErrorToJsonRpc
+       mapping moved/whitelisted as the table entries).
+  P3 lookup: listTools' kernel calls use createCapabilityLookup (tool-card
+       rendering stays in translate, byte-identical).
+  P4 invocation: callTool routes through createAdapterPipeline with the MCP
+       response channel (merge chunks -> CallToolResult; single-result semantics
+       preserved).
+  P5 all: enable lazy mode explicitly (no verify helper at the door) + new
+       test proving kernel verification per call.
+- Each phase: pnpm --filter @spanexx/adapter-mcp build+test green, plus repo
+  `pnpm build && pnpm test` before continuing.
+
+Why:
+- Leaf dependencies first (P1/P2), deepest structural change (P4) in the
+  presence of the most existing coverage, new behavior (P5) last and standalone.
+- Source: A8 lock; model of adapter-core public API (pipeline, lookup,
+  converter, ResponseChannel).
+
+No remaining open questions
+
+(All four decisions locked 2026-08-07; pack proceeds to PRD-TRD.)
