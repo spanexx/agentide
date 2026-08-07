@@ -1,9 +1,33 @@
 # A2 — Auth pipeline: verify-early vs verify-late as a policy
 
 **Type:** `wayfinder:grilling` (HITL)
-**Status:** open
+**Status:** **closed** (resolved 2026-08-07)
 **Blocks:** A7, A8
-**Blocked by:** A1
+**Blocked by:** A1 (closed)
+
+`delivery: decision-only` — design locked; the build happens via A7/A8.
+
+## Resolution
+
+1. **Policy shape (Q1):** one knob — `auth: { mode: "early" | "lazy" }` — one verify
+   function underneath, two call sites. `early` = verify at connection/request start
+   (WebSocket); `lazy` = token rides through, kernel verifies per call (MCP; future
+   REST). Rules out per-protocol auth code in doors and any auth plugin system.
+2. **Early-mode contract (Q2):** verify once at open → verified identity (caller,
+   tenant, scope) **cached for the connection's lifetime**; optional pre-verify hook
+   (WS origin binding — `expectedOrigins`, `ORIGIN_MISMATCH`); a pipeline
+   **re-verify(token)** call for mid-connection refresh (WS re-auth) — door decides
+   when, pipeline swaps the cached identity safely. Caching preserves today's
+   connection behavior exactly (revoked token does not kill a live connection).
+3. **Claim reader (Q3):** `decodeScopeFromToken` moves to adapter-core as a standalone
+   pure `readClaims(token)` — shared with the capability lookup (A6). It reads a
+   token, not a transport — crosses the A1 boundary line. MCP's tool list stays
+   byte-identical.
+4. **Zero-delta freeze (Q4):** auth failure behavior is FROZEN — WS close codes
+   (1008 auth fail, 1008 pre-auth timeout), `auth.error` text, `WS_ERROR_CODES`,
+   `ORIGIN_MISMATCH` + Node bypass, MCP JSON-RPC error responses, audit `denied`
+   records: all unchanged. Acceptance rule: **asserted today = frozen forever**;
+   anything not asserted may change. A7/A8 inherit this rule.
 
 ## Question
 

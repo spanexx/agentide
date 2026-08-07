@@ -60,19 +60,18 @@ resolves via this map's tickets.
 
 | # | Ticket | Type | Blocks |
 |---|---|---|---|
-| A2 | Auth pipeline: verify-early vs verify-late | grilling (HITL) | A7, A8 |
 | A3 | Session resolution: passthrough vs auto-mint | grilling (HITL) | A7, A8 |
 | A4 | Response strategy seam | grilling (HITL) | A7, A8 |
 | A5 | Error envelope | grilling (HITL) | A7, A8 |
 | A6 | Capability lookup | grilling (HITL) | A7, A8 |
 
-Closed: A10, A11 (research), A1 (boundary) — see Decisions so far.
+Closed: A10, A11 (research), A1 (boundary), A2 (auth pipeline) — see Decisions so far.
 
-Blocked: A4 (by A10 — resolved, now unblocked); A7, A8 (by A2–A6); A9 (by A1 — now
-unblocked).
+Blocked: A7, A8 (by A3–A6); A9 (by A1 — unblocked, defer to after migrations).
 
 ## Decisions so far
 
+- [A2 — Auth pipeline](../tickets/A2-auth-pipeline.md) — one knob `auth: { mode: "early" | "lazy" }`; early = verify once at open, identity cached for connection lifetime + optional pre-verify hook (origin binding) + pipeline `re-verify(token)` for refresh; lazy = kernel verifies per call. `decodeScopeFromToken` moves to core as `readClaims(token)` (shared with A6). Auth-failure behavior FROZEN — asserted today = frozen forever (close 1008s, auth.error text, ORIGIN_MISMATCH, MCP JSON-RPC errors, audit denied records). `delivery: decision-only`.
 - [A1 — Shared package boundary](../tickets/A1-shared-package-boundary.md) — "own bytes" rule: parse/render stay in the door, everything between is shared (connection registry shared; MCP tool-card rendering stays in MCP). adapter-core imports gateway-core at runtime; doors import ONLY adapter-core (re-exports). One-call setup `createAdapterPipeline({gateway, config, input, output, errors, response})`; transport lifecycle stays with the door. adapter-core emits no events; kernel keeps observability. `delivery: decision-only`.
 - [A10 — Streaming/subscription patterns survey](../tickets/A10-research-streaming-patterns.md) — response channel with a terminal: `single | stream | subscribe`, primitives `emit/end/event` sharing one call id; unary = stream of length one, so kernel streaming later is additive by construction. Backpressure/authz/replay stay adapter-local in v1.
 - [A11 — Duplication inventory](../tickets/A11-research-duplication-inventory.md) — 16 duplicated files (2,222 lines: 11 WS + 5 MCP), 14 test files, 2 sims; only file-level copy is backend-runtime `verify.ts`; only unsigned-JWT duplication is `decodeScopeFromToken`; Bearer extraction is in `server.ts:44`, not translate.ts.
