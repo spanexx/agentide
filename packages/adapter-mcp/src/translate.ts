@@ -22,7 +22,8 @@
 
 import type { Gateway, YamlValue } from "@spanexx/gateway-core";
 import { ERROR_CODES } from "@spanexx/errors";
-import { gatewayErrorToJsonRpc, type JsonRpcError } from "./error-map.js";
+import { createAdapterPipeline, createCapabilityLookup, readClaims, type ResponseChannelSink } from "@spanexx/adapter-core";
+import { gatewayErrorToJsonRpc, mcpErrorConverter, type JsonRpcError } from "./error-map.js";
 
 export { gatewayErrorToJsonRpc, type JsonRpcError } from "./error-map.js";
 export { getRequestCtx } from "./server.js";
@@ -45,31 +46,14 @@ export function validateMeta(meta: Readonly<Record<string, YamlValue>> | undefin
   return protocol !== undefined && protocol !== null && capabilities !== undefined && capabilities !== null;
 }
 
-// CID:translate-003 - decodeScopeFromToken
-// Purpose: decode the (unsigned, but kernel-verified) JWT payload and return
-//   the caller's scope claim. Used to honor BI[7] tier filtering in
-//   capability.list. Any malformed input returns [] defensively.
-// Uses: base64url payload segment (signature verification stays in the kernel)
-// Used by: listTools
+// CID:translate-003 - decodeScopeFromToken (compat shim)
+// Purpose: shared claim reader. Implementation moved to @spanexx/adapter-core's
+//   readClaims (A6 lock; identical base64url payload parse + [] defensiveness).
+//   Kept as a thin export ONLY so the pre-migration test suite (which imports
+//   it by name) stays untouched — zero-delta rule; new code calls readClaims
+//   directly.
 export function decodeScopeFromToken(token: string): readonly string[] {
-  const parts = token.split(".");
-  if (parts.length < 2) return [];
-  let payload: string;
-  try {
-    payload = Buffer.from(parts[1] ?? "", "base64url").toString("utf8");
-  } catch {
-    return [];
-  }
-  let claims: object | undefined;
-  try {
-    claims = JSON.parse(payload);
-  } catch {
-    return [];
-  }
-  if (typeof claims !== "object" || claims === null) return [];
-  const scope = (claims as Readonly<Record<string, YamlValue>>)["scope"];
-  if (!Array.isArray(scope)) return [];
-  return scope.filter((s): s is string => typeof s === "string");
+  return readClaims(token).scope;
 }
 
 // CID:translate-004 - McpTool / ListToolsOutcome
@@ -86,46 +70,6 @@ export type ListToolsOutcome =
   | { readonly ok: true; readonly tools: readonly McpTool[] }
   | { readonly ok: false; readonly error: JsonRpcError };
 
-interface CardShape {
-  readonly name: string;
-  readonly description: string;
-  readonly tier: string | null;
-}
-
-interface DescribeCapability {
-  readonly inputSchema: Readonly<object> | undefined;
-}
-
-function extractCards(output: YamlValue): readonly CardShape[] {
-  if (!Array.isArray(output)) return [];
-  const cards: CardShape[] = [];
-  for (const item of output) {
-    if (typeof item !== "object" || item === null) continue;
-    const rec = item as Readonly<Record<string, YamlValue>>;
-    const name = rec["name"];
-    const description = rec["description"];
-    if (typeof name !== "string" || typeof description !== "string") continue;
-    const tier = rec["tier"];
-    cards.push({ name, description, tier: typeof tier === "string" ? tier : null });
-  }
-  return cards;
-}
-
-function extractCapability(output: YamlValue): DescribeCapability | null {
-  if (typeof output !== "object" || output === null || Array.isArray(output)) return null;
-  const rec = output as Readonly<Record<string, YamlValue>>;
-  const capability = rec["capability"];
-  if (typeof capability !== "object" || capability === null || Array.isArray(capability)) return null;
-  const capRec = capability as Readonly<Record<string, YamlValue>>;
-  const inputSchema = capRec["inputSchema"];
-  return {
-    inputSchema:
-      typeof inputSchema === "object" && inputSchema !== null && !Array.isArray(inputSchema)
-        ? (inputSchema as Readonly<object>)
-        : undefined,
-  };
-}
-
 // CID:translate-005 - listTools
 // Purpose: build the MCP tool catalog for one caller: capability.list filtered
 //   by the caller's scope, enriched per-card via capability.describe.
@@ -133,39 +77,49 @@ function extractCapability(output: YamlValue): DescribeCapability | null {
 //     which business-scoped callers lack) -> card kept with a generic schema so
 //     the catalog stays visible per BI[7]; authz is still enforced at call time.
 //   - describe returns ok but no capability record -> card skipped defensively.
-// Uses: decodeScopeFromToken, gatewayErrorToJsonRpc
+// Uses: readClaims + gatewayErrorToJsonRpc (list path, zero-delta — preserves
+//   the capability-name interpolation in the CAPABILITY_NOT_FOUND error so the
+//   error message stays "capability 'capability.list' not found"); createCapabilityLookup
+//   (describe path only — the lookup's kernel-shape-aware descriptor extractor
+//   replaces the local extractCapability).
 // Used by: index.ts tools/list handler, tests
+
 export async function listTools(gateway: Gateway, token: string): Promise<ListToolsOutcome> {
+  // List path: direct gateway call (zero-delta — preserves CAPABILITY_NOT_FOUND
+  // message including the capability-name interpolation, which the shared
+  // converter loses because it operates on the converted DoorError, not the
+  // raw kernel payload).
   const list = await gateway.handleInvocation({
     token,
     capability: { name: "capability.list" },
-    input: { scope: decodeScopeFromToken(token) },
+    input: { scope: readClaims(token).scope },
   });
   if ("error" in list) {
     return { ok: false, error: gatewayErrorToJsonRpc(list.error.code, list.error.message, "capability.list") };
   }
-  const cards = extractCards(list.output);
+  // Describe path: through the shared lookup (kernel shape, no nesting assumed
+  // by the door).
+  const lookup = createCapabilityLookup({ gateway, errors: mcpErrorConverter });
+  const cards = Array.isArray(list.output) ? extractCards(list.output) : [];
   const tools: McpTool[] = [];
   for (const card of cards) {
-    const describe = await gateway.handleInvocation({
-      token,
-      capability: { name: "capability.describe" },
-      input: { name: card.name },
-    });
-    let inputSchema: Readonly<object> = { type: "object" };
-    if ("error" in describe) {
+    const describe = await lookup.describe(card.name, token);
+    if (!describe.ok) {
       // Restricted caller: keep the kernel-filtered card with a generic schema.
       tools.push({
         name: card.name,
         description: card.description,
-        inputSchema,
+        inputSchema: { type: "object" },
         annotations: { tier: card.tier },
       });
       continue;
     }
-    const capability = extractCapability(describe.output);
-    if (capability === null) continue;
-    inputSchema = capability.inputSchema ?? { type: "object" };
+    const descriptor = describe.value;
+    if (descriptor.name === "") continue; // no record (kernel: capability null) -> skip
+    const inputSchema =
+      descriptor.inputSchema !== null && !Array.isArray(descriptor.inputSchema)
+        ? descriptor.inputSchema
+        : { type: "object" };
     tools.push({
       name: card.name,
       description: card.description,
@@ -174,6 +128,20 @@ export async function listTools(gateway: Gateway, token: string): Promise<ListTo
     });
   }
   return { ok: true, tools };
+}
+
+function extractCards(output: readonly YamlValue[]): readonly { name: string; description: string; tier: string | null }[] {
+  const cards: { name: string; description: string; tier: string | null }[] = [];
+  for (const item of output) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const rec = item as Readonly<Record<string, YamlValue>>;
+    const name = rec["name"];
+    const description = rec["description"];
+    if (typeof name !== "string" || typeof description !== "string") continue;
+    const tier = rec["tier"];
+    cards.push({ name, description, tier: typeof tier === "string" ? tier : null });
+  }
+  return cards;
 }
 
 // CID:translate-006 - CallToolResultShape / CallToolOutcome
@@ -193,8 +161,83 @@ export type CallToolOutcome =
 // Purpose: translate one MCP tools/call into a canonical invocation and back.
 //   HANDLER_TIMEOUT becomes an isError:true result (not a JSON-RPC error),
 //   per PRD-TRD §Success response.
-// Uses: gatewayErrorToJsonRpc
+// Uses: gatewayErrorToJsonRpc (error path), createAdapterPipeline (Phase 4).
 // Used by: index.ts tools/call handler, tests
+
+interface McpCallToolSinkResult {
+  readonly ok: true;
+  readonly output: YamlValue;
+}
+interface McpCallToolSinkError {
+  readonly ok: false;
+  readonly code: string | number;
+  readonly message: string;
+}
+
+// MCP single-result strategy: collect the one emitResult / emitError into a
+// buffer so callTool can shape the CallToolResult after pipeline.invoke returns.
+// No stream mode for MCP (kernel is single-shot); emitChunk/emitEvent dropped.
+function mcpCallToolSink(capabilityName: string): ResponseChannelSink & {
+  result: McpCallToolSinkResult | McpCallToolSinkError | undefined;
+} {
+  let captured:
+    | (McpCallToolSinkResult | McpCallToolSinkError)
+    | undefined;
+  const sink: ResponseChannelSink & {
+    result: typeof captured;
+  } = {
+    result: undefined,
+    emitChunk() {
+      /* MCP has no streaming mode — drop */
+    },
+    emitEvent() {
+      /* MCP does not forward events — drop */
+    },
+    emitResult(output: YamlValue) {
+      captured = { ok: true, output };
+    },
+    emitError(err: { readonly code: string | number; readonly message: string; readonly details?: Readonly<Record<string, YamlValue>> }) {
+      // CAPABILITY_NOT_FOUND: the shared converter emits
+      //   { code: -32001, message: "capability 'unknown' not found" } when the
+      //   kernel didn't include a capability detail. The MCP door owns this
+      //   interpolation (matches the pre-migration gatewayErrorToJsonRpc
+      //   formatting: capability '<name>' not found).
+      if (
+        err.code === -32001 &&
+        err.message.startsWith("capability 'unknown' not found")
+      ) {
+        captured = {
+          ok: false,
+          code: err.code,
+          message: `capability '${capabilityName}' not found`,
+        };
+        return;
+      }
+      // HANDLER_TIMEOUT: the table preserves the kernel code; the door renders
+      // an isError:true result instead of a JSON-RPC error (matches the
+      // pre-migration callTool special path).
+      if (
+        typeof err.code === "string" &&
+        err.code === ERROR_CODES.HANDLER_TIMEOUT
+      ) {
+        captured = {
+          ok: false,
+          code: err.code,
+          message: err.message,
+        };
+        return;
+      }
+      captured = { ok: false, code: err.code, message: err.message };
+    },
+  };
+  return new Proxy(sink, {
+    get(target, prop) {
+      if (prop === "result") return captured;
+      return Reflect.get(target, prop);
+    },
+  });
+}
+
 export async function callTool(
   gateway: Gateway,
   opts: {
@@ -204,30 +247,51 @@ export async function callTool(
     readonly sessionId: string | undefined;
   },
 ): Promise<CallToolOutcome> {
-  const invocation = {
+  const sink = mcpCallToolSink(opts.name);
+  const pipeline = createAdapterPipeline({
+    gateway,
+    errors: mcpErrorConverter,
+    response: (_correlationId: string) => sink,
+  });
+  await pipeline.invoke({
+    correlationId: `ct-${opts.name}`,
     token: opts.token,
-    capability: { name: opts.name },
+    name: opts.name,
     input: opts.args,
     ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
-  };
-  const resp = await gateway.handleInvocation(invocation);
-  if ("error" in resp) {
-    if (resp.error.code === ERROR_CODES.HANDLER_TIMEOUT) {
+  });
+  const captured = sink.result;
+  if (captured === undefined) {
+    // No emit reached the sink — pipeline produced nothing (impossible on
+    // current kernel, but be defensive). Match pre-migration timeout shape.
+    return {
+      ok: true,
+      result: { content: [{ type: "text", text: "" }], isError: true },
+    };
+  }
+  if (!captured.ok) {
+    if (captured.code === ERROR_CODES.HANDLER_TIMEOUT) {
       return {
         ok: true,
         result: {
-          content: [{ type: "text", text: resp.error.message }],
+          content: [{ type: "text", text: captured.message }],
           isError: true,
         },
       };
     }
-    return { ok: false, error: gatewayErrorToJsonRpc(resp.error.code, resp.error.message, opts.name) };
+    return {
+      ok: false,
+      error: {
+        code: Number(captured.code),
+        message: captured.message,
+      } as JsonRpcError,
+    };
   }
   return {
     ok: true,
     result: {
-      content: [{ type: "text", text: JSON.stringify(resp.output) }],
-      structuredContent: resp.output,
+      content: [{ type: "text", text: JSON.stringify(captured.output) }],
+      structuredContent: captured.output,
     },
   };
 }

@@ -1,8 +1,8 @@
 {
-  "name": "@spanexx/adapter-mcp",
-  "version": "0.6.1",
+  "name": "@spanexx/adapter-rest",
+  "version": "0.1.0",
   "private": false,
-  "description": "MCP adapter — exposes the Agentide gateway as MCP tools over Streamable HTTP (POST /mcp).",
+  "description": "REST adapter \u2014 plain HTTP door for non-MCP integrations. POST /invoke + GET /capabilities, Bearer JWT per request, kernel-verified.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -26,30 +26,25 @@
     "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
     "@spanexx/errors": "workspace:*",
+    "@spanexx/event-bus": "workspace:*",
     "@spanexx/gateway-core": "workspace:*",
     "@spanexx/adapter-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@typescript-eslint/eslint-plugin": "^8.65.0",
-    "@typescript-eslint/parser": "^8.65.0",
-    "eslint": "^10.8.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
-    "@spanexx/backend-runtime": "workspace:*",
-    "@spanexx/capability-registry": "workspace:*",
-    "@spanexx/event-bus": "workspace:*",
-    "@spanexx/plugin-manager": "workspace:*",
-    "@spanexx/session-manager": "workspace:*"
+    "eslint": "^10.8.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0"
   },
   "license": "MIT",
   "keywords": [
     "agentide",
     "platform",
-    "mcp",
-    "model-context-protocol",
+    "rest",
+    "http",
     "adapter"
   ],
   "publishConfig": {

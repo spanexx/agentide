@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="head">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REST adapter — pre-impl design sim (Phase 0.5)</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --bg-elevated: #1a1f2e;
+    --card: #232938;
+    --border: #2d3344;
+    --fg: #e6e6e6;
+    --muted: #8b95a7;
+    --accent: #6ee7b7;
+    --warn: #fbbf24;
+    --error: #f87171;
+    --info: #60a5fa;
+    --term-bg: #000;
+    --term-fg: #e6e6e6;
+    --term-prompt: #6ee7b7;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 13px; }
+  body { display: flex; flex-direction: column; }
+  header { padding: 10px 16px; background: var(--bg-elevated); border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+  header .badge { background: var(--card); border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; color: var(--muted); font-size: 10px; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .panel h2 { margin: 0 0 8px 0; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .scroll { flex: 1; overflow-y: auto; min-height: 0; }
+  #cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+  .cap-card { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--muted); border-radius: 3px; padding: 8px; opacity: 0; transform: translateY(6px); transition: opacity 0.3s, transform 0.3s, border-left-color 0.3s; }
+  .cap-card.shown { opacity: 1; transform: translateY(0); }
+  .cap-card.b { border-left-color: var(--info); }      /* business */
+  .cap-card.p { border-left-color: var(--accent); }    /* platform */
+  .cap-card.r { border-left-color: var(--warn); }      /* runtime */
+  .cap-card.session-less { border-left-color: var(--accent-dim, #34d399); }
+  .cap-name { font-family: ui-monospace, monospace; font-weight: 600; color: var(--accent); font-size: 12px; }
+  .cap-tier { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 2px; margin-left: 4px; text-transform: uppercase; background: var(--accent); color: var(--bg); }
+  .cap-type { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 2px; margin-left: 4px; text-transform: uppercase; background: var(--card); color: var(--muted); border: 1px solid var(--border); }
+  .cap-desc { color: var(--muted); font-size: 10px; margin: 3px 0 1px 0; }
+  .cap-flags { font-size: 9px; color: var(--info); margin-top: 2px; }
+  .empty { color: var(--muted); font-style: italic; padding: 6px; font-size: 11px; }
+
+  #req-log { font-family: ui-monospace, monospace; font-size: 10px; }
+  .req-row { padding: 6px 8px; margin-bottom: 2px; border-radius: 2px; background: var(--bg); border-left: 3px solid var(--border); }
+  .req-row .verb { color: var(--accent); font-weight: 600; }
+  .req-row .path { color: var(--fg); }
+  .req-row .status { color: var(--fg); font-weight: 600; margin-left: 4px; }
+  .req-row.S200 .status { color: var(--accent); } .req-row.S200 { border-left-color: var(--accent); }
+  .req-row.S400 .status { color: var(--warn); } .req-row.S400 { border-left-color: var(--warn); }
+  .req-row.S401 .status { color: var(--warn); } .req-row.S401 { border-left-color: var(--warn); }
+  .req-row.S403 .status { color: var(--warn); } .req-row.S403 { border-left-color: var(--warn); }
+  .req-row.S404 .status { color: var(--warn); } .req-row.S404 { border-left-color: var(--warn); }
+  .req-row.S429 .status { color: var(--warn); } .req-row.S429 { border-left-color: var(--warn); }
+  .req-row.S500 .status { color: var(--error); } .req-row.S500 { border-left-color: var(--error); }
+  .req-row .body { color: var(--muted); margin-top: 2px; white-space: pre-wrap; word-break: break-all; }
+
+  table.status-map { width: 100%; border-collapse: collapse; font-size: 10px; font-family: ui-monospace, monospace; }
+  table.status-map th { text-align: left; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--border); font-weight: 600; text-transform: uppercase; font-size: 9px; }
+  table.status-map td { padding: 4px 6px; border-bottom: 1px dotted var(--border); }
+  table.status-map td.status { font-weight: 600; color: var(--accent); }
+  table.status-map td.status.S400, table.status-map td.status.S401, table.status-map td.status.S403, table.status-map td.status.S404, table.status-map td.status.S429 { color: var(--warn); }
+  table.status-map td.status.S500 { color: var(--error); }
+  table.status-map td.code { color: var(--fg); }
+  table.status-map td.code-family { color: var(--muted); }
+
+  #term-box { flex: 1; display: flex; flex-direction: column; background: var(--term-bg); border-radius: 3px; margin: 6px; padding: 8px; min-height: 0; overflow: hidden; }
+  #term-log { flex: 1; overflow-y: auto; color: var(--term-fg); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.4; white-space: pre-wrap; word-break: break-all; }
+  #term-log .ok { color: var(--accent); }
+  #term-log .warn { color: var(--warn); }
+  #term-log .err { color: var(--error); }
+  #term-log .info { color: var(--info); }
+  #term-log .muted { color: var(--muted); }
+  #term-log h { color: var(--accent); font-weight: 600; }
+  #term-input-row { display: flex; align-items: center; padding-top: 6px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+  #term-prompt { color: var(--term-prompt); margin-right: 4px; }
+  #term-input { flex: 1; background: transparent; border: none; color: var(--term-fg); font-family: inherit; font-size: inherit; outline: none; caret-color: var(--accent); }
+
+  .help { padding: 6px 12px; background: var(--bg-elevated); border-top: 1px solid var(--border); display: flex; gap: 10px; font-size: 10px; color: var(--muted); align-items: center; }
+  .help code { background: var(--card); padding: 1px 5px; border-radius: 2px; color: var(--accent); }
+  .help button { margin-left: auto; padding: 5px 12px; background: var(--accent); color: var(--bg); border: none; border-radius: 3px; font-weight: 600; cursor: pointer; font-size: 10px; }
+  .help button:hover { opacity: 0.85; }
+  .help button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>REST adapter</h1>
+  <span class="badge">PRE-IMPL (mocked status map + body shape)</span>
+  <span class="badge" style="color:var(--warn);">Phase 0.5 — design rehearsal</span>
+</header>
+
+<main>
+  <div class="panel">
+    <div class="section">
+      <h2>Capabilities (mocked registry, 6 of 6 shown)</h2>
+      <div class="scroll" id="cap-wrap" style="max-height: 200px;">
+        <div id="cap-grid"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Status map (Q4 lock — table at the door)</h2>
+      <div class="scroll" style="max-height: 180px;">
+        <table class="status-map" id="status-map">
+          <thead><tr><th>Family</th><th>Gateway code</th><th>HTTP</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section" style="flex:1; min-height:0;">
+      <h2>Recent requests</h2>
+      <div class="scroll" id="req-log"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="padding:0;">
+    <h2 style="padding:12px 12px 0 12px; margin:0;">Terminal</h2>
+    <div id="term-box">
+      <div id="term-log"></div>
+      <div id="term-input-row">
+        <span id="term-prompt">rest@sim ~ $&nbsp;</span>
+        <input id="term-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="help">
+  <span><code>POST /invoke {body}</code> · <code>GET /capabilities</code> · <code>GET /capabilities/{name}</code> · <code>help</code> · <code>clear</code></span>
+  <button id="demo-btn">▶ Run full demo</button>
+</div>
+
+<script>
+'use strict';
+
+// ─── DOM refs ────────────────────────────────────────────────────────
+const capGrid = document.getElementById('cap-grid');
+const reqLog = document.getElementById('req-log');
+const statusMapTbody = document.querySelector('#status-map tbody');
+const demoBtn = document.getElementById('demo-btn');
+const termLog = document.getElementById('term-log');
+const termInput = document.getElementById('term-input');
+
+// ─── State ──────────────────────────────────────────────────────────
+const ui = {
+  caps: [],
+  requests: [],   // last N: {verb, path, status, body, ts}
+};
+
+// ─── Mocked capabilities (the door's expected session-less set + 2 business) ─
+const MOCK_CAPS = [
+  { name: 'capability.list', type: 'platform', tier: 'read', sessionLess: true,  description: 'List all capabilities visible to the caller' },
+  { name: 'capability.describe', type: 'platform', tier: 'read', sessionLess: true, description: 'Describe a single capability (broken: D-100)' },
+  { name: 'session.list', type: 'platform', tier: 'read', sessionLess: true, description: 'List active sessions' },
+  { name: 'system.health', type: 'platform', tier: 'read', sessionLess: true, description: 'System health check' },
+  { name: 'product.list', type: 'business', tier: 'read', sessionLess: false, description: 'List products (requires session)' },
+  { name: 'product.get', type: 'business', tier: 'read', sessionLess: false, description: 'Get a product by id (requires session)' },
+];
+
+// ─── Locked status map (Q4) ─────────────────────────────────────────
+const STATUS_MAP = [
+  { family: 'auth', code: 'TOKEN_INVALID', http: 401 },
+  { family: 'auth', code: 'TOKEN_EXPIRED', http: 401 },
+  { family: 'auth', code: 'AUTH_FAILED', http: 401 },
+  { family: 'authz', code: 'INSUFFICIENT_SCOPE', http: 403 },
+  { family: 'authz', code: 'UNAUTHORIZED_OPERATION', http: 403 },
+  { family: 'authz', code: 'TENANT_MISMATCH', http: 403 },
+  { family: 'request', code: 'SESSION_REQUIRED', http: 400 },
+  { family: 'request', code: 'INVALID_REQUEST', http: 400 },
+  { family: 'not-found', code: 'CAPABILITY_NOT_FOUND', http: 404 },
+  { family: 'not-found', code: 'HANDLER_NOT_FOUND', http: 404 },
+  { family: 'not-found', code: 'PLUGIN_NOT_INSTALLED', http: 404 },
+  { family: 'rate', code: 'RATE_LIMIT_EXCEEDED', http: 429 },
+  { family: 'runtime', code: 'SDK_UNREACHABLE', http: 500 },
+  { family: 'runtime', code: 'HANDLER_TIMEOUT', http: 500 },
+  { family: 'runtime', code: 'PLUGIN_DISABLED', http: 500 },
+  { family: 'runtime', code: 'MANAGER_UNAVAILABLE', http: 500 },
+  { family: 'runtime', code: 'HANDLER_ERROR', http: 500 },
+  { family: 'runtime', code: 'INTERNAL_ERROR', http: 500 },
+];
+
+// ─── Mock token + scope (simulates what the kernel would produce) ───
+const uiState = { token: null };
+
+function mockVerify(token) {
+  if (!token) return { ok: false, code: 'TOKEN_INVALID', message: 'missing bearer token', retryable: false };
+  if (token === 'expired') return { ok: false, code: 'TOKEN_EXPIRED', message: 'token expired', retryable: false };
+  if (token === 'noscope') return { ok: true, scope: [], tenant: 't-1', caller: 'c-1' };
+  // Valid token covers: business scope (product.read), platform wildcard (covers
+  // capability.list, session.list, system.health), no runtime rights.
+  return { ok: true, scope: ['product.read', 'platform.*.read'], tenant: 't-1', caller: 'c-1' };
+}
+
+function curToken() { return uiState.token; }
+function setToken(v) {
+  // "token Bearer xyz" or "token xyz" both work
+  const m = v.match(/^Bearer\s+(.+)$/i) || v.match(/^\s*(\S+)\s*$/);
+  if (!m) return { text: 'usage: token Bearer <value>   (or "token <value>")', color: 'err' };
+  uiState.token = m[1] || m[0];
+  return { text: `token set: ${uiState.token}`, color: 'ok' };
+}
+
+function errorBody(code, message, retryable, details) {
+  return { code, message, retryable, details: details || {} };
+}
+
+function okBody(payload) { return payload; }
+
+// ─── Engine: doCommand ──────────────────────────────────────────────
+async function doCommand(line) {
+  termWrite(`rest@sim ~ $ ${line}\n`, 'muted');
+
+  // Token-mutating command: "token Bearer xyz" or "token xyz"
+  if (line.startsWith('token ')) {
+    return setToken(line.slice('token '.length));
+  }
+
+  // Parse: <VERB> <PATH> [<BODY>]
+  const m = line.match(/^(GET|POST)\s+(\/[^\s{]*)\s*(\{.*\})?\s*$/);
+  if (!m) {
+    if (line === 'help') { return { text: helpText(), color: 'info' }; }
+    if (line === 'clear') {
+      ui.requests = []; renderReqs();
+      return { text: 'request log cleared', color: 'muted' };
+    }
+    return { text: `parse failed — try: POST /invoke {"capability":"product.list","input":{}}`, color: 'err' };
+  }
+
+  const [, verb, path, bodyStr] = m;
+  let body = {};
+  if (bodyStr) { try { body = JSON.parse(bodyStr); } catch (e) { return { text: `body JSON parse failed: ${e.message}`, color: 'err' }; } }
+
+  const token = curToken();
+  const claim = mockVerify(token);
+
+  if (!claim.ok) {
+    return finish(verb, path, 401, errorBody(claim.code, claim.message, claim.retryable));
+  }
+
+  // GET /capabilities → 200 with list (works)
+  if (verb === 'GET' && path === '/capabilities') {
+    return finish(verb, path, 200, { capabilities: MOCK_CAPS.map(c => ({ name: c.name, type: c.type, tier: c.tier, description: c.description })) });
+  }
+
+  // GET /capabilities/{name} → surfaces D-100 (describe reads top-level, kernel nests under .capability)
+  if (verb === 'GET' && path.startsWith('/capabilities/')) {
+    return finish(verb, path, 200, { name: '', description: '', inputSchema: null, tier: null, _note: 'D-100: createCapabilityLookup.describe() is broken against the real kernel' });
+  }
+
+  // POST /invoke → the canonical packet
+  if (verb === 'POST' && path === '/invoke') {
+    const cap = body.capability;
+    const input = body.input || {};
+    const sessionId = body.sessionId;
+
+    if (!cap) return finish(verb, path, 400, errorBody('INVALID_REQUEST', 'missing "capability" field', false));
+
+    const rec = MOCK_CAPS.find(c => c.name === cap);
+    if (!rec) return finish(verb, path, 404, errorBody('CAPABILITY_NOT_FOUND', `unknown capability: ${cap}`, false));
+
+    if (!rec.sessionLess && !sessionId) {
+      return finish(verb, path, 400, errorBody('SESSION_REQUIRED', `${cap} requires a sessionId`, false));
+    }
+
+    // Scope check (mock — wildcard "platform.*.read" covers any platform.<x>.read).
+    let allowed = false;
+    if (claim.scope.includes('*')) allowed = true;
+    else if (claim.scope.includes(`${rec.type}.${rec.tier}`)) allowed = true;
+    else if (claim.scope.includes(`${rec.type}.*`)) allowed = true;
+    else if (claim.scope.includes(`${rec.type}.*.${rec.tier}`)) allowed = true;
+    if (!allowed) {
+      return finish(verb, path, 403, errorBody('INSUFFICIENT_SCOPE', `caller lacks required scope: ${rec.type}.${rec.tier}`, false));
+    }
+
+    // Mock outputs
+    if (cap === 'product.list') {
+      return finish(verb, path, 200, { products: [{ id: 'p-1', name: 'Widget', price: 9.99 }, { id: 'p-2', name: 'Gadget', price: 19.99 }] });
+    }
+    if (cap === 'product.get') {
+      return finish(verb, path, 200, { id: input.id || 'p-1', name: 'Widget', price: 9.99 });
+    }
+    if (cap === 'session.list') {
+      return finish(verb, path, 200, { sessions: [] });
+    }
+    if (cap === 'system.health') {
+      return finish(verb, path, 200, { status: 'ok' });
+    }
+    if (cap === 'capability.list') {
+      return finish(verb, path, 200, { capabilities: MOCK_CAPS.map(c => ({ name: c.name, type: c.type, tier: c.tier, description: c.description })) });
+    }
+    return finish(verb, path, 500, errorBody('HANDLER_ERROR', 'no mocked handler', true));
+  }
+
+  return finish(verb, path, 404, errorBody('INVALID_REQUEST', `no route for ${verb} ${path}`, false));
+}
+
+function finish(verb, path, status, body) {
+  ui.requests.unshift({ verb, path, status, body, ts: new Date().toTimeString().slice(0, 8) });
+  if (ui.requests.length > 20) ui.requests.pop();
+  renderReqs();
+  const color = status >= 500 ? 'err' : status >= 400 ? 'warn' : 'ok';
+  const bodyStr = JSON.stringify(body, null, 2);
+  return { text: `${status} ${reason(status)}\n${bodyStr}`, color };
+}
+
+function reason(s) {
+  return ({ 200: 'OK', 400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 429: 'Too Many Requests', 500: 'Internal Server Error' })[s] || '?';
+}
+
+// ─── Render helpers ─────────────────────────────────────────────────
+function renderCaps() {
+  capGrid.innerHTML = '';
+  for (const c of MOCK_CAPS) {
+    const card = document.createElement('div');
+    const klass = c.type === 'business' ? 'b' : c.type === 'platform' ? 'p' : 'r';
+    card.className = `cap-card ${klass}${c.sessionLess ? ' session-less' : ''}`;
+    card.innerHTML = `<div class="cap-name">${c.name}<span class="cap-tier">${c.tier}</span><span class="cap-type">${c.type}</span></div><div class="cap-desc">${c.description}</div><div class="cap-flags">${c.sessionLess ? '✓ session-less' : '× session required'}</div>`;
+    capGrid.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('shown'));
+  }
+}
+
+function renderStatusMap() {
+  statusMapTbody.innerHTML = '';
+  for (const r of STATUS_MAP) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="code-family">${r.family}</td><td class="code">${r.code}</td><td class="status S${r.http}">${r.http}</td>`;
+    statusMapTbody.appendChild(tr);
+  }
+}
+
+function renderReqs() {
+  reqLog.innerHTML = '';
+  for (const r of ui.requests) {
+    const row = document.createElement('div');
+    row.className = `req-row S${r.status}`;
+    const bodyStr = JSON.stringify(r.body, null, 2);
+    row.innerHTML = `<div><span class="verb">${r.verb}</span> <span class="path">${r.path}</span> <span class="status">${r.status}</span> <span style="color:var(--muted); margin-left:6px;">${r.ts}</span></div><div class="body">${escapeHtml(bodyStr)}</div>`;
+    reqLog.appendChild(row);
+  }
+}
+
+function helpText() {
+  return `commands:
+  token Bearer <value>          set the current bearer token (Authorization header)
+  POST /invoke {"capability":"product.list","input":{},"sessionId":"s-1"}
+  GET  /capabilities
+  GET  /capabilities/product.list
+  help
+  clear
+
+mock tokens:
+  (omitted)              → 401 TOKEN_INVALID
+  "expired"              → 401 TOKEN_EXPIRED
+  "noscope"              → 200, scope=[] (any session-required cap → 403)
+  (any other)            → 200, scope includes product.read, platform.*.read`;
+}
+
+// ─── Terminal helpers ───────────────────────────────────────────────
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+function termWrite(text, color) {
+  const span = document.createElement('div');
+  if (color) span.innerHTML = `<span class="${color}">${escapeHtml(text)}</span>`;
+  else span.textContent = text;
+  termLog.appendChild(span);
+  termLog.scrollTop = termLog.scrollHeight;
+}
+function termWriteln(text, color) { termWrite((text || '') + '\n', color); }
+
+// ─── Input handler ──────────────────────────────────────────────────
+termInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const line = termInput.value.trim();
+    termInput.value = '';
+    if (!line) return;
+    const result = await doCommand(line);
+    if (result && result.text) {
+      const lines = String(result.text).split('\n');
+      for (const l of lines) termWriteln(l, result.color || null);
+    }
+  }
+});
+document.getElementById('term-box').addEventListener('click', () => termInput.focus());
+
+// ─── Demo button ────────────────────────────────────────────────────
+demoBtn.addEventListener('click', async () => {
+  demoBtn.disabled = true;
+  demoBtn.textContent = '⟳ running...';
+  try {
+  const seq = [
+    // 401: missing token (no token set yet)
+    'POST /invoke {"capability":"capability.list","input":{}}',
+    // happy: capability.list (session-less)
+    'token Bearer valid',
+    'POST /invoke {"capability":"capability.list","input":{}}',
+    // happy: product.list (session required + scope)
+    'POST /invoke {"capability":"product.list","input":{},"sessionId":"s-1"}',
+    // 401: expired token
+    'token Bearer expired',
+    'POST /invoke {"capability":"product.list","input":{},"sessionId":"s-1"}',
+    // 400: session-required missing
+    'token Bearer valid',
+    'POST /invoke {"capability":"product.list","input":{}}',
+    // 404: cap not found
+    'POST /invoke {"capability":"nope.nothing","input":{},"sessionId":"s-1"}',
+    // 403: insufficient scope (noscope token hits business)
+    'token Bearer noscope',
+    'POST /invoke {"capability":"product.list","input":{},"sessionId":"s-1"}',
+    // GET /capabilities
+    'token Bearer valid',
+    'GET /capabilities',
+    // GET /capabilities/{name} — surfaces D-100
+    'GET /capabilities/product.list',
+  ];
+    for (const line of seq) {
+      const result = await doCommand(line);
+      if (result && result.text) {
+        const lines = String(result.text).split('\n');
+        for (const l of lines) termWriteln(l, result.color || null);
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    termWriteln('─ demo complete — review the bottom-left request log ─', 'ok');
+  } finally {
+    demoBtn.disabled = false;
+    demoBtn.textContent = '▶ Run full demo';
+  }
+});
+
+// ─── Banner ────────────────────────────────────────────────────────
+function banner() {
+  termWriteln('REST adapter — pre-impl design sim (Phase 0.5)', 'ok');
+  termWriteln('Mocked status map + body shape per the locked Q4 spec.');
+  termWriteln('Mocked capabilities + token verifier. No real gateway — this is a design rehearsal.');
+  termWriteln('Type `help` for commands, or click ▶ Run full demo for a guided tour.');
+  termWriteln('');
+}
+banner();
+renderCaps();
+renderStatusMap();
+termInput.focus();
+</script>
+
+</body>
+</html>

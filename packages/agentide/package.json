@@ -34,6 +34,7 @@
   "dependencies": {
     "@spanexx/adapter-mcp": "workspace:*",
     "@spanexx/adapter-websocket": "workspace:*",
+    "@spanexx/adapter-rest": "workspace:*",
     "@spanexx/backend-runtime": "workspace:*",
     "@spanexx/capability-registry": "workspace:*",
     "@spanexx/event-bus": "workspace:*",

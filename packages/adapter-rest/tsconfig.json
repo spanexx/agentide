@@ -7,13 +7,9 @@
   },
   "include": ["src/**/*"],
   "references": [
-    { "path": "../adapter-core" },
-    { "path": "../backend-runtime" },
-    { "path": "../capability-registry" },
     { "path": "../errors" },
     { "path": "../event-bus" },
     { "path": "../gateway-core" },
-    { "path": "../plugin-manager" },
-    { "path": "../session-manager" }
+    { "path": "../adapter-core" }
   ]
 }

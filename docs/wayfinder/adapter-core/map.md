@@ -64,20 +64,38 @@ resolves via this map's tickets.
 
 | # | Ticket | Type | Blocks |
 |---|---|---|---|
-| A9 | REST proof adapter | grilling (HITL) → delivery | — (delivery: feature-pipeline, backlog row 10) |
+| — | (map frontier empty — A9 locks shipped into feature-pipeline) | — | — |
 
 Design frontier (A1–A6) fully locked. A7 (WS server migration) shipped 2026-08-07 with
 zero observable delta — gates held (core 50/50, WS 54/54 unedited, sim 37/37, full repo
-1039/1039, post-impl sim 24/24 PASS, scenarios S1–S8 satisfied). A8 migrates MCP onto
-the same foundation; A9 proves the pipeline with a third, REST-shaped consumer
-(`delivery: feature-pipeline`).
+1039/1039, post-impl sim 24/24 PASS, scenarios S1–S8 satisfied). A8 locked 2026-08-07
+(decision-only, build runs in feature-pipeline). A9 locked 2026-08-07 (6 sub-questions
+locked, build routes to feature-pipeline with pre-impl sim).
 
-Closed: A1 (boundary), A2 (auth pipeline), A3 (session resolution), A4 (response strategy seam), A5 (error envelope), A6 (capability lookup), A7 (WS server migration) — see Decisions so far.
+Closed: A1 (boundary), A2 (auth pipeline), A3 (session resolution), A4 (response strategy seam), A5 (error envelope), A6 (capability lookup), A7 (WS server migration), A8 (MCP migration), A9 (REST proof adapter) — see Decisions so far.
 
 Future items beyond v1: `future.md`.
 
 ## Decisions so far
 
+- [A9 — REST proof adapter](../tickets/A9-rest-proof-adapter.md) — locked 2026-08-07. **v1 spec:**
+  (1) `POST /invoke` only — single endpoint, capability + input + sessionId? body; the adapter is a
+  protocol translator (CONTEXT.md), capability names are dynamic. (2) Bearer JWT per request,
+  kernel-verified — the `lazy` path the platform already does at `handle-invocation.ts:145`; no
+  client-credentials grant in v1 (kernel `gateway.oauthTokenHandler` is available for adapters that
+  need it, not REST); no origin binding (early-path only). (3) Verb→tier mapping = none — single verb
+  POST; tiers declared on the capability record, enforced by `checkAuthz`. (4) Error body =
+  `GatewayErrorPayload` verbatim (`{code, message, details, retryable}`), status mapping at the door:
+  token-* → 401, scope-* → 403, session-required / invalid-request → 400, not-found set → 404,
+  rate-limit → 429, runtime-* → 500. `retryable` rides in the body, not the status. (5) Discovery =
+  `GET /capabilities` only (list, via `createCapabilityLookup.list`); `GET /capabilities/{name}`
+  deferred — `createCapabilityLookup.describe()` is broken against the kernel (A9-R1 §14.2). Other
+  surfaces stay out: `/sessions`, `/health`, `/status`, plugins, organizations, clients — all are
+  session-less capabilities already reachable over `POST /invoke`. (6) Pre-impl HTML sim
+  (`docs/features/rest-adapter/simulate-pre.html`) + post-impl shell sim
+  (`simulate-rest-adapter.mjs`, drives a real `createRestAdapter` + `createPlatform` on port 7400,
+  loopback only) per the [interconnected-simulation skill](../../../.agents/skills/interconnected-simulation/SKILL.md).
+  Pack path: `docs/features/rest-adapter/`. `delivery: feature-pipeline`.
 - [A8 — MCP migration plan](../tickets/A8-mcp-migration.md) — locked 2026-08-07: MCP becomes the first real `lazy` auth consumer (kernel per-call verify; closes the D-95 deferral); door keeps transport + MCP-shaped rendering + error table + OAuth routes; acceptance = unedited tests (4 files, 8 PRD scenarios) + 8/8 sim, lazy gets its own new test; five green-at-each-step commits (claims → envelope → lookup → pipeline/strategy → real lazy). `delivery: feature-pipeline`.
 - [A7 — WebSocket server migration](../tickets/A7-ws-server-migration.md) — **DELIVERED**: pack shipped `0bc1046`, drift review 2026-08-07 (Minor Drift — ship), fixes in `c7d968b` + `1639f67`, released as part of v0.2.1/0.7.1 publish (PR #58), post-release validated 22/0/2 (incl. adapter-core under the hood). Zero-delta held end-to-end.
 
