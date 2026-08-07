@@ -103,10 +103,18 @@ function extractDescriptor(output: YamlValue): CapabilityDescriptor {
     typeof output === "object" && output !== null && !Array.isArray(output)
       ? (output as Readonly<Record<string, YamlValue>>)
       : {};
-  const name = rec["name"];
-  const description = rec["description"];
-  const inputSchema = rec["inputSchema"];
-  const tier = rec["tier"];
+  // Kernel describe shape: DescribeResult { capability: CapabilityRecord | null,... }
+  // (capability-registry store.ts) — nested. Flat fallback tolerated for A6
+  // unedited-fixture tests and any leaner future producers (A8 finding: shipped
+  // unwired, kernel shape verified 2026-08-07).
+  const record =
+    (typeof rec["capability"] === "object" && !Array.isArray(rec["capability"]) && rec["capability"] !== null
+      ? (rec["capability"] as Readonly<Record<string, YamlValue>>)
+      : rec) ?? rec;
+  const name = record["name"];
+  const description = record["description"];
+  const inputSchema = record["inputSchema"];
+  const tier = record["tier"];
   return {
     name: typeof name === "string" ? name : "",
     description: typeof description === "string" ? description : "",
