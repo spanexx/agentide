@@ -1,9 +1,33 @@
 # A9-R1 — REST adapter: platform discovery (research)
 
 **Type:** `wayfinder:research` (AFK)
-**Status:** open
+**Status:** **closed** (resolved 2026-08-07)
 **Blocks:** A9
 **Blocked by:** —
+
+## Resolution
+
+Full report: `docs/wayfinder/adapter-core/research-rest-platform-discovery.md` (branch
+`research/adapter-rest-a9-r1`, commit `2e0b76d`). Summary of what A9 must now lock:
+
+1. **The seam is ready.** `handleInvocation` is protocol-agnostic (`handle-invocation.ts:110`,
+   header names REST as an intended caller). Primitives 1/3/4/6 (`readClaims`,
+   `createErrorConverter`, `createResponseChannel`, `createAdapterPipeline`) are ready today.
+2. **Two traps found (own A9 decisions):** (a) `createAuthPolicy` "lazy" mode is **not
+   implemented** — the mode is stored but never branched on (`auth-policy.ts:68-88`); REST's
+   assumed pass-per-request model either needs A8's lazy work or the door passes the raw token
+   through and the kernel verifies per call (`handleInvocation` does this already).
+   (b) `createCapabilityLookup.describe()` is **broken against the kernel** — it reads
+   top-level fields but `capability.describe` returns `DescribeResult` with everything nested
+   under `capability` (`capabilities/lookup.ts:106-115` vs `factory.ts:572-578`); every
+   describe returns empty cards. Blocks `GET /capabilities` schemas as-is.
+3. **Greenfield error mapping:** no HTTP status table exists anywhere (§8). A9 authors it
+   from scratch — the `204`/`304` retryable question is open.
+4. **OAuth:** `handleTokenRequest` is kernel-owned and transport-agnostic
+   (`gateway-core/types.ts:245`); REST consumes it via `gateway.oauthTokenHandler`, no copy
+   (MCP does exactly this). `426` TLS-required precedent exists.
+
+## Question
 
 ## Question
 

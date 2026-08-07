@@ -1,8 +1,15 @@
 # Drift Log
-**Last updated:** 2026-08-07  **Open:** 25  **Resolved:** 63  **Critical/High:** 0
+**Last updated:** 2026-08-07  **Open:** 26  **Resolved:** 63  **Critical/High:** 0
 
 ## Open
 
+- **D-100** (Low, 2026-08-07, reporter: adapter-mcp migration Phase 3) — adapter-core's `capability.lookup` descriptor extractor read a FLAT shape (`output.inputSchema`); the kernel's `capability.describe` returns `DescribeResult { capability: CapabilityRecord | null, selectedVersion }` (capability-registry `store.ts:112-129` nests under `capability`). The lookup shipped UNWIRED (A6 Q4 — "WS door doesn't gain discovery in v1"); the MCP migration is its first consumer. Without the fix, every MCP tool card would render the generic schema (every descriptor.inputSchema null).
+  - Doc claim: A6 resolution — "lean utility... no tier logic in core"; lookup ships unwired (`docs/wayfinder/adapter-core/tickets/A6-capability-lookup.md`).
+  - Code reality: `packages/adapter-core/src/capabilities/lookup.ts` `extractDescriptor` — flat read pre-fix; kernel shape verified at `packages/capability-registry/src/store.ts:76-129` (DescribeResult nests `capability`).
+  - Why matters: silent data corruption if consumed as-is — tools lose their input schemas. Unwired status hid it until MCP migration.
+  - Owner: adapter-core (A6 first consumer).
+  - To fix: code — `extractDescriptor` reads the nested `capability` record with a flat fallback (done in adapter-mcp Phase 3, 2026-08-07). Core tests (flat fixtures) stay green via the fallback; MCP tests green via the nested read.
+  - Verified by: adapter-mcp Phase 3 (core + MCP suites green).
 - **D-95** (Low, 2026-08-07, reporter: adapter-core drift review) — PRD-TRD describes `lazy` auth mode as a distinct behavior; the shipped `auth-policy.ts` default is `early` and `lazy` behaves identically in v1 (deferral noted in code). Kernel-verifies-per-call is the intended future, not currently reachable.
   - Doc claim: PRD-TRD-adapter-core.md:108 — "`{mode: "early" | "lazy"}` knob; early verifies once at open and caches identity" (implies lazy ≠ early).
   - Code reality: `packages/adapter-core/src/auth-policy.ts:65` (`mode: options.mode ?? "early"`); `auth-policy.ts:4-5,63` — lazy noted as deferred, identical to early today.
@@ -42,6 +49,14 @@
   - Owner: release pipeline.
   - To fix: code — add `packages/adapter-core` to config + manifest (0.1.0) + both workflow filters after gateway-core (dep order). Done 2026-08-07.
 - Related: docs/wayfinder/adapter-core/map.md (A1).
+
+- **D-100** (High, 2026-08-07, reporter: A9-R1 research) — `createCapabilityLookup.describe()` reads `name` / `description` / `inputSchema` / `tier` from the top level of the kernel response, but `capability.describe` returns `DescribeResult` with everything nested under `capability`. Empirically: every describe returns `{name:"", description:"", inputSchema:null, tier:null}` against the real kernel. The unit test passes only because the fake returns the flat shape the kernel never produces.
+  - Doc claim: A6 lock — "byte-identical by construction" (CONTEXT.md Decisions Log 2026-08-07, A6 entry).
+  - Code reality: `packages/adapter-core/src/capabilities/lookup.ts:106-115` (`extractDescriptor` reads top-level fields); `packages/gateway-core/src/factory.ts:572-578` (kernel returns `DescribeResult`, wrapping `CapabilityRecord` under `capability`); MCP's own extractor gets this right at `packages/adapter-mcp/src/translate.ts:114-127` (unwraps `rec["capability"]` first).
+  - Why matters: latent in v1 (A6 shipped the lookup deliberately unwired, `capabilities/lookup.ts:8-9`), but live for A9 (REST intends to expose `GET /capabilities` via the shared lookup) and direct threat to A8's "MCP `scenarios.test.ts` + `translate.test.ts` run with ZERO edits" acceptance bar (swapping `listTools` onto the shared lookup would change tool schemas from real to empty).
+  - Owner: adapter-core (lookup util).
+  - To fix: code — `extractDescriptor` unwraps `rec.capability` first, mirroring MCP's pattern. Updates the lookup's unit test to use the real `DescribeResult` shape. Resolve BEFORE A9's `GET /capabilities` ships (Q5 deferred describe route on this bug); resolve BEFORE A8 migration swaps `listTools` onto the shared lookup.
+  - Related: A6, A8, A9-R1 research report §14.2; A9 (Q5 deferred `{name}` route explicitly cites this).
 
 - **D-93** (Medium, 2026-08-07, reporter: example-app logging pass) — gateway-minted JWTs encode `iat`/`exp` in epoch MILLISECONDS, not seconds. RFC 7519 expects NumericDate = seconds; any standard JWT library validating `exp` reads ms as seconds → expiry lands in year ~58568 → token treated as effectively never-expiring (and `iat` in the far future trips `iat`-future checks in some libs).
   - Doc claim: JWT is a standard token (`example/README.md` "a real JWT minted by its own `gateway.issueToken` API"; `docs/architecture/Agentide.md` security sections imply standard JWT semantics).
