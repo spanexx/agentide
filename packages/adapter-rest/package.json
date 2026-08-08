@@ -2,7 +2,7 @@
   "name": "@spanexx/adapter-rest",
   "version": "0.2.1",
   "private": false,
-  "description": "REST adapter \u2014 plain HTTP door for non-MCP integrations. POST /invoke + GET /capabilities, Bearer JWT per request, kernel-verified.",
+  "description": "REST adapter — plain HTTP door for non-MCP integrations. POST /invoke + GET /capabilities, Bearer JWT per request, kernel-verified.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -32,12 +32,12 @@
     "@spanexx/adapter-core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "workspace:*",
-    "typescript": "workspace:*",
-    "vitest": "workspace:*",
-    "eslint": "workspace:*",
-    "@typescript-eslint/parser": "workspace:*",
-    "@typescript-eslint/eslint-plugin": "workspace:*"
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "eslint": "^10.8.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0"
   },
   "license": "MIT",
   "keywords": [

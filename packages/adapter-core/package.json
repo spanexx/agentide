@@ -2,7 +2,7 @@
   "name": "@spanexx/adapter-core",
   "version": "0.3.1",
   "private": false,
-  "description": "Shared server-side invocation pipeline for door adapters \u2014 readClaims, auth policy, error converter, RecordRegistry, response channel, capability lookup. Doors import ONLY this package for shared logic (A1 own-bytes rule).",
+  "description": "Shared server-side invocation pipeline for door adapters — readClaims, auth policy, error converter, RecordRegistry, response channel, capability lookup. Doors import ONLY this package for shared logic (A1 own-bytes rule).",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -30,12 +30,12 @@
     "@spanexx/gateway-core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "workspace:*",
-    "typescript": "workspace:*",
-    "vitest": "workspace:*",
-    "eslint": "workspace:*",
-    "@typescript-eslint/parser": "workspace:*",
-    "@typescript-eslint/eslint-plugin": "workspace:*"
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "eslint": "^10.8.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0"
   },
   "license": "MIT",
   "keywords": [

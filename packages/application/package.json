@@ -24,14 +24,14 @@
     "typecheck": "tsc --build --pretty"
   },
   "dependencies": {
-    "ulid": "workspace:*"
+    "ulid": "^2.3.0"
   },
   "devDependencies": {
-    "@types/node": "workspace:*",
-    "typescript": "workspace:*",
-    "vitest": "workspace:*",
-    "eslint": "workspace:*",
-    "@typescript-eslint/parser": "workspace:*",
-    "@typescript-eslint/eslint-plugin": "workspace:*"
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "eslint": "^10.8.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0"
   }
 }

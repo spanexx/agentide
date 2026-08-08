@@ -26,20 +26,20 @@
     "prepublishOnly": "bash scripts/prepare-publish.sh"
   },
   "dependencies": {
-    "ws": "workspace:*",
+    "ws": "^8.18.0",
     "@spanexx/capability-registry": "workspace:*",
     "@spanexx/errors": "workspace:*",
     "@spanexx/event-bus": "workspace:*",
     "@spanexx/origin": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "workspace:*",
-    "@types/ws": "workspace:*",
-    "typescript": "workspace:*",
-    "vitest": "workspace:*",
-    "eslint": "workspace:*",
-    "@typescript-eslint/parser": "workspace:*",
-    "@typescript-eslint/eslint-plugin": "workspace:*"
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "eslint": "^10.8.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0"
   },
   "license": "MIT",
   "keywords": [
