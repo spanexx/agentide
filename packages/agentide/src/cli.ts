@@ -43,7 +43,8 @@ export function installGlobalErrorHandlers(sink: ErrorSink = defaultErrorSink): 
 //      (see the `bundle` script in packages/agentide/package.json) — used by
 //      the published `dist/bin.bundled.cjs` and the global `agentide` CLI.
 //   2. vitest's `define` in vitest.config.ts inlines it for the test suite.
-// The plain `tsc`-built dist/index.js (what `scripts/start-gateway.mjs` and
+// The plain `tsc`-built dist/index.js (what the bundled binary and the
+// dev bootstrap — `agentide start --all-doors` — load) and
 // any CJS consumer of `@spanexx/agentide` load) has neither define. To make
 // the dist safe to load directly, we fall back to readPackageVersion() at
 // runtime. The define is still preferred (cuts a fs.readFileSync per run)

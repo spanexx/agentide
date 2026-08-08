@@ -276,8 +276,8 @@ describe("agentide start", () => {
 
   // CID:start-014 - --adapter-rest-port opens the REST door (A9).
   // Same shape as --port-sdk: opt-in, default 7400 with no value, collision
-  // checks against MCP/WS/SDK adapter doors. Used to require the script gateway
-  // (`scripts/start-gateway.mjs`) — operator ergonomics fix so the CLI can host
+  // checks against MCP/WS/SDK adapter doors. Used to require the retired
+  // script gateway — operator ergonomics fix so the CLI can host
   // the REST door end-to-end.
   it("--adapter-rest-port absent → no adapterRestPort passed (door closed)", async () => {
     const mem = makeFs();

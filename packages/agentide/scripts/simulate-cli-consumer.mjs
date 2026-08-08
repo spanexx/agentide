@@ -2,9 +2,9 @@
 // POST-IMPL simulation — agentide-cli-consumer (BI[28]).
 //
 // Runs the SAME 12-command Simulation Contract as simulate-pre.sh, but
-// against the REAL gateway (scripts/start-gateway.mjs) and the REAL CLI
-// binary (packages/agentide/dist/bin.js). Each check asserts the locked
-// exit code (GRILL Q4) and, where deterministic, the output shape.
+// against the REAL gateway (the agentide CLI's `start --all-doors`) and
+// the REAL CLI binary (packages/agentide/dist/bin.js). Each check asserts
+// the locked exit code (GRILL Q4) and, where deterministic, the output shape.
 //
 // Differences vs the pre-impl stub are intentional and reported as
 // "observed gap" lines — the pre-impl sim showed the DESIGN; this sim
@@ -22,7 +22,7 @@ import net from "node:net";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const BIN = join(ROOT, "packages/agentide/dist/bin.js");
-const GATEWAY = join(ROOT, "scripts/start-gateway.mjs");
+const GATEWAY = join(ROOT, "packages/agentide/dist/bin.js"); // `start --all-doors` hosts the gateway (retired start-gateway.mjs)
 const STATE = join(ROOT, "docs/features/agentide-cli-consumer/sim-state.json");
 const DATA = join(ROOT, "data");
 const URL = "ws://127.0.0.1:7300/ws";
@@ -64,7 +64,7 @@ function check(name, want, code, out, err) {
 }
 
 // ---- gateway lifecycle ----
-const gateway = tcpUp(7300) ? null : spawn("node", [GATEWAY], { cwd: ROOT, stdio: "ignore" });
+const gateway = tcpUp(7300) ? null : spawn("node", [GATEWAY, "start", "--all-doors", "--data-dir", DATA, "--foreground"], { cwd: ROOT, stdio: "ignore" });
 if (gateway) {
   console.log("starting gateway…");
   for (let i = 0; i < 60 && !tcpUp(7300); i++) await new Promise((r) => setTimeout(r, 250));

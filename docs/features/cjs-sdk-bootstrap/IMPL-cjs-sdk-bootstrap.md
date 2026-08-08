@@ -86,31 +86,30 @@ const banner = `[gateway] platform up — mcp ${mcpBanner}, ws ${wsBanner}, sdk 
 `packages/agentide/src/cli.ts` — Usage block. Add `--port-sdk` to the
 `start` usage line and the flag definitions.
 
-### 1.5 `start-gateway.mjs` dev bootstrap
+### 1.5 Dev bootstrap — `agentide start --all-doors`
 
-`agentide/scripts/start-gateway.mjs` — the `createPlatform` call (~line 32):
+> RETIRED 2026-08-08 (cli-ops-ergonomics D-114): `scripts/start-gateway.mjs`
+> is deleted. The CLI is the one dev bootstrap — `agentide start --all-doors`
+> opens all four client doors (MCP 7100, WS 7300, SDK 7350, REST 7400).
+
+The dev bootstrap equivalent today is:
+
+```bash
+agentide start --all-doors --foreground --default-tenant acme
+```
+
+which configures:
 
 ```js
-const platform = await createPlatform({
-  fs: { ... },
-  dataDir: './data',
+createPlatform({
+  dataDir: './.agentide/data',
   defaultTenant: { id: 'acme', name: 'Acme' },
   adapterMcp: { host: '127.0.0.1', port: 7100 },
   adapterWs: { host: '127.0.0.1', port: 7300 },
-  backendRuntime: { host: '127.0.0.1', port: 7350 },  // ← new
+  backendRuntimePort: 7350,   // --all-doors (previously script-only)
+  adapterRestPort: 7400,      // --all-doors (A9 REST door)
 });
 ```
-
-Update the banner comment (line 1-3 of the file):
-```
-// Network surface when running:
-//   127.0.0.1:7100 — MCP adapter (JSON-RPC, for AI agents)
-//   127.0.0.1:7300 — WebSocket adapter (for CLI/dashboard/agents)
-//   127.0.0.1:7350 — Backend runtime (for sdk-node/sdk-browser)
-```
-
-And the actual console log line ("platform up — mcp :7100, ws :7300")
-becomes ("platform up — mcp :7100, ws :7300, sdk :7350").
 
 ### 1.6 Tests
 
@@ -128,11 +127,11 @@ green because 1.2 only passes `backendRuntimePort` when the flag is set.
 
 ```bash
 pnpm run precommit
-node packages/agentide/scripts/start-gateway.mjs &
+agentide start --all-doors --foreground &
 sleep 2
-ss -tln | grep -E ':(7100|7300|7350)'
-# expected: 127.0.0.1:7100, 127.0.0.1:7300, 127.0.0.1:7350 all LISTEN
-pkill -f start-gateway.mjs
+ss -tln | grep -E ':(7100|7300|7350|7400)'
+# expected: 127.0.0.1:7100, 127.0.0.1:7300, 127.0.0.1:7350, 127.0.0.1:7400 all LISTEN
+pkill -f "agentide start"
 ```
 
 ---

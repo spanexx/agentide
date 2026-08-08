@@ -27,8 +27,9 @@ import { result } from "./cli.js";
 
 /**
  * CID:start-001 - runStart
- * Boot the gateway as a long-lived daemon. Mirrors scripts/start-gateway.mjs
- * but lives inside the CLI so one binary does everything (PRD S9 lock).
+ * Boot the gateway as a long-lived daemon. One binary does everything
+ * (PRD S9 lock) — `agentide start --all-doors` is the dev bootstrap
+ * (scripts/start-gateway.mjs retired, cli-ops-ergonomics D-114).
  */
 export async function runStart(
   dataDir: string,
@@ -278,7 +279,7 @@ export async function runStart(
   // returns in production (the await below resolves never), so a banner
   // attached to the returned CliResult would never surface — the detached
   // child's log stayed empty and `start --foreground` printed nothing.
-  // Mirrors scripts/start-gateway.mjs, which prints the banner then blocks.
+  // Mirrors the retired dev bootstrap's banner-then-block behavior.
   // Test mode keeps the old contract (banner rides the CliResult).
   if (process.env.AGENTIDE_TEST_NO_BLOCK === "1") {
     return result(banner);

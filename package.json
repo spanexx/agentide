@@ -9,8 +9,8 @@
     "build": "tsc --build --pretty",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "gateway": "node scripts/start-gateway.mjs",
-    "gateway:log": "node scripts/start-gateway.mjs > /tmp/gateway.log 2>&1",
+    "gateway": "agentide start --all-doors --foreground",
+    "gateway:log": "agentide start --all-doors --foreground --log-file /tmp/gateway.log",
     "precommit": "bash scripts/check-banned-types.sh && npm run typecheck && npm run lint && npm run build",
     "lint": "eslint .",
     "typecheck": "test -z \"$(ls -A packages 2>/dev/null)\" && echo 'no packages yet \u2014 skipping typecheck' || tsc --build --pretty"

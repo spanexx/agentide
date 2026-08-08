@@ -1,10 +1,9 @@
 /*
  * Code Map: tests for the built artifact of @platform/agentide.
  * - start.test.ts and cli.test.ts cover the source (`src/`); this file
- *   covers the *built* artifact (`dist/`). The dev bootstrap script
- *   (`scripts/start-gateway.mjs`) and the published `agentide` binary
- *   both import from `dist/index.js`, so the tests here exercise the
- *   real loading path.
+ * covers the *built* artifact (`dist/`). The published `agentide` binary
+ * imports from `dist/index.js`, so the tests here exercise the
+ * real loading path.
  *
  * Why this file exists: the previous design had `const HELP = ...${CLI_VERSION}...`
  * at the top of cli.ts, which evaluates at module load time. The CLI_VERSION
