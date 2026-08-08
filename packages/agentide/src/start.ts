@@ -109,6 +109,31 @@ export async function runStart(
     }
   }
 
+  // CID:start-014 - --adapter-rest-port opt-in (A9 REST door).
+  // Opens the third client-facing door: POST /invoke + GET /capabilities,
+  // Bearer JWT per request, kernel-verified (A8 lazy path). Flag absent →
+  // door stays closed (the factory's opt-in contract per A9 Q4 lock).
+  // Default 7400 when present with no value, matching REST adapter default
+  // in packages/adapter-rest/src/server.ts.
+  const portRestFlag = flags["adapter-rest-port"];
+  let adapterRestPort: number | undefined;
+  if (portRestFlag !== undefined) {
+    if (typeof portRestFlag === "boolean" && portRestFlag === true) {
+      adapterRestPort = 7400;
+    } else if (typeof portRestFlag === "string") {
+      const parsed = Number.parseInt(portRestFlag, 10);
+      if (!Number.isFinite(parsed)) {
+        return result("", `error: invalid port --adapter-rest-port=${portRestFlag}\n`, 2);
+      }
+      if (parsed === 7100 || parsed === 7200 || parsed === 7300 || parsed === 7350) {
+        return result("", `error: --adapter-rest-port=${parsed} collides with MCP/WS/SDK adapter doors (7100/7200/7300/7350)\n`, 2);
+      }
+      adapterRestPort = parsed;
+    } else {
+      return result("", `error: invalid --adapter-rest-port value (${String(portRestFlag)})\n`, 2);
+    }
+  }
+
   // CID:start-004 - at least one adapter required
   if (noMcp && noWs) {
     return result("", "error: at least one of --no-mcp or --no-ws must be omitted (need an adapter to start)\n", 2);
@@ -191,6 +216,11 @@ export async function runStart(
       // regression test in factory.ts:97-112). Dashboard binds 127.0.0.1
       // only (server.ts:99) — --bind does not flow through in v1.
       ...(dashboardPort !== undefined ? { dashboardPort } : {}),
+      // CID:start-014 - REST door opt-in (A9). Same spread-when-set shape as
+      // --port-sdk / --dashboard-port. Absent → factory's default (door
+      // closed). REST adapter binds 127.0.0.1 only by default; --bind is
+      // a follow-up (adapter-rest/server.ts hardcodes host).
+      ...(adapterRestPort !== undefined ? { adapterRestPort, adapterRestHost: bind } : {}),
       ...(enableOidc ? { enableOidc: true } : {}),
       requireTls: !noTls,
     });
@@ -204,7 +234,8 @@ export async function runStart(
   const mcpBanner = !adapterMcpEnabled ? "(disabled)" : `:${portMcp}`;
   const wsBanner = !adapterWsEnabled ? "(disabled)" : `:7300`;
   const sdkBanner = portSdk === undefined ? "(disabled)" : `:${portSdk}`;
-  const banner = `[gateway] platform up — mcp ${mcpBanner}, ws ${wsBanner}, sdk ${sdkBanner}\n`;
+  const restBanner = adapterRestPort === undefined ? "(disabled)" : `:${adapterRestPort}`;
+  const banner = `[gateway] platform up — mcp ${mcpBanner}, ws ${wsBanner}, sdk ${sdkBanner}, rest ${restBanner}\n`;
 
   // CID:start-007 - Register signal handlers BEFORE returning so they stay active for the
   // lifetime of the process. node keeps the event loop alive while SIGINT/SIGTERM

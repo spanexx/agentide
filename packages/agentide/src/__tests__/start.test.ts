@@ -31,6 +31,8 @@ interface CreatePlatformCallConfig {
   adapterMcpPort?: number;
   adapterWs?: boolean;
   adapterWsHost?: string;
+  adapterRestPort?: number;
+  adapterRestHost?: string;
   defaultTenant?: { id: string; name: string };
   backendRuntimePort?: number;
 }
@@ -270,6 +272,47 @@ describe("agentide start", () => {
     const r = await run(["start", "--data-dir", "/data", "--port-sdk", "7300"], mem);
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toMatch(/collides with MCP\/WS adapter doors/);
+  });
+
+  // CID:start-014 - --adapter-rest-port opens the REST door (A9).
+  // Same shape as --port-sdk: opt-in, default 7400 with no value, collision
+  // checks against MCP/WS/SDK adapter doors. Used to require the script gateway
+  // (`scripts/start-gateway.mjs`) — operator ergonomics fix so the CLI can host
+  // the REST door end-to-end.
+  it("--adapter-rest-port absent → no adapterRestPort passed (door closed)", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data"], mem);
+    const call = lastCreatePlatformCall();
+    expect(call.adapterRestPort).toBeUndefined();
+  });
+
+  it("--adapter-rest-port 7400 → adapterRestPort: 7400", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data", "--adapter-rest-port", "7400"], mem);
+    const call = lastCreatePlatformCall();
+    expect(call.adapterRestPort).toBe(7400);
+    expect(call.adapterRestHost).toBe("127.0.0.1");
+  });
+
+  it("--adapter-rest-port with no value → defaults to 7400", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data", "--adapter-rest-port"], mem);
+    const call = lastCreatePlatformCall();
+    expect(call.adapterRestPort).toBe(7400);
+  });
+
+  it("--adapter-rest-port with invalid value → exit 2", async () => {
+    const mem = makeFs();
+    const r = await run(["start", "--data-dir", "/data", "--adapter-rest-port", "abc"], mem);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/invalid port --adapter-rest-port=abc/);
+  });
+
+  it("--adapter-rest-port 7350 → exit 2 (collision with SDK door)", async () => {
+    const mem = makeFs();
+    const r = await run(["start", "--data-dir", "/data", "--adapter-rest-port", "7350"], mem);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/collides with MCP\/WS\/SDK adapter doors/);
   });
 
   // CID:start-009 - detached-child mode (fix, handoff 2026-08-05).
