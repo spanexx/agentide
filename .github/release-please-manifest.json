@@ -3,7 +3,7 @@
   "packages/adapter-mcp": "0.7.1",
   "packages/adapter-rest": "0.2.1",
   "packages/adapter-websocket": "0.7.1",
-  "packages/agentide": "0.6.0",
+  "packages/agentide": "0.7.0",
   "packages/backend-runtime": "0.6.1",
   "packages/capability-registry": "0.6.1",
   "packages/dashboard-core": "0.0.4",
@@ -14,6 +14,6 @@
   "packages/platform-capabilities": "0.6.1",
   "packages/plugin-manager": "0.6.1",
   "packages/sdk-browser": "0.2.1",
-  "packages/sdk-node": "0.2.1",
+  "packages/sdk-node": "0.2.2",
   "packages/session-manager": "0.6.1"
 }

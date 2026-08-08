@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/spanexx/agentide/compare/agentide-v0.6.0...agentide-v0.7.0) (2026-08-08)
+
+
+### Features
+
+* **cli:** persist token + gateway_url to config; init never prints token ([9fbf8cf](https://github.com/spanexx/agentide/commit/9fbf8cf0e85dd4ed601bb8dabe3cde64e443fc22))
+
 ## [0.6.0](https://github.com/spanexx/agentide/compare/agentide-v0.5.0...agentide-v0.6.0) (2026-08-08)
 
 
