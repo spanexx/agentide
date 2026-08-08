@@ -17,6 +17,7 @@
 import { runCli } from "./cli.js";
 import { DETACH_CHILD_FLAG } from "./lifecycle.js";
 import * as fsPromises from "node:fs/promises";
+import { homedir } from "node:os";
 import type { FileSystem } from "@spanexx/gateway-core";
 
 /**
@@ -50,7 +51,7 @@ function stripDetachFlag(argv: readonly string[]): string[] {
 
 async function main(): Promise<void> {
   const argv = stripDetachFlag(process.argv.slice(2));
-  const result = await runCli(argv, { fs: defaultFs });
+  const result = await runCli(argv, { fs: defaultFs, home: homedir() });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   process.exit(result.exitCode);

@@ -4,10 +4,10 @@
 //   run). Perms warning for config/token files looser than 0600 (exactly ONE
 //   stderr warning per run — S6).
 // Used by: cli.ts (remote commands), consumer.ts
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, mkdirSync, writeFileSync, chmodSync, renameSync } from "node:fs";
 import { isatty } from "node:tty";
 import { homedir } from "node:os";
-import { resolve, isAbsolute } from "node:path";
+import { resolve, dirname, isAbsolute } from "node:path";
 import * as readline from "node:readline";
 
 export enum Source {
@@ -205,6 +205,89 @@ export async function resolveConfig(opts: ResolveConfigOptions): Promise<Resolve
   }
 
   return { url, token, tokenSource, urlSource, warnings };
+}
+
+// CID:config-003 - saveConfig
+// Purpose: persist entries (currently: token) into the same config.toml that
+//   resolveConfig reads — the D-112 ergonomics fix. Mint once, never retype.
+//   Merge is line-based so unknown keys and other sections are preserved
+//   verbatim; only the `token = "..."` line is replaced (or appended if the
+//   file has none). Atomic write: tmp file in the same dir + rename, mode
+//   0600 (same hygiene resolveConfig warns about when looser).
+// Used by: cli.ts runToken (agentide token issue).
+export interface SaveConfigOptions {
+  home?: string;
+  cwd?: string;
+  configOverride?: string;
+}
+
+export interface SaveConfigResult {
+  path: string;
+  created: boolean; // true when the file did not exist before
+}
+
+function defaultConfigPathSync(home: string, cwd: string, configOverride?: string): string {
+  if (configOverride !== undefined && configOverride !== "") {
+    return resolve(cwd, configOverride);
+  }
+  return resolve(home, ".config", "platform", "config.toml");
+}
+
+export function saveConfig(
+  entries: { token?: string },
+  opts: SaveConfigOptions = {},
+): SaveConfigResult {
+  const home = opts.home ?? homedir();
+  const cwd = opts.cwd ?? process.cwd();
+  const path = defaultConfigPathSync(home, cwd, opts.configOverride);
+
+  // Read the existing file verbatim (line-based merge preserves unknown keys
+  // and any [table] sections the v1 parser ignores).
+  let existed = false;
+  let lines: string[] = [];
+  let hasTokenLine = false;
+  try {
+    const text = readFileSync(path, "utf8");
+    existed = true;
+    lines = text.split(/\r?\n/);
+  } catch {
+    // no file yet → fresh content
+  }
+
+  const outLines: string[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (entries.token !== undefined) {
+      const eq = line.indexOf("=");
+      if (eq !== -1 && line.slice(0, eq).trim() === "token") {
+        outLines.push(`token = "${entries.token}"`);
+        hasTokenLine = true;
+        continue;
+      }
+    }
+    outLines.push(rawLine);
+  }
+  if (entries.token !== undefined && !hasTokenLine) {
+    outLines.push(`token = "${entries.token}"`);
+  }
+  // drop a single trailing empty line so the file ends cleanly
+  while (outLines.length > 0 && outLines[outLines.length - 1] === "") {
+    outLines.pop();
+  }
+
+  const body = outLines.join("\n") + "\n";
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true });
+  const tmp = `${path}.tmp-${process.pid}`;
+  writeFileSync(tmp, body, { encoding: "utf8", mode: 0o600 });
+  try {
+    chmodSync(tmp, 0o600); // writeFileSync mode only applies on create
+  } catch {
+    // chmod unsupported (some fs fakes) — mode from writeFileSync stands
+  }
+  renameSync(tmp, path);
+
+  return { path, created: !existed };
 }
 
 // CID:config-002 - hasUrlSource

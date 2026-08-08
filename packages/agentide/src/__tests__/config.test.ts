@@ -2,10 +2,10 @@
 // Tests drive resolveConfig through its public interface with a temp HOME
 // (config file on disk, real perms via chmod) — no mocks of node:fs.
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, rmSync, mkdirSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveConfig, Source } from "../config.js";
+import { resolveConfig, saveConfig, Source } from "../config.js";
 
 interface TempHome {
   dir: string;
@@ -219,6 +219,80 @@ describe("config: precedence (S1)", () => {
       });
       expect(r.token).toBe("env-file-token");
       expect(r.tokenSource).toBe(Source.Env);
+    } finally {
+      cleanup(home);
+    }
+  });
+});
+
+describe("config: saveConfig (D-112 token persist)", () => {
+  it("creates the file (recursive dirs) with mode 0600", () => {
+    const home = makeHome();
+    try {
+      rmSync(home.cfg, { force: true });
+      const r = saveConfig({ token: "tok-new" }, { home: home.dir });
+      expect(r.created).toBe(true);
+      expect(r.path).toBe(home.cfg);
+      const stat = statSync(home.cfg);
+      expect(stat.mode & 0o077).toBe(0);
+      const text = readFileSync(home.cfg, "utf8");
+      expect(text).toContain('token = "tok-new"');
+    } finally {
+      cleanup(home);
+    }
+  });
+
+  it("replaces the existing token line and preserves gateway_url + unknown keys", () => {
+    const home = makeHome();
+    try {
+      writeFileSync(home.cfg, '# my config\ngateway_url = "ws://keep/ws"\ntoken = "tok-old"\nmystery = 42\n');
+      chmodSync(home.cfg, 0o600);
+      const r = saveConfig({ token: "tok-new" }, { home: home.dir });
+      expect(r.created).toBe(false);
+      const text = readFileSync(home.cfg, "utf8");
+      expect(text).toContain('gateway_url = "ws://keep/ws"');
+      expect(text).toContain("mystery = 42");
+      expect(text).not.toContain("tok-old");
+      expect(text).toContain('token = "tok-new"');
+    } finally {
+      cleanup(home);
+    }
+  });
+
+  it("appends the token line when the file has none", () => {
+    const home = makeHome();
+    try {
+      writeFileSync(home.cfg, 'gateway_url = "ws://keep/ws"\n');
+      chmodSync(home.cfg, 0o600);
+      saveConfig({ token: "tok-new" }, { home: home.dir });
+      const text = readFileSync(home.cfg, "utf8");
+      expect(text).toContain('gateway_url = "ws://keep/ws"');
+      expect(text).toContain('token = "tok-new"');
+    } finally {
+      cleanup(home);
+    }
+  });
+
+  it("no leftover tmp file after write", () => {
+    const home = makeHome();
+    try {
+      saveConfig({ token: "tok-new" }, { home: home.dir });
+      const dir = join(home.dir, ".config", "platform");
+      const names = readdirSync(dir);
+      expect(names.filter((n) => n.includes("tmp"))).toEqual([]);
+    } finally {
+      cleanup(home);
+    }
+  });
+
+  it("a saved token is read back by resolveConfig", async () => {
+    const home = makeHome();
+    try {
+      writeFileSync(home.cfg, 'gateway_url = "ws://x/ws"\ntoken = "tok-old"\n');
+      chmodSync(home.cfg, 0o600);
+      saveConfig({ token: "tok-roundtrip" }, { home: home.dir });
+      const r = await resolveConfig({ argv: [], env: {}, home: home.dir });
+      expect(r.token).toBe("tok-roundtrip");
     } finally {
       cleanup(home);
     }

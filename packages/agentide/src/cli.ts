@@ -8,7 +8,7 @@ import { createPlatform } from "./factory.js";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { hasUrlSource } from "./config.js";
+import { hasUrlSource, saveConfig } from "./config.js";
 import { runConsumer } from "./consumer.js";
 import { runStop, runDetachedStart } from "./start.js";
 import { printTokenWithClear } from "./lifecycle.js";
@@ -121,7 +121,7 @@ Usage:
   agentide stop    [--pid-file <path>]
   agentide status  [--data-dir <path>] [--pid-file <path>] [--url ...] [--token ...] [--json] [remote-only if --url given]  (remote gateway.status)
   agentide tenant  {create|list|suspend|delete} [--id <id>] [--name <name>] [--data-dir <path>]
-  agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--origin <url> ...] [--origins <csv>] [--data-dir <path>]
+  agentide token   issue --tenant <id> --caller <id> [--scope <csv>] [--origin <url> ...] [--origins <csv>] [--no-save] [--data-dir <path>]
   agentide client  {create|list|grant|revoke|rotate|redeem} [--tenant <id>] [--name <name>] [--scope <csv>] [--client-id <id>] [--code <rc_...>] [--ttl-min <n>] [--print] [--data-dir <path>]
   agentide capability {list|describe --name <name>} [--owner <string>] [--tier <read|write|act|destructive>] [--data-dir <path>]
   agentide plugin  {list} [--data-dir <path>]
@@ -440,6 +440,20 @@ async function runToken(
       scope,
       ...(expectedOrigins.length > 0 ? { expectedOrigins } : {}),
     });
+    // CID:cli-012 - D-112: persist the freshly minted token to the config
+    // file so remote commands (`invoke`, `sessions`, ...) just work in every
+    // terminal. Fresh mint overwrites the old token — the stale-token
+    // treadmill dies with it. --no-save opts out (scripting/CI). A save
+    // failure is a warning, never an error: the token is already on stdout.
+    if (flags["no-save"] !== true) {
+      const configOverride = getFlag(flags, "config", "");
+      try {
+        saveConfig({ token }, { home: opts.home, configOverride });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return result(`${token}\n`, `warning: could not save token to config: ${msg} (use --no-save to silence)\n`, 0);
+      }
+    }
     return result(`${token}\n`);
   } finally {
     await platform.stop();

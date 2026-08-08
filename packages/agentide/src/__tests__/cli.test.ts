@@ -2,6 +2,9 @@ import { describe, expect, it, afterEach } from "vitest";
 import { createEventBus } from "@spanexx/event-bus";
 import { issueToken, type CanonicalInvocation, type CanonicalResponse, type Clock, type FileSystem, type Gateway } from "@spanexx/gateway-core";
 import { createWebSocketAdapter } from "@spanexx/adapter-websocket";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runCli } from "../index.js";
 
 class InMemoryFs implements FileSystem {
@@ -106,15 +109,20 @@ describe("CLI", () => {
 
   it("`token issue` mints a JWT and prints it", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(
-      ["token", "issue", "--tenant", "acme", "--caller", "agent-1", "--scope", "platform.tenant.read,platform.capability.read", "--data-dir", "/data"],
-      { fs },
-    );
-    expect(r.exitCode).toBe(0);
-    const lines = r.stdout.split("\n").map((l: string) => l.trim()).filter(Boolean);
-    const last = lines[lines.length - 1] ?? "";
-    expect(last).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    const home = makeTempHome();
+    try {
+      await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home });
+      const r = await runCli(
+        ["token", "issue", "--tenant", "acme", "--caller", "agent-1", "--scope", "platform.tenant.read,platform.capability.read", "--data-dir", "/data"],
+        { fs, home },
+      );
+      expect(r.exitCode).toBe(0);
+      const lines = r.stdout.split("\n").map((l: string) => l.trim()).filter(Boolean);
+      const last = lines[lines.length - 1] ?? "";
+      expect(last).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it("`capability list` shows the registered capabilities", async () => {
@@ -197,8 +205,25 @@ function decodeJwt(token: string): Record<string, unknown> {
   return JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf-8"));
 }
 
+// Shared temp HOME so token-save tests never touch the operator's real
+// ~/.config/platform/config.toml. Created once per process, cleaned by afterEach.
+const TEMP_HOME = mkdtempSync(join(tmpdir(), "agentide-cli-home-"));
+afterEach(() => {
+  for (const name of ["config.toml"]) {
+    rmSync(join(TEMP_HOME, ".config", "platform", name), { force: true });
+  }
+});
+
+function tempConfigPath(): string {
+  return join(TEMP_HOME, ".config", "platform", "config.toml");
+}
+
+function makeTempHome(): string {
+  return mkdtempSync(join(tmpdir(), "agentide-cli-home-"));
+}
+
 async function mintViaCli(fs: InMemoryFs, args: string[]): Promise<{ exitCode: number; payload: Record<string, unknown> | null; raw: string }> {
-  const r = await runCli(["token", "issue", "--tenant", "acme", "--caller", "agent-1", ...args, "--data-dir", "/data"], { fs });
+  const r = await runCli(["token", "issue", "--tenant", "acme", "--caller", "agent-1", ...args, "--data-dir", "/data"], { fs, home: TEMP_HOME });
   if (r.exitCode !== 0) return { exitCode: r.exitCode, payload: null, raw: r.stdout };
   const lines = r.stdout.split("\n").map((l: string) => l.trim()).filter(Boolean);
   const last = lines[lines.length - 1] ?? "";
@@ -268,6 +293,53 @@ describe("CLI token issue expectedOrigins", () => {
     expect(r.exitCode).toBe(0);
     expect(r.payload?.expectedOrigins).toEqual(["https://app.acme.com"]);
     expect(r.raw).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  });
+});
+
+// D-112 token persist: `token issue` writes the minted JWT into the config
+// file so remote commands work without --url/--token in every terminal.
+describe("CLI token issue config persistence (D-112)", () => {
+  it("saves the minted token to ~/.config/platform/config.toml", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(
+      ["token", "issue", "--tenant", "acme", "--caller", "agent-1", "--data-dir", "/data"],
+      { fs, home: TEMP_HOME },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(existsSync(tempConfigPath())).toBe(true);
+    const text = readFileSync(tempConfigPath(), "utf8");
+    const lines = r.stdout.split("\n").map((l: string) => l.trim()).filter(Boolean);
+    const minted = lines[lines.length - 1] ?? "";
+    expect(text).toContain(`token = "${minted}"`);
+  });
+
+  it("--no-save skips the config write", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(
+      ["token", "issue", "--tenant", "acme", "--caller", "agent-1", "--no-save", "--data-dir", "/data"],
+      { fs, home: TEMP_HOME },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(existsSync(tempConfigPath())).toBe(false);
+  });
+
+  it("existing config keeps gateway_url when token is replaced", async () => {
+    const fs = new InMemoryFs();
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const dir = join(TEMP_HOME, ".config", "platform");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(tempConfigPath(), 'gateway_url = "ws://keep:7300/ws"\ntoken = "tok-old"\n', { mode: 0o600 });
+    await runCli(
+      ["token", "issue", "--tenant", "acme", "--caller", "agent-1", "--data-dir", "/data"],
+      { fs, home: TEMP_HOME },
+    );
+    const text = readFileSync(tempConfigPath(), "utf8");
+    expect(text).toContain('gateway_url = "ws://keep:7300/ws"');
+    expect(text).not.toContain("tok-old");
+    expect(text).toContain("token = ");
   });
 });
 

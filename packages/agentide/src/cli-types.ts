@@ -7,6 +7,10 @@ import type { FileSystem } from "@spanexx/gateway-core";
 
 export interface CliOptions {
   readonly fs: FileSystem;
+  // CID:cli-013 - home seam for config persistence (D-112). The token-save
+  // path writes ~/.config/platform/config.toml; tests pass a temp HOME so
+  // the real operator file is never touched. Defaults to os.homedir().
+  readonly home?: string;
 }
 
 export interface CliResult {
