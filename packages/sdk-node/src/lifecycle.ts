@@ -65,12 +65,10 @@ export function attachLifecycle(deps: LifecycleDeps): void {
 
   client.on("open", () => {
     state.phase.value = "connected";
-    if (state.registered.size > 0) {
-      // Reconnect path: re-register everything we had before.
-      logger.info("lifecycle: re-registering capabilities", { count: state.registered.size });
-      reRegisterAll(client, state.registered, publisher);
-      state.phase.value = "registered";
-    }
+    // D-116: re-registration moved to the sdk.auth.ack message handler below.
+    // On a raw socket "open" the gateway may still be arming its per-connection
+    // cap accumulator (or the auth may not have been verified yet); replaying
+    // caps here raced the fresh gateway and the registration was silently lost.
     publisher.connected(client.configuredUrl(), client.latencyMs());
     if (handlers.onOpen) handlers.onOpen();
   });
@@ -88,9 +86,34 @@ export function attachLifecycle(deps: LifecycleDeps): void {
   });
 
   client.on("message", (msg: WsClientEventPayload | Error) => {
+    // JSON round-trip narrows the union to WsClientMessage.
+    const parsed = JSON.parse(JSON.stringify(msg)) as WsClientMessage;
+
+    // D-116 fix: the gateway sends sdk.auth.ack after the auth handshake is
+    // verified. Re-register previously-registered caps ONLY here — after the
+    // gateway has accepted the identity and armed its per-connection cap
+    // accumulator. Replaying on the raw socket open raced the fresh gateway
+    // and business caps silently vanished from the catalog until app restart.
+    if (parsed.type === "sdk.auth.ack") {
+      if (state.registered.size > 0) {
+        logger.info("lifecycle: re-registering capabilities", { count: state.registered.size });
+        reRegisterAll(client, state.registered, publisher);
+        state.phase.value = "registered";
+      }
+      return;
+    }
+
+    // F3b: surface auth rejection explicitly (TOKEN_INVALID / TOKEN_EXPIRED /
+    // ORIGIN_MISMATCH). The registered set is NOT cleared — the next
+    // reconnect (with a refreshed token, BI[29]) replays the caps.
+    if (parsed.type === "sdk.auth.error") {
+      const code = typeof parsed.code === "string" ? parsed.code : "UNKNOWN";
+      logger.error("lifecycle: auth rejected", { code });
+      return;
+    }
+
     if (handlers.onMessage) {
-      // JSON round-trip narrows the union to WsClientMessage.
-      handlers.onMessage(JSON.parse(JSON.stringify(msg)) as WsClientMessage);
+      handlers.onMessage(parsed);
     }
   });
 }

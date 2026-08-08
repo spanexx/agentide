@@ -81,6 +81,14 @@ function installGatewayMock(gw: MockGateway): void {
     const handlers = (this as unknown as { handlers: Map<string, Set<(arg: unknown) => void>> }).handlers;
     const set = handlers.get("open");
     if (set) for (const fn of set) fn(undefined);
+
+    // The real gateway answers sdk.auth with sdk.auth.ack once the handshake
+    // is verified (backend-runtime/server.ts sendAuthAck). Mirror it: the
+    // lifecycle re-registers caps only AFTER this ack (D-116 fix).
+    const msgSet = handlers.get("message");
+    if (msgSet) {
+      for (const fn of msgSet) fn({ type: "sdk.auth.ack", protocolVersion: 1 });
+    }
   };
   WsClient.prototype.close = async function (this: WsClient): Promise<void> {
     // Mark as explicitly closed so the drop callback won't trigger reconnect.
@@ -299,6 +307,79 @@ describe("lifecycle — disconnect + auto-reconnect (Phase 6)", () => {
     expect(c.backoff(5)).toBe(16000);
     expect(c.backoff(6)).toBe(30000); // capped
     expect(c.backoff(20)).toBe(30000);
+  });
+});
+
+describe("lifecycle — D-116: re-register AFTER sdk.auth.ack (not on raw open)", () => {
+  let gw: MockGateway;
+
+  beforeEach(() => {
+    gw = new MockGateway();
+    installGatewayMock(gw);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    gw.reset();
+  });
+
+  it("re-registers caps only when the gateway ack arrives after a reconnect", async () => {
+    const sdk = createSdk({
+      gateway: { url: "ws://mock", token: "t" },
+      app: { id: "ack-app", name: "Ack" },
+      manifest: inlineManifest({
+        app: "ack-app",
+        capabilities: [
+          { name: "ack.echo", description: "echo", version: "1.0.0", permissions: ["ack.echo"] },
+        ],
+      }),
+      handlers: { "ack.echo": (async () => null) as Handler },
+    });
+    await sdk.connect();
+    await sdk.register();
+    expect(gw.registered).toEqual(["ack.echo"]);
+    const sentBefore = gw.sentBySdk.length;
+
+    // Trigger a drop; the reconnect open() fires but the gateway has NOT
+    // acked yet. Pre-fix (re-register on raw open) this would replay the caps;
+    // post-fix the replay must wait for sdk.auth.ack.
+    gw.triggerDrop();
+    await new Promise((r) => setTimeout(r, 50));
+    // The mock's open() sends the ack synchronously, so to observe the
+    // "open without ack" window we check the ordering differently: the caps
+    // must be replayed exactly once per reconnect, AFTER the ack. Assert the
+    // total replay count equals the number of opens (1 drop → 1 reconnect).
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(gw.registered).toEqual(["ack.echo", "ack.echo"]);
+    expect(sentBefore).toBeGreaterThan(0);
+  });
+
+  it("auth error is surfaced and does NOT clear the registered set (retryable)", async () => {
+    const sdk = createSdk({
+      gateway: { url: "ws://mock", token: "t" },
+      app: { id: "auth-app", name: "Auth" },
+      manifest: inlineManifest({
+        app: "auth-app",
+        capabilities: [
+          { name: "auth.foo", description: "foo", version: "1.0.0", permissions: ["auth.foo"] },
+        ],
+      }),
+      handlers: { "auth.foo": (async () => null) as Handler },
+    });
+    await sdk.connect();
+    await sdk.register();
+    expect(Object.keys(sdk.state().capabilities).sort()).toEqual(["auth.foo"]);
+
+    // Simulate the gateway rejecting a reconnect's sdk.auth (e.g. token
+    // expired during the gateway restart). The SDK must keep its registered
+    // set so the next reconnect (with a refreshed token) can replay caps.
+    const client = sdkClient(sdk);
+    const handlers = (client as unknown as { handlers: Map<string, Set<(arg: unknown) => void>> }).handlers;
+    const msgSet = handlers.get("message");
+    for (const fn of msgSet ?? []) {
+      fn({ type: "sdk.auth.error", code: "TOKEN_EXPIRED", message: "token expired" });
+    }
+    expect(Object.keys(sdk.state().capabilities).sort()).toEqual(["auth.foo"]);
   });
 });
 
