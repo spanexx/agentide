@@ -2,7 +2,7 @@
   "name": "@spanexx/session-manager",
   "version": "0.6.1",
   "private": false,
-  "description": "Lifecycle manager for execution contexts. Active \u21c4 Suspended \u2192 Archived. Sessions own their runtime resources.",
+  "description": "Lifecycle manager for execution contexts. Active ⇄ Suspended → Archived. Sessions own their runtime resources.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

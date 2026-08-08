@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/spanexx/agentide/compare/origin-v0.5.0...origin-v0.5.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **release:** restore real npm deps in package.json (CI lockfile break) ([d2fdd41](https://github.com/spanexx/agentide/commit/d2fdd41ab84d540982852118c1fadd0d9e7cd3bd))
+
 ## [0.5.0](https://github.com/spanexx/agentide/compare/origin-v0.4.1...origin-v0.5.0) (2026-08-07)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/spanexx/agentide/compare/gateway-core-v0.7.0...gateway-core-v0.7.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **release:** restore real npm deps in package.json (CI lockfile break) ([d2fdd41](https://github.com/spanexx/agentide/commit/d2fdd41ab84d540982852118c1fadd0d9e7cd3bd))
+
 ## [0.7.0](https://github.com/spanexx/agentide/compare/gateway-core-v0.6.0...gateway-core-v0.7.0) (2026-08-07)
 
 

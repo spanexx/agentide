@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/spanexx/agentide/compare/session-manager-v0.6.0...session-manager-v0.6.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **release:** restore real npm deps in package.json (CI lockfile break) ([d2fdd41](https://github.com/spanexx/agentide/commit/d2fdd41ab84d540982852118c1fadd0d9e7cd3bd))
+
 ## [0.6.0](https://github.com/spanexx/agentide/compare/session-manager-v0.5.1...session-manager-v0.6.0) (2026-08-07)
 
 
