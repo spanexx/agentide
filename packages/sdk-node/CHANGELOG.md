@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/spanexx/agentide/compare/sdk-node-v0.2.1...sdk-node-v0.2.2) (2026-08-08)
+
+
+### Bug Fixes
+
+* **sdk-node:** re-register capabilities only after sdk.auth.ack ([a058548](https://github.com/spanexx/agentide/commit/a058548f7095fa2d4d958baebcd6ebf55e198d29))
+
 ## [0.2.1](https://github.com/spanexx/agentide/compare/sdk-node-v0.2.0...sdk-node-v0.2.1) (2026-08-08)
 
 
