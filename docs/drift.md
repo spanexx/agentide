@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-08  **Open:** 33  **Resolved:** 66  **Critical/High:** 0
+**Last updated:** 2026-08-08  **Open:** 34  **Resolved:** 66  **Critical/High:** 0
 
 ## Open
 
@@ -469,3 +469,10 @@ ot 0`.
   - Verified by: three commits — `548c5b6` (`feat(cli): add --adapter-rest-port flag to \`agentide start\``, earlier session) + `185da0d` (`feat(cli): add --all-doors flag to \`agentide start\``, CID:start-015: fills SDK 7350/REST 7400 defaults when per-door flags absent, mutual SDK-vs-REST collision check → exit 2, start.test.ts 28/28) + Part 2 of cli-ops-ergonomics (commit after `185da0d`, message `refactor(scripts): retire start-gateway.mjs` — `scripts/start-gateway.mjs` + `dev-bootstrap.test.ts` deleted; package.json `gateway`/`gateway:log` now `agentide start --all-doors --foreground` (+ `--log-file` for :log); `simulate-cli-consumer.mjs` boots the bundled CLI with `start --all-doors --data-dir data --foreground`; cjs-sdk-bootstrap PRD-TRD + IMPL repointed with `RETIRED 2026-08-08` note; comments repointed in start.ts/cli.ts/dist.test.ts/start.test.ts). The script-only REST door is gone: one CLI command opens all 4 doors with one dataDir, one secret — the rotation matrix and host-bind drift disappear with the script.
   - Remaining (roadmap, not blocking): (a) single-port multiplexing, (b) per-door defaults beyond `--all-doors`, (c) data-dir discovery + secret bootstrap ergonomics.
   - Related: D-112 (config persistence — most impactful per-door fix, resolved above), D-113 (CLI output buffering — resolved above), `--adapter-rest-port` flag (`feat(cli): add --adapter-rest-port flag to \`agentide start\``).
+
+- **D-115** (Low, 2026-08-08, reporter: operator fresh-start session — first `agentide start --all-doors` after a clean checkout) — `agentide start` does not auto-create the data dir; `agentide init` does. On a fresh workspace, `agentide start --all-doors --foreground` fails with `error: data dir ./.agentide/data not writable or missing: ENOENT ... (create the directory first: mkdir -p ./.agentide/data)` and the operator must mkdir by hand.
+  - Doc claim: the CLI is the bootstrap path — `cli.ts:309` (`runInit`) states "the operator should never have to `mkdir -p`".
+  - Code reality: `runInit` auto-creates via the fs seam (`cli.ts:313-314`); `start` instead probes writability (CID:start-003, `start.ts:165-178`) because the FileSystem seam interface exposes only read/write/exists — no mkdir. The production fs (`bin.ts`, CID:bin-002) DOES implement recursive mkdir; it's just not called by `start`.
+  - Why matters: `start` is the first command a fresh operator runs. The failure reads as "the tool is broken" and forces a manual step `init` exists to remove.
+  - Owner: `agentide` (CLI). To fix: reuse the `opts.fs.mkdir` seam in `runStart` (same pattern as `runInit` — recursive mkdir before the writability probe), or probe-after-create. Small change, mirrors `init`'s proven path.
+  - Related: D-114 (data-dir discovery ergonomics — "data-dir discovery + secret bootstrap ergonomics" was left as roadmap in D-114; this is the concrete first symptom).
