@@ -315,6 +315,50 @@ describe("agentide start", () => {
     expect(r.stderr).toMatch(/collides with MCP\/WS\/SDK adapter doors/);
   });
 
+  // CID:start-015 - --all-doors (D-114): one flag opens all four client
+  // doors with their defaults (MCP 7100, WS 7300, SDK 7350, REST 7400).
+  // Explicit per-door flags still override; a default colliding with an
+  // explicit flag exits 2.
+  it("--all-doors → all four doors open with defaults", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data", "--all-doors"], mem);
+    const call = lastCreatePlatformCall();
+    expect(call.backendRuntimePort).toBe(7350);
+    expect(call.adapterRestPort).toBe(7400);
+    expect(call.adapterMcp).toBe(true);
+    expect(call.adapterWs).toBe(true);
+  });
+
+  it("--all-doors keeps explicit per-door flags (override wins)", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data", "--all-doors", "--port-sdk", "7351", "--adapter-rest-port", "7401"], mem);
+    const call = lastCreatePlatformCall();
+    expect(call.backendRuntimePort).toBe(7351);
+    expect(call.adapterRestPort).toBe(7401);
+  });
+
+  it("--all-doors --port-sdk 7400 → exit 2 (collision with REST default)", async () => {
+    const mem = makeFs();
+    const r = await run(["start", "--data-dir", "/data", "--all-doors", "--port-sdk", "7400"], mem);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/collides with the REST adapter door/);
+  });
+
+  it("--all-doors --adapter-rest-port 7350 → exit 2 (collision with SDK default)", async () => {
+    const mem = makeFs();
+    const r = await run(["start", "--data-dir", "/data", "--all-doors", "--adapter-rest-port", "7350"], mem);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/collides with the REST adapter door|collides with MCP\/WS\/SDK adapter doors/);
+  });
+
+  it("absent --all-doors → doors closed as before (backward compat)", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data"], mem);
+    const call = lastCreatePlatformCall();
+    expect(call.backendRuntimePort).toBeUndefined();
+    expect(call.adapterRestPort).toBeUndefined();
+  });
+
   // CID:start-009 - detached-child mode (fix, handoff 2026-08-05).
   // With AGENTIDE_DETACH_CHILD=1 the CLI is the gateway child: it must boot
   // the platform directly and must NOT re-enter the detach path (which

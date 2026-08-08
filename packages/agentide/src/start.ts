@@ -134,6 +134,25 @@ export async function runStart(
     }
   }
 
+  // CID:start-015 - --all-doors (cli-ops-ergonomics, D-114)
+  // One flag = all four client doors open with their defaults: MCP 7100,
+  // WS 7300, SDK 7350, REST 7400. Replaces the retired dev bootstrap
+  // (scripts/start-gateway.mjs). The dashboard stays opt-in via
+  // --dashboard-port (it is a UI, not a client door). Explicit per-door
+  // flags still override the defaults; a default that collides with an
+  // explicit flag is caught by the mutual check below.
+  const allDoors = flags["all-doors"] === true;
+  if (allDoors) {
+    if (portSdk === undefined) portSdk = 7350;
+    if (adapterRestPort === undefined) adapterRestPort = 7400;
+  }
+
+  // Mutual collision: SDK door vs REST door (either both explicit, or one
+  // explicit clashing with the other's --all-doors default).
+  if (portSdk !== undefined && adapterRestPort !== undefined && portSdk === adapterRestPort) {
+    return result("", `error: --port-sdk=${portSdk} collides with the REST adapter door (--adapter-rest-port=${adapterRestPort})\n`, 2);
+  }
+
   // CID:start-004 - at least one adapter required
   if (noMcp && noWs) {
     return result("", "error: at least one of --no-mcp or --no-ws must be omitted (need an adapter to start)\n", 2);
