@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/agentide",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": false,
   "description": "Meta-package composing Tier 1 components + gateway-core; ships the `agentide` CLI for operators.",
   "packageManager": "pnpm@11.10.0",

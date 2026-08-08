@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/spanexx/agentide/compare/agentide-v0.5.0...agentide-v0.6.0) (2026-08-08)
+
+
+### Features
+
+* **cli:** add --adapter-rest-port flag to `agentide start` ([548c5b6](https://github.com/spanexx/agentide/commit/548c5b62035b868936c7c2a231b04e359e4b2c0f))
+* **cli:** add --all-doors flag to `agentide start` (D-114) ([185da0d](https://github.com/spanexx/agentide/commit/185da0dfae2d1e861bc04f10dd8da801abb08df9))
+* **cli:** save token to config on `agentide token issue` (D-112) ([316daa4](https://github.com/spanexx/agentide/commit/316daa46825f0bddd16506dd737eafc512342370))
+
+
+### Bug Fixes
+
+* **cli:** ensure stdout ends with newline on every exit path ([93dbae8](https://github.com/spanexx/agentide/commit/93dbae850b5eed82bdfae201a9a6404969006cc0))
+* **release:** restore real npm deps in package.json (CI lockfile break) ([d2fdd41](https://github.com/spanexx/agentide/commit/d2fdd41ab84d540982852118c1fadd0d9e7cd3bd))
+
 ## [0.5.0](https://github.com/spanexx/agentide/compare/agentide-v0.4.0...agentide-v0.5.0) (2026-08-07)
 
 
