@@ -85,13 +85,19 @@ describe("CLI", () => {
     }
   });
 
-  it("`status` returns a JSON-ish status line after init", async () => {
+  it("`status` (old name) is live-only after the cli-restructure (PRD-TRD S6)", async () => {
     const fs = new InMemoryFs();
     await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
-    const r = await runCli(["status", "--data-dir", "/data"], { fs, home: TEMP_HOME });
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout).toMatch(/tenants:\s*1/);
-    expect(r.stdout).toMatch(/plugins:\s*0/);
+    // Old `status` maps to `gateway status` (live). Without a reachable
+    // gateway it must fail — the local in-process status path is gone.
+    // NOTE: a real gateway may be running on 127.0.0.1:7300 from earlier
+    // sessions and the consumer resolves the real ~/.config — force a
+    // dead endpoint so the assertion is deterministic.
+    const r = await runCli(
+      ["status", "--data-dir", "/data", "--url", "ws://127.0.0.1:1/ws", "--token", "t"],
+      { fs, home: TEMP_HOME },
+    );
+    expect(r.exitCode).not.toBe(0);
   });
 
   it("`tenant create` adds a new tenant and `tenant list` shows it", async () => {
@@ -430,6 +436,62 @@ describe("CLI remote dispatch (--url)", () => {
     const r = await runCli(["health", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toBe('{"status":"ok"}\n');
+  });
+
+  // cli-restructure Phase 1 review fix (drift report 20260808-184933, Gaps 1+2):
+  // the group forms must reach the same capabilities as the legacy one-word
+  // names. Pinned here against a LIVE adapter — the dead-endpoint tests alone
+  // passed for the wrong reason (connect fails before alias resolution).
+  it("`gateway status` (group form) hits gateway.status", async () => {
+    const url = await startAdapter();
+    const r = await runCli(["gateway", "status", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe('{"status":"ok","tenantCount":1,"pluginCount":1,"uptimeMs":7}\n');
+  });
+
+  it("`gateway health` (group form) hits system.health", async () => {
+    const url = await startAdapter();
+    const r = await runCli(["gateway", "health", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe('{"status":"ok"}\n');
+  });
+
+  it("`gateway metrics` (group form) hits gateway.metrics", async () => {
+    let invoked = "";
+    const url = await startAdapter(async (req) => {
+      invoked = req.capability.name;
+      return { output: { invocations: 3 } };
+    });
+    const r = await runCli(["gateway", "metrics", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(invoked).toBe("gateway.metrics");
+    expect(r.stdout).toBe('{"invocations":3}\n');
+  });
+
+  it("`gateway version` (group form) hits system.version", async () => {
+    let invoked = "";
+    const url = await startAdapter(async (req) => {
+      invoked = req.capability.name;
+      return { output: { version: "0.1.0", buildHash: null } };
+    });
+    const r = await runCli(["gateway", "version", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(invoked).toBe("system.version");
+    expect(r.stdout).toBe('{"version":"0.1.0","buildHash":null}\n');
+  });
+
+  it("`session list` (group form) dispatches to the consumer", async () => {
+    const url = await startAdapter();
+    const r = await runCli(["session", "list", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("[]\n");
+  });
+
+  it("`plugin list --url` (group form, dual-mode) dispatches to the consumer", async () => {
+    const url = await startAdapter(async (_req) => ({ output: [{ id: "p-1", version: "1.0.0", enabled: true }] }));
+    const r = await runCli(["plugin", "list", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe('[{"id":"p-1","version":"1.0.0","enabled":true}]\n');
   });
 
   it("`invoke --url` returns the gateway output", async () => {

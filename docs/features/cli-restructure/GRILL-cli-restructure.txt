@@ -1,0 +1,195 @@
+CLI Command Tree + Interactive Shell - Grill Notes
+
+Status: Locked
+Date: 2026-08-08
+Source: direct operator feedback on agentide v0.7.0 CLI surface
+
+What this feature is about
+
+- Restructure the agentide CLI into a consistent command -> subcommand tree
+  (every command is a group with subcommands; no bare one-word commands, no
+  duplicate aliases).
+- Bare `agentide` (no arguments) opens an interactive shell with prompt
+  `agentide>` instead of dumping the help text.
+- One-shot usage stays: `agentide <command> <subcommand>` works exactly as
+  before, with the new tree names.
+- The shell is stateful per directory: it remembers context from the
+  `./.agentide/data` the operator is in, and switches context on `cd`.
+- Auto-completion in the interactive shell.
+- Clear local-vs-remote split: commands are either offline (disk/data-dir)
+  or live (gateway over websocket); `--data-dir` and `--url`/`--token` never
+  mix on the same command.
+
+What this feature does NOT do
+
+- Does not change gateway/capability behavior — only the CLI surface.
+- Does not remove one-shot invocation.
+
+Questions and answers locked so far
+
+1. "i also want agentide to have an interactive state, if user type just
+agentide they should go into interactive mode or they can use subcommands
+for one shot"
+Answer:
+- Bare `agentide` (no arguments) opens an interactive shell with prompt
+  `agentide>`.
+- `agentide <command> <subcommand>` remains the one-shot path.
+- Shell-only extras: `exit` / `quit` / `help`.
+
+Why:
+- Operator feedback: the current bare-invocation help dump is not usable
+  for exploration.
+- "hold that thought lets use feature pipeline to plan this" — feature
+  scoped via the feature-pipeline skill.
+
+2. "Should the shell remember state beyond the gateway connection — e.g. a
+chosen tenant, or a chosen data-dir — so tenant list works without
+re-typing --data-dir every time"
+Answer:
+- The shell should auto-complete, remember everything depending on
+  directory. "since we already works with .agentide/data"
+- Context resolves from the directory the shell is in: data-dir defaults to
+  ./.agentide/data relative to cwd (existing convention), so the shell
+  resolves tenant/gateway/token context per directory instead of
+  re-resolving per command.
+- `cd` inside the shell switches the context like a real shell.
+
+Why:
+- .agentide/data is already the per-directory state convention; the shell
+  makes it ambient rather than per-flag.
+- User: "the shell should auto complete, remember everything depending on
+  directory. since we already works with .agentide/data"
+
+Locked details (2026-08-08 follow-up, user lock):
+- Auto-complete scope: Tab completes (1) the command + subcommand tree,
+  and (2) tenant/capability names from the data-dir state.
+- Tab does NOT complete live capability names (no gateway round-trip on
+  Tab) and does NOT complete filesystem paths.
+- The shell saves its command history per directory (shell-history next to
+  ./.agentide/data), so `up`/`history` are stateful per directory like the
+  rest of the context. User: "save previous commands in same dir"
+
+Locked details (2026-08-08 follow-up 2, user lock):
+- Arrow up/down recall previous commands from the per-directory history,
+  across shell sessions (loaded at shell start / after cd).
+- `clear` clears the terminal screen (shell builtin).
+- The shell tolerates the binary prefix: `agentide gateway status` works
+  inside the `agentide>` shell (typed from muscle memory); bare `agentide`
+  inside the shell prints "(you are already in the agentide shell)".
+  User: "i should be able to see previous commands with arrow up and down,
+  also add a clear command"
+
+3. "Do the old flat commands (start, status, health, plugins, sessions,
+capabilities) die immediately, or keep working with a warning?"
+Answer:
+- Clarified: "one shot works meaning 'agentide <subcommand>' should work,
+  but 'agentide' should go into shell as 'agentide>'"
+- Old short names keep working for one release, printing a note telling the
+  operator the new tree name (e.g. `note: use 'agentide gateway status'`).
+- They are removed in the release after. ("sure it should still be same")
+
+Why:
+- Scripts and muscle memory survive the transition; removal is scheduled
+  for the next release so the CLI surface converges to one shape.
+- User: "sure it should still be same"
+
+4. "Where should watch live in the tree?"
+Answer:
+- `watch` stays top-level next to `invoke` as a live escape hatch.
+- User: "keep watch top-level next to invoke as a live escape hatch."
+
+Why:
+- Both are generic live gateways to arbitrary gateway activity; grouping
+  them top-level keeps the gateway group strictly for
+  lifecycle/status/health.
+
+5. "What should `agentide <group>` with no subcommand do?"
+Answer:
+- Every group with no subcommand prints just that group's subcommand list
+  (like `git branch` with no args shows usage) — the tree teaches itself.
+- User: "agreed every group with no subcommand prints just that group's
+  subcommand list (like git branch with no args shows usage) — so the tree
+  teaches itself: agentide gateway shows start|stop|status|health|metrics|
+  version, agentide session shows create|resume|destroy|touch|list."
+
+Why:
+- Self-documenting tree; no need to memorize or re-read the full help dump.
+
+6. "Here's the command tree it should become — is that it?"
+Answer:
+- Every command becomes a group with subcommands:
+  agentide init                     (one-time setup, stays top-level)
+  agentide gateway  start|stop|status|health|metrics|version
+  agentide tenant   create|list|suspend|delete
+  agentide client   create|list|grant|revoke|rotate|redeem
+  agentide capability list|describe
+  agentide plugin   list|install|uninstall|enable|disable|reload
+  agentide session  create|resume|destroy|touch|list
+  agentide token    issue|revoke
+  agentide invoke   <capability> [--args ...]   (escape hatch, top-level)
+  agentide watch    <alias> [--topic ...]        (escape hatch, top-level)
+- Bare aliases `sessions`/`capabilities`/`plugins`/`health` die (with the
+  Q3 one-release note). `start`/`stop`/`status`/`health` move under gateway.
+- User: "thats exactly it, yes next chunk please"
+Why:
+- Operator feedback: "the cli is not structured to be clear everything is
+  layed out on the terminal, no sub commands that targets each command and
+  its subcommand"
+- Groups map 1:1 to capability families (gateway.*, tenant.*, client.*,
+  plugin.*, session.*, auth.token.*).
+
+7. "How should the local-vs-remote split work?"
+Answer:
+- Offline (disk) commands — data-dir only, no --url: init, tenant, client,
+  token.
+- Live (gateway) commands — always remote; if no gateway is up the error
+  reads "gateway not running" (from the pid file), never a raw ECONNREFUSED:
+  gateway status|health|metrics|version, invoke, session,
+  plugin install|uninstall|enable|disable|reload, capability describe.
+- Dual-mode exceptions: capability list and plugin list read disk by
+  default; --url switches them to the live gateway.
+- --data-dir and --url/--token never mix: offline commands refuse --url,
+  live commands refuse --data-dir. --json is global.
+- Zero-flag remote works after init + start via config.toml
+  (token + gateway_url).
+- User: "thats exactly it"
+Why:
+- Predictability: the group name tells you which world you're in; no
+  silent network hits, no silent disk reads.
+
+8. "What should bare agentide do when there's no human at the keyboard
+(a script runs it with no args)?"
+Answer:
+- If stdin is a real terminal (TTY) -> open the interactive shell.
+- If not (script, CI, pipe, redirect) -> print the help text and exit 0,
+  same as today.
+- User: "sounds right"
+Why:
+- A shell waiting for input in a script would hang forever; the help dump
+  keeps scripts predictable.
+
+No remaining open questions
+
+All questions above are locked with the operator. The tree, the
+local-vs-remote rule, the interactive shell semantics, auto-complete scope,
+per-directory history, backward compatibility, and the non-TTY edge case
+are final. Handing off to feature-pipeline Phase 0.5 (pre-impl simulation).
+
+Phase 0.5: simulate-pre.sh shipped 2026-08-08
+
+- Runs: interactive (`agentide>` shell from a scratch dir) or `--demo`
+  (scripted walkthrough). Non-TTY bare -> help + exit 0, one-shot works.
+- Sim surface findings (built-in): `--url`/`--data-dir` refusal is
+  per-command — flags never leak into the next shell command; old-name
+  notes map to the exact new tree name; group-with-no-subcommand prints
+  that group's list; per-directory context + history verified by cd'ing
+  between two scratch dirs (each has its own tenant set + shell-history).
+- Watch topic mapping in sim: `watch status|health` -> gateway.*,
+  `watch <something.with.dots>` verbatim, else `<alias>.*`.
+- Gate: user runs the sim and signs off before PRD-TRD.
+
+Phase 0.5 gate: PASSED 2026-08-08 (user ran both sims, gave feedback:
+arrow-up/down history, `clear` builtin, `agentide` prefix tolerance,
+Tab-insert autocomplete incl. state names, missing-arg usage guards —
+all locked + verified in both sim surfaces). Proceeding to Phase 1
+(PRD-TRD), which was written 2026-08-08.

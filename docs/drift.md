@@ -1,7 +1,16 @@
 # Drift Log
-**Last updated:** 2026-08-08  **Open:** 35  **Resolved:** 66  **Critical/High:** 0
+**Last updated:** 2026-08-08  **Open:** 36  **Resolved:** 67  **Critical/High:** 0
 
 ## Open
+
+- **D-118** (Low, 2026-08-08, reporter: cli-restructure Phase 1 — surfaced by S6 status restructure) — `init` is NOT tenant-idempotent: each run re-registers the default tenant in the tenant store, so after two `init --default-tenant acme` runs on the same data-dir, `tenant list` shows acme twice. The pre-existing integration test "`init` is idempotent" could not see this because it asserted via `status` (broken under D-117, always 0).
+  - Doc claim: integration.test.ts `init is idempotent — running it twice ... does not error` — the test only ever asserted "does not error", never the tenant count; the count assertion was added during the D-117 pin (wrong proxy).
+  - Code reality: `cli.ts` `runInit` → `createPlatform({ defaultTenant })` registers the default tenant on every call. The store persists both entries (`tenants.json`); `tenant list` shows both. Whether `init` should be idempotent at the store level is a product decision — the doc claim (does not error) holds; the tenant-store duplicate is a side effect.
+  - Why matters: operators re-running `init` on an existing data-dir get duplicate tenant rows; `tenant list` output lies about the intent (one tenant, two rows). Low severity — no auth impact (token issue uses tenantId, not row identity).
+  - Owner: agentide (CLI runInit).
+  - To fix: decide the contract (idempotent init = skip re-register when the tenant already exists) and fix `runInit`; the integration test then re-pins `acme` count back to 1.
+  - Resolution path: follow-up pack after cli-restructure; not in Phase 1 scope.
+  - Related: D-117 (this finding is what D-117's broken status output was hiding).
 
 - **D-100** (Low, 2026-08-07, reporter: adapter-mcp migration Phase 3) — adapter-core's `capability.lookup` descriptor extractor read a FLAT shape (`output.inputSchema`); the kernel's `capability.describe` returns `DescribeResult { capability: CapabilityRecord | null, selectedVersion }` (capability-registry `store.ts:112-129` nests under `capability`). The lookup shipped UNWIRED (A6 Q4 — "WS door doesn't gain discovery in v1"); the MCP migration is its first consumer. Without the fix, every MCP tool card would render the generic schema (every descriptor.inputSchema null).
   - Doc claim: A6 resolution — "lean utility... no tier logic in core"; lookup ships unwired (`docs/wayfinder/adapter-core/tickets/A6-capability-lookup.md`).
@@ -183,6 +192,8 @@
 ---
 
 ## Resolved
+
+- **D-117** (Resolved 2026-08-08, cli-restructure Phase 1 — the broken local status path died with the old name) — `status` reported `tenantCount: 0` after a fresh `createPlatform` even when `tenants.json` had entries (`tenant list` read them back correctly). Root cause was never isolated; the only operator-visible surface was the in-process `runStatus` path, and PRD-TRD S6 makes `status` live-only (`gateway status` reads the running gateway's store). `runStatus` + `defaultPidFile` were deleted from cli.ts in this phase — the buggy path no longer exists. What it was hiding is now visible: `init` double-registers the default tenant (D-118).
 
 - **D-94** (Low, 2026-08-07, reporter: adapter-core wayfinder charting) — CONTEXT.md glossary claimed "All v1 client doors ride the websocket-adapter wire (W1–W6) … 'the only door'" — but `adapter-mcp` calls `gateway.handleInvocation` directly in-process, not via the WS wire.
   - Doc claim: `docs/CONTEXT.md` line 30 (Adapter row, pre-fix).

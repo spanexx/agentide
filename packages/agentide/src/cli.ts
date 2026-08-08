@@ -11,6 +11,9 @@ import { fileURLToPath } from "node:url";
 import { hasUrlSource, saveConfig } from "./config.js";
 import { runConsumer } from "./consumer.js";
 import { runStop, runDetachedStart } from "./start.js";
+// CID:cli-tree-010 - dispatcher imports. The tree lives in cli-tree.ts;
+//   the dispatcher (this file) imports the data and dispatches by table.
+import { GROUPS, OLD_NAME_NEW, groupHelp } from "./cli-tree.js";
 
 import { AuditWriter } from "@spanexx/gateway-core";
 import type { CliOptions, CliResult } from "./cli-types.js";
@@ -231,8 +234,11 @@ export async function runCli(argv: readonly string[], opts: CliOptions): Promise
 
 async function runCliInner(argv: readonly string[], opts: CliOptions): Promise<CliResult> {
   installGlobalErrorHandlers();
-  const { positional, flags } = parseArgs(argv);
-  const cmd = positional[0];
+  // CID:cli-tree-013 - `cmd`/`positional` are mutable: the OLD_NAME_NEW
+  //   rewrite below re-targets legacy top-level names to their mapped
+  //   group path.
+  let { positional, flags } = parseArgs(argv);
+  let cmd = positional[0];
 
   // --version / -v: short-circuit before command routing so it works even
   // without a data-dir / gateway. Note: parseArgs turns "--version" into
@@ -248,37 +254,85 @@ async function runCliInner(argv: readonly string[], opts: CliOptions): Promise<C
   const dataDir = getFlag(flags, "data-dir", process.env["AGENTIDE_DATA_DIR"] ?? "./.agentide/data");
 
   try {
+    // CID:cli-tree-014 - old-name deprecation routing (Slice 3, PRD-TRD S4).
+    //   Legacy top-level names rewrite to their mapped group path so the
+    //   tree dispatcher below is the single router. The stderr deprecation
+    //   note lands in Phase 4; Slice 3 only moves the dispatch. Old
+    //   `status` becomes live-only `gateway status` (PRD-TRD S6); old
+    //   `sessions`/`capabilities`/`plugins` land on their group `list`
+    //   (dual-mode keeps the hasUrlSource switch for capability/plugin).
+    {
+      const mapped = OLD_NAME_NEW[cmd ?? ""];
+      if (mapped !== undefined) {
+        cmd = mapped.group;
+        positional = [mapped.group, mapped.sub, ...positional.slice(1)];
+      }
+    }
+
+    // CID:cli-tree-012 - tree-driven dispatch (Phase 1, PRD-TRD S3).
+    //   Every group in GROUPS routes here: bare/--help → groupHelp exit 0;
+    //   unknown sub → error + group list exit 2; known sub → the group's
+    //   handler. Sub commands with no v1 handler (session create|resume|
+    //   destroy|touch, plugin install|uninstall|enable|disable|reload)
+    //   fail with a clear "not implemented in v1" error (exit 1) — the
+    //   tree declares the surface (S3), the handler ships later.
+    const group = GROUPS[cmd ?? ""];
+    if (group !== undefined) {
+      const sub = positional[1];
+      // bare group (no sub) or `agentide <group> --help` → group help.
+      // `agentide <group> <sub> --help` falls through to the handler,
+      // which owns its per-subcommand flag help (D-84).
+      if (sub === undefined) {
+        return result(groupHelp(cmd!));
+      }
+      if (group.subs[sub] === undefined) {
+        return result("", `error: unrecognized subcommand: ${sub}\n\n${groupHelp(cmd!)}`, 2);
+      }
+      switch (cmd) {
+        case "gateway":
+          // start|stop stay in the offline world (pid-file / spawn ops);
+          // status|health|metrics|version are live-only per PRD-TRD S6
+          // and route to the consumer path.
+          if (sub === "start") return await runDetachedStart(dataDir, flags, opts);
+          if (sub === "stop") return await runStop(dataDir, flags, opts);
+          return await runConsumer(argv, consumerOptions(argv));
+        case "tenant":
+          return await runTenant(positional.slice(1), dataDir, flags, opts);
+        case "client":
+          return await runClient(positional.slice(1), dataDir, flags, opts);
+        case "token":
+          return await runToken(positional.slice(1), dataDir, flags, opts);
+        case "capability":
+          // `capability list` is dual-mode (PRD-TRD S5): remote when
+          // --url/env/config supplies a URL, disk otherwise. describe
+          // stays on the in-process registry in v1 (NOTE[agent]: PRD-TRD
+          // S5 marks it live; wiring it to the live gateway is a follow-up).
+          if (sub === "list" && (await hasUrlSource(argv, process.env, { home: opts.home }))) {
+            return await runConsumer(argv, consumerOptions(argv));
+          }
+          return await runCapability(positional.slice(1), dataDir, flags, opts);
+        case "plugin":
+          if (sub === "list" && (await hasUrlSource(argv, process.env, { home: opts.home }))) {
+            return await runConsumer(argv, consumerOptions(argv));
+          }
+          if (sub === "list") return await runPlugin(positional.slice(1), dataDir, opts);
+          // PRD-TRD S3 declares the full surface; v1 ships only plugin list.
+          return result("", `error: plugin ${sub} is not implemented in v1 (surface: plugin list)\n`, 1);
+        case "session":
+          if (sub === "list") return await runConsumer(argv, consumerOptions(argv));
+          // PRD-TRD S3 declares the full surface; v1 ships only session
+          // list (the consumer "sessions" alias).
+          return result("", `error: session ${sub} is not implemented in v1 (surface: session list)\n`, 1);
+        default:
+          // unreachable: every GROUPS key has a case above
+          return result("", `unknown command: ${cmd}\n\n${buildHelp()}`, 2);
+      }
+    }
+
     switch (cmd) {
       case "init":
         return await runInit(dataDir, flags, opts);
-      case "start":
-        return await runDetachedStart(dataDir, flags, opts);
-      case "stop":
-        return await runStop(dataDir, flags, opts);
-      case "status":
-        // in-process when no remote config; remote (gateway.status) otherwise
-        return (await hasUrlSource(argv, process.env, { home: opts.home }))
-          ? await runConsumer(argv, consumerOptions(argv))
-          : await runStatus(dataDir, opts, getFlag(flags, "pid-file", await defaultPidFile()));
-      case "tenant":
-        return await runTenant(positional.slice(1), dataDir, flags, opts);
-      case "token":
-        return await runToken(positional.slice(1), dataDir, flags, opts);
-      case "client":
-        return await runClient(positional.slice(1), dataDir, flags, opts);
-      case "capability":
-        // `capability list` is remote when --url/env/config supplies a URL
-        if (positional[1] === "list" && (await hasUrlSource(argv, process.env, { home: opts.home }))) {
-          return await runConsumer(argv, consumerOptions(argv));
-        }
-        return await runCapability(positional.slice(1), dataDir, flags, opts);
-      case "plugin":
-        return await runPlugin(positional.slice(1), dataDir, opts);
-      // remote consumer commands (GRILL Q2)
-      case "sessions":
-      case "capabilities":
-      case "plugins":
-      case "health":
+      // remote consumer commands (GRILL Q2) that live outside the tree
       case "invoke":
       case "watch":
         return await runConsumer(argv, consumerOptions(argv));
@@ -356,42 +410,6 @@ async function runInit(dataDir: string, flags: Record<string, string | boolean |
   return result("");
 }
 
-
-// CID:cli-status-001 - pidFile for status. The gateway's default pid file is
-// /tmp/agentide.pid; a custom --pid-file may have been used at start. When a
-// pid file is present and carries dataDir (D-81), status uses that instead of
-// the cwd-relative default.
-async function defaultPidFile(): Promise<string> {
-  const { DEFAULT_PID_FILE } = await import("./lifecycle.js");
-  return DEFAULT_PID_FILE;
-}
-
-async function runStatus(dataDir: string, opts: CliOptions, pidFile?: string): Promise<CliResult> {
-  let effectiveDataDir = dataDir;
-  if (pidFile !== undefined) {
-    const { readPidFile } = await import("./lifecycle.js");
-    const info = await readPidFile(pidFile);
-    if (info?.dataDir !== undefined) {
-      // D-81: the gateway was started with a non-default data-dir; recover it
-      // from the pid file so `status` works from any cwd.
-      effectiveDataDir = info.dataDir;
-    }
-  }
-  const platform = await createPlatform({
-    fs: opts.fs,
-    dataDir: effectiveDataDir,
-    adapterMcp: false,
-    adapterWs: false,
-  });
-  const status = await platform.gateway.status();
-  await platform.stop();
-  return result(
-    `tenants: ${status.tenantCount}\n` +
-      `plugins: ${status.pluginCount}\n` +
-      `audit log: ${status.auditLogBytes} bytes\n` +
-      `uptime: ${status.uptimeMs}ms\n`,
-  );
-}
 
 async function runTenant(
   subArgs: readonly string[],

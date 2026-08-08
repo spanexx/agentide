@@ -103,7 +103,32 @@ const ALIASES: Record<string, AliasDef> = {
     defaultTopic: "gateway.*",
     rows: () => [],
   },
+  metrics: {
+    capability: "gateway.metrics",
+    kind: "kv",
+    defaultTopic: "gateway.*",
+    rows: () => [],
+  },
+  version: {
+    capability: "system.version",
+    kind: "kv",
+    defaultTopic: "gateway.*",
+    rows: () => [],
+  },
 };
+
+// CID:consumer-007 - group-form alias resolution (cli-restructure Phase 1
+//   review fix). The tree dispatches `agentide gateway status` etc. straight
+//   to the consumer with the group-form argv; map it onto the legacy one-word
+//   alias table. Old one-word names pass through unchanged (the tree's
+//   OLD_NAME_NEW rewrite only touches cli.ts's copy of argv).
+function resolveAlias(cmd: string, positional: readonly string[]): string | undefined {
+  if (cmd === "gateway") return positional[1];
+  if (cmd === "plugin" && positional[1] === "list") return "plugins";
+  if (cmd === "session" && positional[1] === "list") return "sessions";
+  if (cmd === "capability" && positional[1] === "list") return "capabilities";
+  return cmd;
+}
 
 interface Parsed {
   readonly positional: readonly string[];
@@ -210,11 +235,10 @@ export async function runConsumer(argv: readonly string[], opts: ConsumerOptions
       const aliasName = cmd === "watch" ? positional[1] : cmd;
       res = await runWatch(client, aliasName, flags, render, opts);
     } else {
-      // `capability list` (remote dispatch from cli.ts) → capabilities alias
-      const aliasName = cmd === "capability" && positional[1] === "list" ? "capabilities" : cmd;
-      const alias = ALIASES[aliasName];
+      const aliasName = resolveAlias(cmd, positional);
+      const alias = aliasName === undefined ? undefined : ALIASES[aliasName];
       res = alias !== undefined
-        ? await runAlias(client, alias, aliasName, render)
+        ? await runAlias(client, alias, aliasName ?? cmd, render)
         : resultStderr(`error: unrecognized remote command: ${cmd}`, ExitCode.Preflight);
     }
     // S6: exactly ONE perms warning per run, on stderr, before any output
@@ -305,7 +329,7 @@ async function runWatch(
 ): Promise<CliResult> {
   const alias = aliasName === undefined ? undefined : ALIASES[aliasName];
   if (alias === undefined) {
-    return resultStderr(`error: unrecognized watch alias: ${String(aliasName)} (use sessions|capabilities|plugins|status|health)`, ExitCode.Preflight);
+    return resultStderr(`error: unrecognized watch alias: ${String(aliasName)} (use sessions|capabilities|plugins|status|health|metrics|version)`, ExitCode.Preflight);
   }
 
   // CID:consumer-006 - Q3: auto-mint a session, run the watch until exit,

@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cli-restructure simulation — pre-impl (design rehearsal)</title>
+
+<style>
+  :root {
+    --bg: #0f1419;
+    --bg-elevated: #1a1f2e;
+    --card: #232938;
+    --border: #2d3344;
+    --fg: #e6e6e6;
+    --muted: #8b95a7;
+    --accent: #6ee7b7;
+    --accent-dim: #34d399;
+    --warn: #fbbf24;
+    --error: #f87171;
+    --info: #60a5fa;
+    --term-bg: #000;
+    --term-fg: #e6e6e6;
+    --term-prompt: #6ee7b7;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+  }
+  body { display: flex; flex-direction: column; }
+  header {
+    padding: 10px 16px; background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 12px; align-items: center;
+  }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+  header .badge {
+    background: var(--card); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 4px; color: var(--muted); font-size: 10px;
+  }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .panel {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px; display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel h2 {
+    margin: 0 0 8px 0; font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+
+  /* context strip: current dir + gateway pill */
+  #ctx-strip { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .ctx-chip {
+    background: var(--card); border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 10px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--fg);
+  }
+  .ctx-chip .lbl { color: var(--muted); margin-right: 6px; text-transform: uppercase; font-size: 9px; }
+  #gw-pill { font-family: ui-monospace, monospace; font-size: 11px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); }
+  #gw-pill.running { color: var(--accent); border-color: var(--accent); background: rgba(110,231,183,0.08); }
+  #gw-pill.stopped { color: var(--warn); border-color: var(--warn); background: rgba(251,191,36,0.08); }
+
+  .kv { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+  .kv .row { display: flex; justify-content: space-between; }
+  .kv .row .k { color: var(--muted); }
+  .kv .row .v { font-family: ui-monospace, monospace; color: var(--fg); }
+
+  .list { display: flex; flex-direction: column; gap: 2px; font-family: ui-monospace, monospace; font-size: 11px; max-height: 90px; overflow-y: auto; }
+  .list .item { padding: 2px 6px; border-radius: 3px; background: var(--card); }
+  .list .item.suspended { color: var(--warn); }
+  .empty { color: var(--muted); font-style: italic; padding: 4px 6px; font-size: 11px; }
+
+  #act-log {
+    flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 6px; font-family: ui-monospace, monospace; font-size: 10px;
+    min-height: 0; max-height: 160px;
+  }
+  .evt { padding: 1px 4px; margin-bottom: 1px; border-radius: 2px; opacity: 0; transform: translateX(15px); transition: opacity 0.25s, transform 0.25s; }
+  .evt.shown { opacity: 1; transform: translateX(0); }
+  .evt.c { color: var(--accent); } .evt.d { color: var(--warn); } .evt.r { color: var(--info); }
+  .evt.e { color: var(--error); background: rgba(248,113,113,0.08); }
+
+  #term-box {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--term-bg); border-radius: 3px;
+    margin: 6px; padding: 8px; min-height: 0; overflow: hidden;
+  }
+  #term-log {
+    flex: 1; overflow-y: auto; color: var(--term-fg);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; line-height: 1.4; white-space: pre-wrap;
+    word-break: break-all;
+  }
+  #term-log .ok { color: var(--accent); }
+  #term-log .warn { color: var(--warn); }
+  #term-log .err { color: var(--error); }
+  #term-log .info { color: #60a5fa; }
+  #term-log .muted { color: var(--muted); }
+  #term-input-row {
+    display: flex; align-items: center; padding-top: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  }
+  #term-prompt { color: var(--term-prompt); margin-right: 4px; white-space: pre; }
+  #term-input {
+    flex: 1; background: transparent; border: none; color: var(--term-fg);
+    font-family: inherit; font-size: inherit; outline: none;
+    caret-color: var(--accent);
+  }
+
+  .help { padding: 6px 12px; background: var(--bg-elevated); border-top: 1px solid var(--border); display: flex; gap: 10px; font-size: 10px; color: var(--muted); align-items: center; flex-wrap: wrap; }
+  .help code { background: var(--card); padding: 1px 5px; border-radius: 2px; color: var(--accent); }
+  .help button { margin-left: auto; padding: 5px 12px; background: var(--accent); color: var(--bg); border: none; border-radius: 3px; font-weight: 600; cursor: pointer; font-size: 10px; }
+  .help button:hover { opacity: 0.85; }
+  .help button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>agentide CLI — command tree + interactive shell</h1>
+  <span class="badge">PRE-IMPL · design rehearsal · GRILL locked 2026-08-08</span>
+</header>
+
+<main>
+  <div class="panel">
+    <div class="section">
+      <h2>Context (per directory)</h2>
+      <div id="ctx-strip">
+        <div class="ctx-chip"><span class="lbl">dir</span><span id="ctx-dir">/work/proj-a</span></div>
+        <div class="ctx-chip"><span class="lbl">data</span><span id="ctx-data">./.agentide/data</span></div>
+        <div id="gw-pill" class="stopped">gateway: stopped</div>
+      </div>
+      <div class="kv">
+        <div class="row"><span class="k">gateway url</span><span class="v" id="ctx-url">—</span></div>
+        <div class="row"><span class="k">token saved</span><span class="v" id="ctx-token">—</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Tenants <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;" id="tenants-count"></span></h2>
+      <div class="list" id="tenants-list"><div class="empty">no data dir yet — run <code>init</code></div></div>
+    </div>
+
+    <div class="section">
+      <h2>Sessions</h2>
+      <div class="list" id="sessions-list"><div class="empty">none</div></div>
+    </div>
+
+    <div class="section" style="flex:1; min-height:0;">
+      <h2>Action log</h2>
+      <div id="act-log"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="padding:0;">
+    <h2 style="padding:12px 12px 0 12px; margin:0;">Terminal — <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">bare `agentide` opens this shell; Tab completes</span></h2>
+    <div id="term-box">
+      <div id="term-log"></div>
+      <div id="term-input-row">
+        <span id="term-prompt">agentide&nbsp;</span>
+        <input id="term-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="help">
+  <span><code>init</code> · <code>gateway start</code> · <code>tenant create</code> · <code>session create</code> · <code>invoke &lt;cap&gt;</code> · <code>watch &lt;alias&gt;</code> · <code>cd proj-b</code> · <code>history</code> · <code>help</code></span>
+  <button id="demo-btn">▶ Run full demo</button>
+</div>
+
+<script>
+'use strict';
+
+// ─── DOM refs ────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const ctxDir = $('ctx-dir'), ctxData = $('ctx-data'), gwPill = $('gw-pill');
+const ctxUrl = $('ctx-url'), ctxToken = $('ctx-token');
+const tenantsList = $('tenants-list'), sessionsList = $('sessions-list');
+const actLog = $('act-log'), demoBtn = $('demo-btn');
+const termLog = $('term-log'), termInput = $('term-input'), termPrompt = $('term-prompt');
+
+// ─── Engine state: per-directory worlds ─────────────────────────────
+// Each directory is a full world (GRILL Q2): tenants, sessions, caps,
+// plugins, history, gateway + config live under ./.agentide/data.
+const ROOT = '/work';
+const engine = {
+  currentDir: ROOT + '/proj-a',
+  lastEvent: null,
+  dirs: {
+    [ROOT + '/proj-a']: {
+      tenants: [{ id: 'default', suspended: false }],
+      caps: ['product.list', 'order.submit', 'customer.read'],
+      plugins: [], sessions: [], history: [],
+      gateway: { running: false, url: '', token: '' },
+    },
+    [ROOT + '/proj-b']: {
+      tenants: [{ id: 'default', suspended: false }],
+      caps: [], plugins: [], sessions: [], history: [],
+      gateway: { running: false, url: '', token: '' },
+    },
+  },
+
+  state() { return this.dirs[this.currentDir]; },
+  getState() {
+    const s = this.state();
+    return {
+      dir: this.currentDir,
+      gatewayRunning: s.gateway.running,
+      gatewayUrl: s.gateway.url,
+      tenants: s.tenants.map(t => t.suspended ? t.id + ' (suspended)' : t.id),
+      sessions: s.sessions.slice(),
+      history: s.history.slice(),
+    };
+  },
+  getLastEvent() { return this.lastEvent; },
+};
+window.engine = engine; // expose for tests (classic scripts don't attach consts to window)
+
+// ─── Terminal helpers ───────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function termWrite(text, color) {
+  const span = document.createElement('div');
+  span.innerHTML = color ? `<span class="${color}">${escapeHtml(text)}</span>` : escapeHtml(text);
+  termLog.appendChild(span);
+  termLog.scrollTop = termLog.scrollHeight;
+}
+function termWriteln(text, color) { termWrite((text == null ? '' : text) + '\n', color); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ─── Left-panel rendering ───────────────────────────────────────────
+function render() {
+  const s = engine.state();
+  ctxDir.textContent = engine.currentDir;
+  ctxData.textContent = './.agentide/data';
+  gwPill.className = s.gateway.running ? 'running' : 'stopped';
+  gwPill.textContent = 'gateway: ' + (s.gateway.running ? 'running' : 'stopped');
+  ctxUrl.textContent = s.gateway.url || '—';
+  ctxToken.textContent = s.gateway.token || '—';
+  $('tenants-count').textContent = '(' + s.tenants.length + ')';
+  if (s.tenants.length === 0) tenantsList.innerHTML = '<div class="empty">run `init` to seed</div>';
+  else tenantsList.innerHTML = s.tenants.map(t =>
+    `<div class="item${t.suspended ? ' suspended' : ''}">${escapeHtml(t.id)}${t.suspended ? ' (suspended)' : ''}</div>`).join('');
+  if (s.sessions.length === 0) sessionsList.innerHTML = '<div class="empty">none</div>';
+  else sessionsList.innerHTML = s.sessions.map(x => `<div class="item">${escapeHtml(x)}</div>`).join('');
+  termPrompt.textContent = 'agentide (' + engine.currentDir + ')> ';
+}
+
+function pushAction(cmd, rc) {
+  const t = new Date().toTimeString().slice(0, 8);
+  const el = document.createElement('div');
+  el.className = 'evt ' + (rc === 0 ? 'c' : 'e');
+  el.innerHTML = `<span style="color:var(--muted);margin-right:4px;">${t}</span><span style="font-weight:600;">$ ${escapeHtml(cmd)}</span>${rc !== 0 ? ` <span style="color:var(--error)">(exit ${rc})</span>` : ''}`;
+  actLog.prepend(el);
+  requestAnimationFrame(() => el.classList.add('shown'));
+}
+
+// ─── Command dispatch (mirrors simulate-pre.sh) ─────────────────────
+const PLATFORM_CAPS = ['capability.list','capability.describe','gateway.status','gateway.health','gateway.metrics','gateway.version','session.create','session.list','session.resume','session.destroy','session.touch','plugin.list','plugin.install','plugin.uninstall','plugin.enable','plugin.disable','plugin.reload','tenant.create','tenant.list','tenant.suspend','tenant.delete','client.create','client.list','client.grant','client.revoke','client.rotate','client.redeem','auth.token.issue','auth.token.revoke'];
+const SUBS = {
+  gateway: 'start stop status health metrics version',
+  tenant: 'create list suspend delete',
+  client: 'create list grant revoke rotate redeem',
+  capability: 'list describe',
+  plugin: 'list install uninstall enable disable reload',
+  session: 'create resume destroy touch list',
+  token: 'issue revoke',
+};
+const OLD_NEW = { start:'gateway start', stop:'gateway stop', status:'gateway status', health:'gateway health', sessions:'session list', capabilities:'capability list', plugins:'plugin list' };
+const DEP_MSG = (oldName, newName) => `note: 'agentide ${oldName}' is deprecated — use 'agentide ${newName}' (removed next release)`;
+const GW_DOWN = "error: gateway not running (start it with: agentide gateway start)";
+
+let out = [];
+const say = (text, color) => out.push({ text, color });
+
+function requireLive(label, flags) {
+  if (flags.dataDir) { say(`error: --data-dir is an offline-mode flag; ${label} is live`, 'err'); return false; }
+  if (!engine.state().gateway.running) { say(GW_DOWN, 'err'); return false; }
+  return true;
+}
+function refuseUrl(label, flags) {
+  if (flags.url) { say(`error: --url is a live-mode flag; ${label} is offline (data-dir only)`, 'err'); return false; }
+  return true;
+}
+
+// split flags out of args; returns { pos: [], url, json, dataDir }
+function splitArgs(args) {
+  const flags = { url: '', json: false, dataDir: '' };
+  const pos = [];
+  for (const a of args) {
+    if (a === '--url') { flags.url = 'ws://127.0.0.1:7300/ws'; }
+    else if (a.startsWith('--url=')) { flags.url = a.slice(6); }
+    else if (a === '--json') { flags.json = true; }
+    else if (a === '--data-dir' || a.startsWith('--data-dir=')) { flags.dataDir = a; }
+    else pos.push(a);
+  }
+  return { pos, flags };
+}
+
+function runInit(flags) {
+  if (!refuseUrl('init', flags)) return 1;
+  const s = engine.state();
+  s.gateway.token = 'sim-token-' + Date.now();
+  if (s.tenants.length === 0) s.tenants.push({ id: 'default', suspended: false });
+  if (s.caps.length === 0) s.caps.push('product.list', 'order.submit', 'customer.read');
+  say('# Bootstrap token saved to ~/.config/platform/config.toml');
+  say(`initialized ${engine.currentDir}/.agentide/data (tenant: default)`);
+  return 0;
+}
+
+function runGateway(sub, flags) {
+  if (!sub) { say(`usage: agentide gateway <subcommand>`); say(`subcommands: ${SUBS.gateway}`); return 0; }
+  const s = engine.state();
+  switch (sub) {
+    case 'start':
+      s.gateway.running = true; s.gateway.url = 'ws://127.0.0.1:7300/ws';
+      say('gateway started (all doors, ws://127.0.0.1:7300/ws)'); return 0;
+    case 'stop':
+      if (!s.gateway.running) { say('error: gateway not running', 'err'); return 1; }
+      s.gateway.running = false; say('gateway stopped'); return 0;
+    case 'status':
+      if (!requireLive('gateway status', flags)) return 1;
+      say('status: running'); say('url:     ' + s.gateway.url); return 0;
+    case 'health': return requireLive('gateway health', flags) ? (say('status: ok'), 0) : 1;
+    case 'metrics':
+      return requireLive('gateway metrics', flags) ? (say('invocations: ' + s.caps.length + ' total'), 0) : 1;
+    case 'version':
+      return requireLive('gateway version', flags) ? (say('agentide 0.7.0 (sim)'), 0) : 1;
+    default:
+      say(`error: unknown subcommand: ${sub} (subcommands: ${SUBS.gateway})`, 'err'); return 2;
+  }
+}
+
+function runTenant(sub, args, flags) {
+  if (!sub) { say(`usage: agentide tenant <subcommand>`); say(`subcommands: ${SUBS.tenant}`); return 0; }
+  if (!refuseUrl('tenant', flags)) return 1;
+  const s = engine.state();
+  switch (sub) {
+    case 'create':
+      if (!args[0]) { say('usage: agentide tenant create <name>', 'err'); return 2; }
+      s.tenants.push({ id: args[0], suspended: false });
+      say(`tenant created: ${args[0]}`); return 0;
+    case 'list':
+      say('tenants:');
+      s.tenants.forEach(t => say(`  ${t.id} (${t.suspended ? 'suspended' : 'active'})`));
+      return 0;
+    case 'suspend':
+      if (!args[0]) { say('usage: agentide tenant suspend <name>', 'err'); return 2; }
+      s.tenants = s.tenants.map(t => t.id === args[0] ? { ...t, suspended: true } : t);
+      say(`tenant suspended: ${args[0]}`); return 0;
+    case 'delete':
+      if (!args[0]) { say('usage: agentide tenant delete <name>', 'err'); return 2; }
+      s.tenants = s.tenants.filter(t => t.id !== args[0]);
+      say(`tenant deleted: ${args[0]}`); return 0;
+    default: say(`error: unknown subcommand: ${sub} (subcommands: ${SUBS.tenant})`, 'err'); return 2;
+  }
+}
+
+function runClient(sub, args, flags) {
+  if (!sub) { say(`usage: agentide client <subcommand>`); say(`subcommands: ${SUBS.client}`); return 0; }
+  if (!refuseUrl('client', flags)) return 1;
+  switch (sub) {
+    case 'create': say(`client created: client_${Date.now()} (secret shown once, offline)`); return 0;
+    case 'list': say('clients:'); say('  (none)'); return 0;
+    case 'grant': case 'revoke': case 'rotate': case 'redeem':
+      if (!args[0]) { say(`usage: agentide client ${sub} <clientId>`, 'err'); return 2; }
+      say(`${sub}: ${args[0]} (simulated)`); return 0;
+    default: say(`error: unknown subcommand: ${sub} (subcommands: ${SUBS.client})`, 'err'); return 2;
+  }
+}
+
+function runCapability(sub, args, flags) {
+  if (!sub) { say(`usage: agentide capability <subcommand>`); say(`subcommands: ${SUBS.capability}`); return 0; }
+  const s = engine.state();
+  switch (sub) {
+    case 'list':
+      if (flags.url) {
+        if (!requireLive('capability list', flags)) return 1;
+        say(`capabilities (live @ ${flags.url}):`);
+      } else say('capabilities (disk):');
+      s.caps.forEach(c => say('  ' + c));
+      ['capability.list','capability.describe','gateway.status','session.list','plugin.list'].forEach(c => say('  ' + c));
+      return 0;
+    case 'describe':
+      if (!args[0]) { say('usage: agentide capability describe <name>', 'err'); return 2; }
+      if (!requireLive('capability describe', flags)) return 1;
+      if (s.caps.includes(args[0]) || PLATFORM_CAPS.includes(args[0])) {
+        say(`capability ${args[0]}: version 1.0.0, tier act (simulated)`); return 0;
+      }
+      say(`error: GATEWAY_CAPABILITY_NOT_FOUND: ${args[0]}`, 'err'); return 1;
+    default: say(`error: unknown subcommand: ${sub} (subcommands: ${SUBS.capability})`, 'err'); return 2;
+  }
+}
+
+function runPlugin(sub, args, flags) {
+  if (!sub) { say(`usage: agentide plugin <subcommand>`); say(`subcommands: ${SUBS.plugin}`); return 0; }
+  const s = engine.state();
+  switch (sub) {
+    case 'list':
+      if (flags.url) {
+        if (!requireLive('plugin list', flags)) return 1;
+        say(`plugins (live @ ${flags.url}):`);
+      } else say('plugins (disk):');
+      (s.plugins.length ? s.plugins : ['(none)']).forEach(p => say('  ' + p));
+      return 0;
+    case 'install': case 'uninstall': case 'enable': case 'disable': case 'reload':
+      if (!requireLive('plugin ' + sub, flags)) return 1;
+      if (sub === 'install') {
+        const src = args[0] || '(source)';
+        s.plugins.push(src); say(`plugin install: ${src} (simulated)`);
+      } else say(`plugin ${sub}: ${args[0] || '(all)'} (simulated)`);
+      return 0;
+    default: say(`error: unknown subcommand: ${sub} (subcommands: ${SUBS.plugin})`, 'err'); return 2;
+  }
+}
+
+function runSession(sub, args, flags) {
+  if (!sub) { say(`usage: agentide session <subcommand>`); say(`subcommands: ${SUBS.session}`); return 0; }
+  if (!requireLive('session ' + sub, flags)) return 1;
+  const s = engine.state();
+  switch (sub) {
+    case 'create':
+      const id = 'session_' + Date.now(); s.sessions.push(id); say(id); return 0;
+    case 'list':
+      say('sessions:'); (s.sessions.length ? s.sessions : ['(none)']).forEach(x => say('  ' + x)); return 0;
+    case 'resume': case 'touch':
+      if (!args[0]) { say(`usage: agentide session ${sub} <sessionId>`, 'err'); return 2; }
+      say(`${sub}: ${args[0]}`); return 0;
+    case 'destroy':
+      if (!args[0]) { say('usage: agentide session destroy <sessionId>', 'err'); return 2; }
+      s.sessions = s.sessions.filter(x => x !== args[0]); say(`destroyed: ${args[0]}`); return 0;
+    default: say(`error: unknown subcommand: ${sub} (subcommands: ${SUBS.session})`, 'err'); return 2;
+  }
+}
+
+function runToken(sub, flags) {
+  if (!sub) { say(`usage: agentide token <subcommand>`); say(`subcommands: ${SUBS.token}`); return 0; }
+  if (!refuseUrl('token', flags)) return 1;
+  const s = engine.state();
+  switch (sub) {
+    case 'issue': s.gateway.token = 'sim-token-' + Date.now(); say('# Token issued (scope: *, 1h) — saved to config.toml'); return 0;
+    case 'revoke': s.gateway.token = ''; say('token revoked'); return 0;
+    default: say(`error: unknown subcommand: ${sub} (subcommands: ${SUBS.token})`, 'err'); return 2;
+  }
+}
+
+function runInvoke(args, flags) {
+  if (!args[0]) { say('usage: agentide invoke <capability> [--args ...]', 'err'); return 2; }
+  if (!requireLive('invoke', flags)) return 1;
+  const s = engine.state();
+  if (s.caps.includes(args[0]) || PLATFORM_CAPS.includes(args[0])) {
+    say(`ok: ${args[0]} v1.0.0 -> { "result": "simulated output" }`); return 0;
+  }
+  say(`error: GATEWAY_CAPABILITY_NOT_FOUND: ${args[0]}`, 'err'); return 1;
+}
+
+function runWatch(args, flags) {
+  if (!args[0]) { say('usage: agentide watch <alias> [--topic ...]', 'err'); return 2; }
+  if (!requireLive('watch', flags)) return 1;
+  let topic = args[0] + '.*';
+  if (args[0] === 'status' || args[0] === 'health') topic = 'gateway.*';
+  else if (args[0].includes('.')) topic = args[0];
+  say(`watching ${topic} (snapshot taken, Ctrl-C to stop) — simulated`); return 0;
+}
+
+function runHelp() {
+  say('agentide — operator CLI (cli-restructure pre-impl sim)');
+  say('');
+  say('every command is a group with subcommands:');
+  say('  init                                   one-time setup (stays top-level)');
+  say('  gateway  start|stop|status|health|metrics|version');
+  say('  tenant   create|list|suspend|delete');
+  say('  client   create|list|grant|revoke|rotate|redeem');
+  say('  capability list|describe');
+  say('  plugin   list|install|uninstall|enable|disable|reload');
+  say('  session  create|resume|destroy|touch|list');
+  say('  token    issue|revoke');
+  say('  invoke   <capability> [--args ...]     escape hatch (top-level)');
+  say('  watch    <alias> [--topic ...]         escape hatch (top-level)');
+  say('');
+  say("bare 'agentide' opens the interactive shell (agentide>)");
+  say("one-shot 'agentide <group> <subcommand>' works the same");
+  say('local-vs-remote: offline = init/tenant/client/token (data-dir only);');
+  say('  live = gateway/invoke/session/plugin-mutators/capability describe');
+  say('  (needs a running gateway); capability list + plugin list are dual-mode');
+  say('old names still work this release with a note: start|stop|status|health|sessions|capabilities|plugins');
+}
+
+function runBuiltin(line) {
+  if (line === 'help') { runHelp(); return 0; }
+  if (line === 'exit' || line === 'quit' || line === 'q') { say('bye'); return 99; }
+  if (line === 'history') {
+    const h = engine.state().history;
+    say(`history (${engine.currentDir}/.agentide/data/shell-history):`);
+    h.forEach((x, i) => say(`  ${i + 1}\t${x}`));
+    return 0;
+  }
+  if (line === 'pwd') { say(engine.currentDir); return 0; }
+  if (line === 'clear') { termLog.innerHTML = ''; return 0; }
+  if (line === 'cd' || line.startsWith('cd ')) {
+    const target = line === 'cd' ? ROOT + '/proj-a' : line.slice(3).trim();
+    const resolved = target.startsWith('/') ? target : ROOT + '/' + target;
+    const candidates = Object.keys(engine.dirs).filter(d => d === resolved || d === target);
+    if (candidates.length === 0) { say(`error: cd: no such directory: ${target}`, 'err'); return 1; }
+    engine.currentDir = candidates[0];
+    say(`context: ${engine.currentDir}`, 'info');
+    return 0;
+  }
+  return null;
+}
+
+// group+subcommand dispatch (no history/action side effects)
+function dispatchCommand(cmd, args) {
+  const { pos, flags } = splitArgs(args);
+  switch (cmd) {
+    case 'init': return runInit(flags);
+    case 'gateway': return runGateway(pos[0], flags);
+    case 'tenant': return runTenant(pos[0], pos.slice(1), flags);
+    case 'client': return runClient(pos[0], pos.slice(1), flags);
+    case 'capability': return runCapability(pos[0], pos.slice(1), flags);
+    case 'plugin': return runPlugin(pos[0], pos.slice(1), flags);
+    case 'session': return runSession(pos[0], pos.slice(1), flags);
+    case 'token': return runToken(pos[0], flags);
+    case 'invoke': return runInvoke(pos, flags);
+    case 'watch': return runWatch(pos, flags);
+    case 'start': case 'stop': case 'status': case 'health': case 'sessions': case 'capabilities': case 'plugins':
+      say(DEP_MSG(cmd, OLD_NEW[cmd]), 'warn');
+      const parts2 = OLD_NEW[cmd].split(' ');
+      return dispatchCommand(parts2[0], parts2.slice(1));
+    default: say(`error: unknown command: ${cmd}`, 'err'); say('hint: agentide <group> with no subcommand shows that group\'s subcommands', 'err'); return 2;
+  }
+}
+
+async function runCommand(line) {
+  out = [];
+  engine.lastEvent = null;
+  const s = engine.state();
+  let trimmed = line.trim();
+  trimmed = trimmed.replace(/^agentide\s+/, ''); // tolerate binary prefix
+  if (trimmed === 'agentide') { say('(you are already in the agentide shell — type help)', 'info'); return 0; }
+  if (trimmed) s.history.push(trimmed);
+  if (s.history.length > 50) s.history.shift();
+
+  const rcBuiltin = runBuiltin(trimmed);
+  let rc;
+  if (rcBuiltin !== null) {
+    rc = rcBuiltin;
+  } else {
+    const parts = trimmed.split(/\s+/);
+    rc = dispatchCommand(parts[0], parts.slice(1));
+  }
+  pushAction(trimmed || '(empty)', rc);
+  render();
+  return { text: out.map(o => o.text).join('\n'), color: null, rc };
+}
+
+// ─── Auto-complete (Tab) ────────────────────────────────────────────
+const ALL_WORDS = ['init','invoke','watch','gateway','tenant','client','capability','plugin','session','token',
+  ...Object.values(SUBS).flatMap(s => s.split(' ')),
+  'help','exit','quit','history','pwd','cd','clear'];
+function complete() {
+  const line = termInput.value;
+  const word = line.split(/\s+/).pop() || '';
+  const s = engine.state();
+  const pool = ALL_WORDS.concat(s.tenants.map(t => t.id)).concat(s.caps);
+  const matches = [...new Set(pool.filter(w => w.startsWith(word)))];
+  if (matches.length === 1 && word) {
+    const head = line.slice(0, line.length - word.length);
+    termInput.value = head + matches[0] + ' ';
+  } else if (matches.length > 1) {
+    termWriteln('completions: ' + matches.join(' '), 'info');
+    termInput.focus();
+  }
+}
+
+// ─── Input handler ──────────────────────────────────────────────────
+let histIdx = -1;
+let histDraft = '';
+function recall(delta) { // +1 older, -1 newer
+  const h = engine.state().history;
+  if (h.length === 0) return;
+  if (histIdx === -1) histDraft = termInput.value;
+  const next = histIdx + delta;
+  if (next < 0) { histIdx = -1; termInput.value = histDraft; return; }
+  histIdx = Math.min(next, h.length - 1);
+  termInput.value = h[h.length - 1 - histIdx];
+}
+termInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Tab') { e.preventDefault(); complete(); return; }
+  if (e.key === 'ArrowUp') { e.preventDefault(); recall(1); return; }
+  if (e.key === 'ArrowDown') { e.preventDefault(); recall(-1); return; }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const line = termInput.value;
+    termInput.value = '';
+    histIdx = -1;
+    if (!line.trim()) return;
+    termWrite('agentide (' + engine.currentDir + ')> ' + line + '\n', 'muted');
+    const r = await runCommand(line);
+    for (const o of out) termWriteln(o.text, o.color);
+    if (r.rc !== 0) termWriteln('(exit ' + r.rc + ')', 'warn');
+  }
+});
+$('term-box').addEventListener('click', () => termInput.focus());
+
+// ─── Demo button ────────────────────────────────────────────────────
+demoBtn.addEventListener('click', async () => {
+  demoBtn.disabled = true;
+  demoBtn.textContent = '⟳ running...';
+  const script = [
+    'help',
+    'init',
+    'gateway',
+    'tenant create acme',
+    'tenant list --url ws://evil:7300',
+    'gateway status',
+    'gateway start',
+    'gateway status --data-dir /tmp/other',
+    'status',
+    'capability list',
+    'capability list --url ws://127.0.0.1:7300/ws',
+    'invoke product.list',
+    'invoke nope.nothere',
+    'session create',
+    'session list',
+    'watch session',
+    'plugins',
+    'cd proj-b',
+    'tenant list',
+    'history',
+    'exit',
+  ];
+  try {
+    for (const line of script) {
+      termWrite('agentide (' + engine.currentDir + ')> ' + line + '\n', 'muted');
+      const r = await runCommand(line);
+      for (const o of out) termWriteln(o.text, o.color);
+      if (r.rc !== 0) termWriteln('(exit ' + r.rc + ')', 'warn');
+      await sleep(180);
+    }
+    termWriteln('─ demo complete ─', 'ok');
+  } finally {
+    demoBtn.disabled = false;
+    demoBtn.textContent = '▶ Run full demo';
+  }
+});
+
+// ─── Banner ─────────────────────────────────────────────────────────
+termWriteln('agentide interactive shell — cli-restructure pre-impl sim (GRILL locked)');
+termWriteln('Type a command + Enter; Tab auto-completes. Left panel = the per-directory state.');
+termWriteln('Try: init → gateway start → tenant create acme → cd proj-b → tenant list → history');
+termWriteln('');
+render();
+termInput.focus();
+</script>
+
+</body>
+</html>
