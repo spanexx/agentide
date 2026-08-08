@@ -30,8 +30,7 @@ describe("CLI", () => {
   it("prints the version and exits 0 with --version", async () => {
     const fs = new InMemoryFs();
     const r = await runCli(["--version"], { fs });
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+    expect(r.exitCode).toBe(0);    expect(r.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it("prints the version with -v", async () => {
@@ -407,39 +406,66 @@ describe("CLI remote dispatch (--url)", () => {
     const url = await startAdapter();
     const r = await runCli(["sessions", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toBe("[]");
+    expect(r.stdout).toBe("[]\n");
   });
 
   it("`status --url` hits gateway.status remotely instead of local status", async () => {
     const url = await startAdapter();
     const r = await runCli(["status", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toBe('{"status":"ok","tenantCount":1,"pluginCount":1,"uptimeMs":7}');
+    expect(r.stdout).toBe('{"status":"ok","tenantCount":1,"pluginCount":1,"uptimeMs":7}\n');
   });
 
   it("`capability list --url` dispatches to the consumer", async () => {
     const url = await startAdapter(async (_req) => ({ output: [{ name: "gateway.status", version: "1.0.0", tier: "read" }] }));
     const r = await runCli(["capability", "list", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toBe('[{"name":"gateway.status","version":"1.0.0","tier":"read"}]');
+    expect(r.stdout).toBe('[{"name":"gateway.status","version":"1.0.0","tier":"read"}]\n');
   });
 
   it("`health --url` hits system.health", async () => {
     const url = await startAdapter();
     const r = await runCli(["health", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toBe('{"status":"ok"}');
+    expect(r.stdout).toBe('{"status":"ok"}\n');
   });
 
   it("`invoke --url` returns the gateway output", async () => {
     const url = await startAdapter();
     const r = await runCli(["invoke", "product.list", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toBe('{"name":"product.list"}');
+    expect(r.stdout).toBe('{"name":"product.list"}\n');
+  });
+
+  // D-113 newline flush: every exit path ends stdout with \n so the shell
+  // prompt never glues to the last output line. Lives here because the
+  // consumer path (compact JSON, no trailing newline before this fix) is
+  // the case that motivated the guarantee.
+  describe("CLI trailing newline (D-113)", () => {
+    it("success stdout lacking a trailing newline gets one appended", async () => {
+      const url = await startAdapter();
+      const r = await runCli(["sessions", "--url", url, "--token", tok()], { fs: new InMemoryFs() });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toBe("[]\n");
+    });
+
+    it("error stderr path is unchanged (already has newline)", async () => {
+      const fs = new InMemoryFs();
+      const r = await runCli(["frobnicate"], { fs });
+      expect(r.exitCode).not.toBe(0);
+      expect(r.stderr.endsWith("\n")).toBe(true);
+    });
+
+    it("stdout already ending in newline is untouched (idempotent)", async () => {
+      const fs = new InMemoryFs();
+      const r = await runCli(["--version"], { fs });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout.endsWith("\n")).toBe(true);
+      // exactly one trailing newline — no double-append
+      expect(r.stdout).not.toMatch(/\n\n$/);
+    });
   });
 });
-
-// CID:cli-002..007 - Phase 5 (BI[29]) client subcommand tests
 
 describe("CLI client subcommand", () => {
   it("`client create` writes the secret to a file and prints only the path", async () => {

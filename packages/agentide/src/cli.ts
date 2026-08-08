@@ -218,6 +218,18 @@ export function result(stdout: string, stderr = "", exitCode = 0): CliResult {
 }
 
 export async function runCli(argv: readonly string[], opts: CliOptions): Promise<CliResult> {
+  const raw = await runCliInner(argv, opts);
+  // CID:cli-014 - D-113: every exit path ends stdout with a trailing
+  // newline. Without this, the shell prompt glues to the last output line
+  // (visually indistinguishable from a hang). One guarantee point covers
+  // every command and every error path.
+  if (raw.stdout !== "" && !raw.stdout.endsWith("\n")) {
+    return result(`${raw.stdout}\n`, raw.stderr, raw.exitCode);
+  }
+  return raw;
+}
+
+async function runCliInner(argv: readonly string[], opts: CliOptions): Promise<CliResult> {
   installGlobalErrorHandlers();
   const { positional, flags } = parseArgs(argv);
   const cmd = positional[0];
