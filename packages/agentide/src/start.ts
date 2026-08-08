@@ -45,6 +45,7 @@ export async function runStart(
     exists: async (path) => {
       try { await fsPromises.access(path); return true; } catch { return false; }
     },
+    mkdir: (path, options) => fsPromises.mkdir(path, options),
   };
   // CID:start-002 - default bind/ports unless overridden
   const bind = getFlag(flags, "bind", "127.0.0.1");
@@ -162,11 +163,17 @@ export async function runStart(
     return result("", `error: invalid port --port-mcp=${portMcpRaw}\n`, 2);
   }
 
-  // CID:start-003 - Ensure the data dir exists. The FileSystem interface only exposes read/write/exists,
-  // so we can't mkdir through it. Best-effort: skip if data dir already has the secret file
-  // (createPlatform's loadOrCreateSecret handles the secret bootstrap); otherwise
-  // advise the operator to create the dir first.
+  // CID:start-003 - Ensure the data dir exists. The FileSystem interface only
+  // exposes read/write/exists (+ optional mkdir); we auto-create the dir when
+  // mkdir is available (D-115 — operator should never have to `mkdir -p`
+  // before start; mirrors runInit's CID:cli-init-001). Best-effort probe:
+  // skip if the data dir already has the secret file (createPlatform's
+  // loadOrCreateSecret handles the secret bootstrap); otherwise write a probe
+  // file to verify writability.
   const secretPath = `${dataDir.replace(/\/$/, "")}/gateway-secret`;
+  if (typeof fs.mkdir === "function") {
+    await fs.mkdir(dataDir, { recursive: true });
+  }
   const dirLikelyExists = await fs.exists(secretPath);
   if (!dirLikelyExists) {
     try {
@@ -256,6 +263,25 @@ export async function runStart(
   const sdkBanner = portSdk === undefined ? "(disabled)" : `:${portSdk}`;
   const restBanner = adapterRestPort === undefined ? "(disabled)" : `:${adapterRestPort}`;
   const banner = `[gateway] platform up — mcp ${mcpBanner}, ws ${wsBanner}, sdk ${sdkBanner}, rest ${restBanner}\n`;
+
+  // CID:start-016 - persist the bound WS URL to the config file so remote
+  // commands (`status`, `capability list`, `invoke`) resolve the gateway
+  // without `--url`. The WS adapter only serves path /ws
+  // (adapter-websocket/server.ts); a wildcard bind is saved as 127.0.0.1
+  // because the CLI consumer runs on this machine. Start is authoritative:
+  // it overwrites any stale gateway_url. Failure is a warning, never an
+  // error — the gateway itself is already up.
+  if (adapterWsEnabled) {
+    const wsHost = bind === "0.0.0.0" || bind === "::" ? "127.0.0.1" : bind;
+    const { saveConfig } = await import("./config.js");
+    const configOverride = getFlag(flags, "config", "");
+    try {
+      saveConfig({ gatewayUrl: `ws://${wsHost}:7300/ws` }, { home: opts.home, configOverride });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[gateway] warning: could not save gateway_url to config: ${msg}\n`);
+    }
+  }
 
   // CID:start-007 - Register signal handlers BEFORE returning so they stay active for the
   // lifetime of the process. node keeps the event loop alive while SIGINT/SIGTERM

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { hasUrlSource, saveConfig } from "./config.js";
 import { runConsumer } from "./consumer.js";
 import { runStop, runDetachedStart } from "./start.js";
-import { printTokenWithClear } from "./lifecycle.js";
+
 import { AuditWriter } from "@spanexx/gateway-core";
 import type { CliOptions, CliResult } from "./cli-types.js";
 
@@ -257,7 +257,7 @@ async function runCliInner(argv: readonly string[], opts: CliOptions): Promise<C
         return await runStop(dataDir, flags, opts);
       case "status":
         // in-process when no remote config; remote (gateway.status) otherwise
-        return (await hasUrlSource(argv, process.env))
+        return (await hasUrlSource(argv, process.env, { home: opts.home }))
           ? await runConsumer(argv, consumerOptions(argv))
           : await runStatus(dataDir, opts, getFlag(flags, "pid-file", await defaultPidFile()));
       case "tenant":
@@ -268,7 +268,7 @@ async function runCliInner(argv: readonly string[], opts: CliOptions): Promise<C
         return await runClient(positional.slice(1), dataDir, flags, opts);
       case "capability":
         // `capability list` is remote when --url/env/config supplies a URL
-        if (positional[1] === "list" && (await hasUrlSource(argv, process.env))) {
+        if (positional[1] === "list" && (await hasUrlSource(argv, process.env, { home: opts.home }))) {
           return await runConsumer(argv, consumerOptions(argv));
         }
         return await runCapability(positional.slice(1), dataDir, flags, opts);
@@ -331,13 +331,28 @@ async function runInit(dataDir: string, flags: Record<string, string | boolean |
   });
   await platform.stop();
 
-  // Header (always visible) + token (auto-clears on Enter or after 30s).
+  // CID:cli-init-002 - persist the bootstrap token to the config file so
+  // remote commands work in every terminal right after init. Mirrors the
+  // D-112 behavior of `token issue` (cli.ts runToken): a save failure is a
+  // warning, never an error — the token is already printed below.
+  const configOverride = getFlag(flags, "config", "");
+  let configPath = "";
+  try {
+    configPath = saveConfig({ token }, { home: opts.home, configOverride }).path;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`warning: could not save token to config: ${msg}\n`);
+  }
+
+  // Header + confirmation. The token itself never touches the terminal —
+  // it is only persisted to the config file above (CID:cli-init-002), which
+  // is the entire point of the auto-save: nothing secret on screen, no
+  // scrollback, no copy-paste needed.
   process.stdout.write(
     `# Initialized Agentide in ${dataDir}\n` +
     `# Default tenant: ${tenantId} (${tenantName})\n` +
-    `# Bootstrap token below — auto-clears in 30s or on Enter:\n\n`,
+    `# Bootstrap token saved to ${configPath}\n`,
   );
-  await printTokenWithClear(token);
   return result("");
 }
 

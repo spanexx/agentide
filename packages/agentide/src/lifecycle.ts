@@ -1,13 +1,12 @@
 /*
  * Code Map: Lifecycle plumbing for the `agentide init / start / stop / status`
- * commands. The init command prints a bootstrap token to stdout then
- * auto-clears it on Enter or after a 30-second timer; the start command
- * detaches into the background and writes a pid file to /tmp; the stop
- * command reads the pid file and sends SIGTERM (with force kill fallback);
- * status reports the pid + alive state.
+ * commands. The init command persists the bootstrap token to the config file
+ * (see cli.ts runInit, CID:cli-init-002); the start command detaches into the
+ * background and writes a pid file to /tmp; the stop command reads the pid
+ * file and sends SIGTERM (with force kill fallback); status reports the pid +
+ * alive state.
  *
  * CID Index:
- * CID:lc-001 - printTokenWithClear (init helper)
  * CID:lc-002 - detach (start helper, fork via process.spawn)
  * CID:lc-003 - readPidFile / writePidFile / isAlive
  * CID:lc-004 - stopByPid (signals SIGTERM, falls back to SIGKILL after 10s)
@@ -28,80 +27,7 @@ export const DETACH_CHILD_FLAG = "--detach-child";
 // the --detach-child argv flag is stripped by bin.ts before runCli sees it,
 // so argv alone can never tell the child it is the gateway.
 export const DETACH_CHILD_ENV = "AGENTIDE_DETACH_CHILD";
-export const TOKEN_CLEAR_MS = 30_000;
 
-/**
- * CID:lc-001 - printTokenWithClear
- * Print the JWT to stdout, then clear it once the operator presses Enter
- * or after TOKEN_CLEAR_MS, whichever comes first. Non-interactive stdin
- * (e.g. piped or detached) skips the wait and exits immediately.
- */
-export async function printTokenWithClear(token: string): Promise<void> {
-  // ANSI helpers (kept inline to avoid a chrome dep).
-  const CLEAR = "\x1b[2J\x1b[H";
-  const REVERSE = "\x1b[7m";
-  const RESET = "\x1b[0m";
-
-  const banner =
-    `${REVERSE}Copy this bootstrap token. It will disappear in ` +
-    `30 seconds or when you press Enter.${RESET}\n\n` +
-    `${token}\n\n` +
-    `${REVERSE}(press Enter now to clear it)${RESET}`;
-  process.stdout.write(banner);
-  process.stdout.write("\n");
-
-  // Skip the wait when stdin isn't a TTY (CI, pipe, capture).
-  if (!process.stdin.isTTY) return;
-
-  let cleared = false;
-  const clearNow = (): void => {
-    if (cleared) return;
-    cleared = true;
-    process.stdout.write(`${CLEAR}`);
-    process.stdout.write("Token cleared from scrollback.\n");
-  };
-
-  return await new Promise<void>((resolve) => {
-    const timer = setTimeout(clearNow, TOKEN_CLEAR_MS);
-
-    const onData = (): void => {
-      clearNow();
-      cleanup();
-      resolve();
-    };
-    const onSigint = (): void => {
-      clearNow();
-      cleanup();
-      resolve();
-    };
-    const cleanup = (): void => {
-      clearTimeout(timer);
-      process.stdin.removeListener("data", onData);
-      process.stdin.removeListener("SIGINT", onSigint);
-      try { process.stdin.setRawMode?.(false); } catch { /* noop */ }
-      try { process.stdin.pause(); } catch { /* noop */ }
-    };
-
-    try {
-      process.stdin.setRawMode?.(true);
-      process.stdin.resume();
-      process.stdin.on("data", onData);
-      process.stdin.on("SIGINT", onSigint);
-    } catch {
-      cleanup();
-      resolve();
-    }
-  });
-}
-
-/**
- * CID:lc-003 - pid file helpers
- * Sid: these touch /tmp which is OS-volatile, so reboots wipe them — exactly
- * what we want (no stale pids survive a restart).
- */
-/** Full pid-file payload: the gateway's pid + the data-dir it was started
- *  with (+ a startedAt timestamp). `status` reads dataDir from here so it
- *  can recover the right data path from any cwd (D-81). */
 export interface PidFileInfo {
   pid: number;
   dataDir?: string;

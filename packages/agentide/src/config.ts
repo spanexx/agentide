@@ -208,13 +208,20 @@ export async function resolveConfig(opts: ResolveConfigOptions): Promise<Resolve
 }
 
 // CID:config-003 - saveConfig
-// Purpose: persist entries (currently: token) into the same config.toml that
-//   resolveConfig reads — the D-112 ergonomics fix. Mint once, never retype.
-//   Merge is line-based so unknown keys and other sections are preserved
-//   verbatim; only the `token = "..."` line is replaced (or appended if the
-//   file has none). Atomic write: tmp file in the same dir + rename, mode
-//   0600 (same hygiene resolveConfig warns about when looser).
-// Used by: cli.ts runToken (agentide token issue).
+// Purpose: persist entries into the same config.toml that resolveConfig
+//   reads — the D-112 ergonomics fix. Mint once, never retype; start once,
+//   never --url again. Merge is line-based so unknown keys and other sections
+//   are preserved verbatim; only the managed `token = "..."` / `gateway_url =
+//   "..."` lines are replaced (or appended if the file has none). Atomic
+//   write: tmp file in the same dir + rename, mode 0600 (same hygiene
+//   resolveConfig warns about when looser).
+// Used by: cli.ts runToken (agentide token issue), runInit (bootstrap token),
+//   and start.ts runStart (bound gateway URL).
+export interface SaveConfigEntries {
+  token?: string;
+  gatewayUrl?: string;
+}
+
 export interface SaveConfigOptions {
   home?: string;
   cwd?: string;
@@ -226,6 +233,12 @@ export interface SaveConfigResult {
   created: boolean; // true when the file did not exist before
 }
 
+// managed key -> config.toml line key
+const ENTRY_KEYS: Record<keyof SaveConfigEntries, string> = {
+  token: "token",
+  gatewayUrl: "gateway_url",
+};
+
 function defaultConfigPathSync(home: string, cwd: string, configOverride?: string): string {
   if (configOverride !== undefined && configOverride !== "") {
     return resolve(cwd, configOverride);
@@ -234,7 +247,7 @@ function defaultConfigPathSync(home: string, cwd: string, configOverride?: strin
 }
 
 export function saveConfig(
-  entries: { token?: string },
+  entries: SaveConfigEntries,
   opts: SaveConfigOptions = {},
 ): SaveConfigResult {
   const home = opts.home ?? homedir();
@@ -245,7 +258,6 @@ export function saveConfig(
   // and any [table] sections the v1 parser ignores).
   let existed = false;
   let lines: string[] = [];
-  let hasTokenLine = false;
   try {
     const text = readFileSync(path, "utf8");
     existed = true;
@@ -254,21 +266,29 @@ export function saveConfig(
     // no file yet → fresh content
   }
 
+  // Track which managed lines were replaced; the rest get appended below.
+  const seen = new Set<string>();
   const outLines: string[] = [];
   for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (entries.token !== undefined) {
-      const eq = line.indexOf("=");
-      if (eq !== -1 && line.slice(0, eq).trim() === "token") {
-        outLines.push(`token = "${entries.token}"`);
-        hasTokenLine = true;
-        continue;
+    let replaced = false;
+    for (const [entryKey, lineKey] of Object.entries(ENTRY_KEYS) as [keyof SaveConfigEntries, string][]) {
+      const value = entries[entryKey];
+      if (value === undefined) continue;
+      const eq = rawLine.trim().indexOf("=");
+      if (eq !== -1 && rawLine.trim().slice(0, eq).trim() === lineKey) {
+        outLines.push(`${lineKey} = "${value}"`);
+        seen.add(entryKey);
+        replaced = true;
+        break;
       }
     }
-    outLines.push(rawLine);
+    if (!replaced) outLines.push(rawLine);
   }
-  if (entries.token !== undefined && !hasTokenLine) {
-    outLines.push(`token = "${entries.token}"`);
+  for (const [entryKey, lineKey] of Object.entries(ENTRY_KEYS) as [keyof SaveConfigEntries, string][]) {
+    const value = entries[entryKey];
+    if (value !== undefined && !seen.has(entryKey)) {
+      outLines.push(`${lineKey} = "${value}"`);
+    }
   }
   // drop a single trailing empty line so the file ends cleanly
   while (outLines.length > 0 && outLines[outLines.length - 1] === "") {
