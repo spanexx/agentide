@@ -293,7 +293,7 @@ describe("consumer: failure surfaces (S8)", () => {
   });
 
   it("missing URL + non-TTY → exit 2 (no prompt for URL)", async () => {
-    const res = await runConsumer(["sessions", "--token", token()], { env: {}, isTTY: false });
+    const res = await runConsumer(["sessions", "--token", token()], { env: {}, isTTY: false, home: "/tmp/opencode/consumer-missing-url-home" });
     expect(res.exitCode).toBe(2);
     expect(res.stderr).toMatch(/gateway URL required/);
   });

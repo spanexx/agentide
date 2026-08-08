@@ -100,11 +100,15 @@ function makeInMemoryFileSystemAdapter(mem: InMemoryFs) {
       mem.files.set(path, data);
     },
     exists: async (path: string) => mem.files.has(path) || mem.dirs.has(path),
+    mkdir: async (path: string, _options?: { recursive?: boolean }) => {
+      mem.dirs.add(path);
+    },
   };
 }
 
 // runStart directly (the cli router now goes through runDetachedStart which
 // actually forks a child — not appropriate for unit tests).
+let lastTestHome: string | undefined;
 async function run(args: string[], mem: InMemoryFs): Promise<CliResult> {
   const flags: Record<string, string | boolean | string[]> = {};
   const positional: string[] = [];
@@ -123,7 +127,11 @@ async function run(args: string[], mem: InMemoryFs): Promise<CliResult> {
       positional.push(tok);
     }
   }
-  return await runStart("/data", flags, { fs: makeInMemoryFileSystemAdapter(mem) });
+  // CID:start-016 - runStart persists the bound gateway_url to the config
+  // file (home seam), so every run gets a temp home the real operator file
+  // is never touched.
+  lastTestHome = fs.mkdtempSync(path.join(os.tmpdir(), "agentide-start-test-"));
+  return await runStart("/data", flags, { fs: makeInMemoryFileSystemAdapter(mem), home: lastTestHome });
 }
 
 beforeEach(() => {
@@ -367,11 +375,63 @@ describe("agentide start", () => {
   it("AGENTIDE_DETACH_CHILD=1 boots the gateway directly (no detach re-entry)", async () => {
     process.env.AGENTIDE_DETACH_CHILD = "1";
     const mem = makeFs();
-    const r = await runCli(["start", "--data-dir", "/data"], { fs: makeInMemoryFileSystemAdapter(mem) });
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "agentide-start-test-"));
+    const r = await runCli(["start", "--data-dir", "/data"], { fs: makeInMemoryFileSystemAdapter(mem), home });
     expect(r.exitCode).toBe(0);
     const call = lastCreatePlatformCall();
     expect(call.adapterMcp).toBeDefined();
     expect(call.adapterWs).toBeDefined();
+  });
+
+  // CID:start-016 - runStart persists the bound WS URL (ws://host:7300/ws)
+  // to the config file so remote commands need no --url. Start is
+  // authoritative: a stale gateway_url is overwritten.
+  it("persists gateway_url ws://127.0.0.1:7300/ws when the WS adapter is on", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data"], mem);
+    const cfg = path.join(lastTestHome!, ".config", "platform", "config.toml");
+    const text = fs.readFileSync(cfg, "utf8");
+    expect(text).toContain('gateway_url = "ws://127.0.0.1:7300/ws"');
+  });
+
+  it("persists gateway_url with the --bind host", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data", "--bind", "0.0.0.0"], mem);
+    const cfg = path.join(lastTestHome!, ".config", "platform", "config.toml");
+    const text = fs.readFileSync(cfg, "utf8");
+    // wildcard binds are saved as 127.0.0.1 — the CLI consumer runs locally
+    expect(text).toContain('gateway_url = "ws://127.0.0.1:7300/ws"');
+  });
+
+  it("does not persist gateway_url when the WS adapter is off (--no-ws)", async () => {
+    const mem = makeFs();
+    await run(["start", "--data-dir", "/data", "--no-ws"], mem);
+    const cfg = path.join(lastTestHome!, ".config", "platform", "config.toml");
+    expect(fs.existsSync(cfg)).toBe(false);
+  });
+
+  it("overwrites a stale gateway_url in the config file", async () => {
+    const mem = makeFs();
+    const home = path.join(os.tmpdir(), "agentide-start-stale-" + Date.now());
+    const cfg = path.join(home, ".config", "platform", "config.toml");
+    fs.mkdirSync(path.dirname(cfg), { recursive: true });
+    fs.writeFileSync(cfg, 'gateway_url = "ws://10.0.0.9:9999/ws"\n');
+    try {
+      await runStart("/data", { "data-dir": "/data" }, { fs: makeInMemoryFileSystemAdapter(mem), home });
+      const text = fs.readFileSync(cfg, "utf8");
+      expect(text).toContain('gateway_url = "ws://127.0.0.1:7300/ws"');
+      expect(text).not.toContain("10.0.0.9");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  // CID:start-003 (D-115) - runStart auto-creates the data dir via the
+  // FileSystem mkdir seam before probing; no manual mkdir -p needed.
+  it("auto-creates the data dir via the fs mkdir seam (D-115)", async () => {
+    const mem = makeFs({ dirs: [] });
+    await run(["start", "--data-dir", "/data"], mem);
+    expect(mem.dirs.has("/data")).toBe(true);
   });
 
   // CID:start-010 - the "already running" guard must stay intact for

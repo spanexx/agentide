@@ -4,7 +4,7 @@
 // lives in the test), but a REAL recursive mkdir so the filesystem-directory
 // creation is observable — exactly what the production fs does.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FileSystem } from "@spanexx/gateway-core";
@@ -36,7 +36,7 @@ describe("CLI init (D-78)", () => {
     const dataDir = join(TMP_ROOT, "fresh");
     expect(existsSync(dataDir)).toBe(false);
     const fs = new HybridFs();
-    const r = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs });
+    const r = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs, home: TMP_ROOT });
     expect(r.exitCode).toBe(0);
     // The real filesystem dir now exists (mkdir was called on the hybrid).
     expect(existsSync(dataDir)).toBe(true);
@@ -50,7 +50,7 @@ describe("CLI init (D-78)", () => {
     mkdirSync(dataDir, { recursive: true });
     expect(existsSync(dataDir)).toBe(true);
     const fs = new HybridFs();
-    const r = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs });
+    const r = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs, home: TMP_ROOT });
     expect(r.exitCode).toBe(0);
     // Existing dir is unchanged; secret still written via the fs impl.
     expect(existsSync(dataDir)).toBe(true);
@@ -61,9 +61,39 @@ describe("CLI init (D-78)", () => {
     const dataDir = join(TMP_ROOT, "a", "b", "c", "d");
     expect(existsSync(dataDir)).toBe(false);
     const fs = new HybridFs();
-    const r = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs });
+    const r = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs, home: TMP_ROOT });
     expect(r.exitCode).toBe(0);
     expect(existsSync(dataDir)).toBe(true);
     expect(statSync(dataDir).isDirectory()).toBe(true);
+  });
+});
+
+// F2a (operator-cli-fixes): init persists the bootstrap token to the config
+// file so remote commands work in every terminal right after init — mirrors
+// the D-112 behavior of `token issue`.
+describe("CLI init config persistence (F2a)", () => {
+  it("saves the bootstrap token to ~/.config/platform/config.toml", async () => {
+    const dataDir = join(TMP_ROOT, "cfg");
+    const fs = new HybridFs();
+    const r = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs, home: TMP_ROOT });
+    expect(r.exitCode).toBe(0);
+    const cfg = join(TMP_ROOT, ".config", "platform", "config.toml");
+    expect(existsSync(cfg)).toBe(true);
+    const text = readFileSync(cfg, "utf8");
+    // JWT shape (three dot-separated base64url segments), quoted in the toml
+    expect(text).toMatch(/token = "[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"/);
+  });
+
+  it("--config override redirects the config write", async () => {
+    const dataDir = join(TMP_ROOT, "cfg2");
+    const customCfg = join(TMP_ROOT, "custom", "my.toml");
+    const fs = new HybridFs();
+    const r = await runCli(
+      ["init", "--data-dir", dataDir, "--default-tenant", "acme", "--config", customCfg],
+      { fs, home: TMP_ROOT },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(existsSync(customCfg)).toBe(true);
+    expect(readFileSync(customCfg, "utf8")).toMatch(/token = "[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"/);
   });
 });

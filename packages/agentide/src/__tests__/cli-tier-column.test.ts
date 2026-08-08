@@ -5,7 +5,7 @@
  * - write tier filters by tier
  * - business caps (null tier) show "-" in the column
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { runCli } from "../cli.js";
 
 class InMemoryFs {
@@ -20,10 +20,11 @@ class InMemoryFs {
 }
 
 describe("CLI capability list — tier column (BI[7])", () => {
+  const opts = { fs: new InMemoryFs(), home: "/tmp/opencode/cli-tier-home" };
+  beforeEach(() => { opts.fs = new InMemoryFs(); });
   it("each row includes a tier column", async () => {
-    const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], opts);
+    const r = await runCli(["capability", "list", "--data-dir", "/data"], opts);
     expect(r.exitCode).toBe(0);
     // Each row should match: name, version, tier, description (4 tab-separated fields after the "- ")
     const rows = r.stdout.trim().split("\n").filter((l) => l.startsWith("- "));
@@ -37,9 +38,8 @@ describe("CLI capability list — tier column (BI[7])", () => {
   });
 
   it("`capability list --tier read` only shows read-tier caps", async () => {
-    const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--tier", "read", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], opts);
+    const r = await runCli(["capability", "list", "--tier", "read", "--data-dir", "/data"], opts);
     expect(r.exitCode).toBe(0);
     const rows = r.stdout.trim().split("\n").filter((l) => l.startsWith("- "));
     expect(rows.length).toBeGreaterThan(0);
@@ -50,9 +50,8 @@ describe("CLI capability list — tier column (BI[7])", () => {
   });
 
   it("`capability list --tier write` shows write-tier caps (session.create, plugin.install)", async () => {
-    const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--tier", "write", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], opts);
+    const r = await runCli(["capability", "list", "--tier", "write", "--data-dir", "/data"], opts);
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/session\.create/);
     expect(r.stdout).toMatch(/plugin\.install/);
@@ -60,9 +59,8 @@ describe("CLI capability list — tier column (BI[7])", () => {
   });
 
   it("`capability list --tier act` returns empty (no runtime caps registered by default)", async () => {
-    const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--tier", "act", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], opts);
+    const r = await runCli(["capability", "list", "--tier", "act", "--data-dir", "/data"], opts);
     expect(r.exitCode).toBe(0);
     expect(r.stdout.trim()).toBe("");
   });

@@ -29,20 +29,20 @@ class InMemoryFs implements FileSystem {
 describe("CLI", () => {
   it("prints the version and exits 0 with --version", async () => {
     const fs = new InMemoryFs();
-    const r = await runCli(["--version"], { fs });
+    const r = await runCli(["--version"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);    expect(r.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it("prints the version with -v", async () => {
     const fs = new InMemoryFs();
-    const r = await runCli(["-v"], { fs });
+    const r = await runCli(["-v"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it("prints help and exits 0 when invoked with --help", async () => {
     const fs = new InMemoryFs();
-    const r = await runCli(["--help", "--data-dir", "/data"], { fs });
+    const r = await runCli(["--help", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/agentide/);
     expect(r.stdout).toMatch(/init|start|stop|status|tenant|token|capability|plugin/);
@@ -50,14 +50,13 @@ describe("CLI", () => {
 
   it("prints help when invoked with no args", async () => {
     const fs = new InMemoryFs();
-    const r = await runCli([], { fs });
+    const r = await runCli([], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
   });
 
-  it("init creates default tenant + secret + prints bootstrap token", async () => {
+  it("init creates default tenant + secret + saves token to config (not stdout)", async () => {
     const mem = new InMemoryFs();
-    // init writes the token directly to process.stdout (so it can auto-clear
-    // on Enter / 30s). Capture it for the test.
+    // init writes its confirmation directly to process.stdout. Capture it.
     const stdoutWrites: string[] = [];
     const origWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((chunk: string | Uint8Array) => {
@@ -65,14 +64,14 @@ describe("CLI", () => {
       return true;
     }) as typeof process.stdout.write;
     try {
-      const r = await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs: mem });
+      const r = await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs: mem, home: TEMP_HOME });
       expect(r.exitCode).toBe(0);
       expect(mem.files.has("/data/gateway-secret")).toBe(true);
       const captured = stdoutWrites.join("");
       expect(captured).toMatch(/Initialized Agentide/);
       expect(captured).toMatch(/Default tenant: acme/);
-      // The token is a JWT (header.payload.signature).
-      // Strip ANSI escapes before matching since printTokenWithClear adds them.
+      // F2a: the token is persisted to the config file, never printed.
+      expect(captured).toMatch(/Bootstrap token saved to/);
       const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
       const tokenLine = captured.split("\n").find(
         (l) => {
@@ -80,7 +79,7 @@ describe("CLI", () => {
           return clean.startsWith("eyJ") || /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(clean);
         }
       ) ?? "";
-      expect(tokenLine).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+      expect(tokenLine).toBe("");
     } finally {
       process.stdout.write = origWrite;
     }
@@ -88,8 +87,8 @@ describe("CLI", () => {
 
   it("`status` returns a JSON-ish status line after init", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["status", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(["status", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/tenants:\s*1/);
     expect(r.stdout).toMatch(/plugins:\s*0/);
@@ -97,10 +96,10 @@ describe("CLI", () => {
 
   it("`tenant create` adds a new tenant and `tenant list` shows it", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const c = await runCli(["tenant", "create", "--id", "beta", "--name", "Beta Co", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const c = await runCli(["tenant", "create", "--id", "beta", "--name", "Beta Co", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(c.exitCode).toBe(0);
-    const l = await runCli(["tenant", "list", "--data-dir", "/data"], { fs });
+    const l = await runCli(["tenant", "list", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(l.exitCode).toBe(0);
     expect(l.stdout).toMatch(/acme/);
     expect(l.stdout).toMatch(/beta/);
@@ -126,8 +125,8 @@ describe("CLI", () => {
 
   it("`capability list` shows the registered capabilities", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(["capability", "list", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/gateway\.status/);
     expect(r.stdout).toMatch(/tenant\.list/);
@@ -135,8 +134,8 @@ describe("CLI", () => {
 
   it("`capability list --owner session-manager` shows only session.* caps", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--owner", "session-manager", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(["capability", "list", "--owner", "session-manager", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/session\.create/);
     expect(r.stdout).toMatch(/session\.list/);
@@ -146,8 +145,8 @@ describe("CLI", () => {
 
   it("`capability list --owner plugin-manager` shows only plugin.* caps", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--owner", "plugin-manager", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(["capability", "list", "--owner", "plugin-manager", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/plugin\.install/);
     expect(r.stdout).toMatch(/plugin\.list/);
@@ -157,16 +156,16 @@ describe("CLI", () => {
 
   it("`capability list --owner nonexistent` returns empty list", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--owner", "nonexistent", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(["capability", "list", "--owner", "nonexistent", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout.trim()).toBe("");
   });
 
   it("`capability list --tier read` shows only read-tier caps", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--tier", "read", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(["capability", "list", "--tier", "read", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/session\.list/);
     expect(r.stdout).not.toMatch(/session\.create/);
@@ -175,8 +174,8 @@ describe("CLI", () => {
 
   it("`capability list --tier write` shows only write-tier caps", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--tier", "write", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(["capability", "list", "--tier", "write", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/session\.create/);
     expect(r.stdout).toMatch(/plugin\.install/);
@@ -185,8 +184,8 @@ describe("CLI", () => {
 
   it("`capability list --owner plugin-manager --tier read` shows only plugin.list", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
-    const r = await runCli(["capability", "list", "--owner", "plugin-manager", "--tier", "read", "--data-dir", "/data"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const r = await runCli(["capability", "list", "--owner", "plugin-manager", "--tier", "read", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/plugin\.list/);
     expect(r.stdout).not.toMatch(/plugin\.install/);
@@ -194,7 +193,7 @@ describe("CLI", () => {
 
   it("unknown command exits non-zero with a clear message", async () => {
     const fs = new InMemoryFs();
-    const r = await runCli(["frobnicate", "--data-dir", "/data"], { fs });
+    const r = await runCli(["frobnicate", "--data-dir", "/data"], { fs, home: TEMP_HOME });
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr).toMatch(/unknown command/i);
   });
@@ -232,7 +231,7 @@ async function mintViaCli(fs: InMemoryFs, args: string[]): Promise<{ exitCode: n
 describe("CLI token issue expectedOrigins", () => {
   it("--origin binds the token (claim in JWT payload)", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
     const r = await mintViaCli(fs, ["--origin", "https://app.acme.com"]);
     expect(r.exitCode).toBe(0);
     expect(r.payload?.expectedOrigins).toEqual(["https://app.acme.com"]);
@@ -240,7 +239,7 @@ describe("CLI token issue expectedOrigins", () => {
 
   it("--origins comma-separated binds multiple origins in order", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
     const r = await mintViaCli(fs, ["--origins", "https://a.example.com,https://b.example.com"]);
     expect(r.exitCode).toBe(0);
     expect(r.payload?.expectedOrigins).toEqual(["https://a.example.com", "https://b.example.com"]);
@@ -248,7 +247,7 @@ describe("CLI token issue expectedOrigins", () => {
 
   it("--origin repeatable collects all occurrences", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
     const r = await mintViaCli(fs, [
       "--origin", "https://a.acme.com",
       "--origin", "https://b.acme.com",
@@ -259,7 +258,7 @@ describe("CLI token issue expectedOrigins", () => {
 
   it("--origin + --origins merge and dedupe keeping first occurrence", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
     const r = await mintViaCli(fs, [
       "--origin", "https://a.com",
       "--origin", "https://b.com",
@@ -271,7 +270,7 @@ describe("CLI token issue expectedOrigins", () => {
 
   it("--origins drops empty and whitespace entries, trims the rest", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
     const r = await mintViaCli(fs, ["--origins", " https://a.com ,, ,  https://b.com  "]);
     expect(r.exitCode).toBe(0);
     expect(r.payload?.expectedOrigins).toEqual(["https://a.com", "https://b.com"]);
@@ -279,7 +278,7 @@ describe("CLI token issue expectedOrigins", () => {
 
   it("without origin flags the claim is omitted (backward compat)", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
     const r = await mintViaCli(fs, []);
     expect(r.exitCode).toBe(0);
     expect(r.payload).not.toHaveProperty("expectedOrigins");
@@ -287,7 +286,7 @@ describe("CLI token issue expectedOrigins", () => {
 
   it("minted token round-trips through gateway verify with the claim intact", async () => {
     const fs = new InMemoryFs();
-    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs });
+    await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
     const r = await mintViaCli(fs, ["--origin", "https://app.acme.com"]);
     expect(r.exitCode).toBe(0);
     expect(r.payload?.expectedOrigins).toEqual(["https://app.acme.com"]);
@@ -313,15 +312,18 @@ describe("CLI token issue config persistence (D-112)", () => {
     expect(text).toContain(`token = "${minted}"`);
   });
 
-  it("--no-save skips the config write", async () => {
+  it("--no-save skips the config write (init's token stays untouched)", async () => {
     const fs = new InMemoryFs();
     await runCli(["init", "--data-dir", "/data", "--default-tenant", "acme"], { fs, home: TEMP_HOME });
+    const before = readFileSync(tempConfigPath(), "utf8");
     const r = await runCli(
       ["token", "issue", "--tenant", "acme", "--caller", "agent-1", "--no-save", "--data-dir", "/data"],
       { fs, home: TEMP_HOME },
     );
     expect(r.exitCode).toBe(0);
-    expect(existsSync(tempConfigPath())).toBe(false);
+    // init (F2a) already persisted its bootstrap token; --no-save must not
+    // replace it with the freshly minted one.
+    expect(readFileSync(tempConfigPath(), "utf8")).toBe(before);
   });
 
   it("existing config keeps gateway_url when token is replaced", async () => {

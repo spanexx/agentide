@@ -33,4 +33,18 @@ describe("applyPortDefault", () => {
   it("leaves IPv6 host URL with explicit port unchanged", () => {
     expect(applyPortDefault("ws://[::1]:7301/ws")).toBe("ws://[::1]:7301/ws");
   });
+
+  it("appends /ws when the path is empty", () => {
+    expect(applyPortDefault("ws://127.0.0.1:7300")).toBe("ws://127.0.0.1:7300/ws");
+    expect(applyPortDefault("ws://127.0.0.1")).toBe("ws://127.0.0.1:7300/ws");
+  });
+
+  it("appends /ws when the path is just /", () => {
+    expect(applyPortDefault("ws://127.0.0.1:7300/")).toBe("ws://127.0.0.1:7300/ws");
+  });
+
+  it("keeps a custom path verbatim", () => {
+    expect(applyPortDefault("ws://127.0.0.1:7300/custom")).toBe("ws://127.0.0.1:7300/custom");
+    expect(applyPortDefault("ws://127.0.0.1:7300/api?x=1")).toBe("ws://127.0.0.1:7300/api?x=1");
+  });
 });

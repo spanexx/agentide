@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runCli } from "../index.js";
 import type { FileSystem, TokenClaims } from "@spanexx/gateway-core";
 import { verifyToken } from "@spanexx/gateway-core";
@@ -22,10 +25,19 @@ class InMemoryFs implements FileSystem {
   }
 }
 
+// init/token-issue persist to the config file (F2a/D-112) via the home seam;
+// every run gets an isolated temp home so the real operator config is never
+// read or written by tests.
+function isolatedHome(): { home: string; cleanup: () => void } {
+  const home = mkdtempSync(join(tmpdir(), "agentide-integration-"));
+  return { home, cleanup: () => rmSync(home, { recursive: true, force: true }) };
+}
+
 describe("integration: full lifecycle", () => {
   it("init → status → token issue → tenant create → capability list → restart preserves state", async () => {
     const fs = new InMemoryFs();
     const dataDir = "/data";
+    const iso = isolatedHome();
 
     // 1. init — capture stdout because init writes the token directly to it
     // (for the auto-clear-on-Enter behavior). The runCli result doesn't have it.
@@ -37,61 +49,68 @@ describe("integration: full lifecycle", () => {
     }) as typeof process.stdout.write;
     let init;
     try {
-      init = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs });
+      init = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs, home: iso.home });
     } finally {
       process.stdout.write = origWrite;
     }
     expect(init.exitCode).toBe(0);
     expect(fs.files.has(`${dataDir}/gateway-secret`)).toBe(true);
     expect(fs.files.has(`${dataDir}/tenants.json`)).toBe(true);
+    // F2a: the bootstrap token is saved to the config file, never printed to
+    // the terminal. Assert the confirmation line and the ABSENCE of any JWT
+    // on stdout.
     const captured = initOut.join("");
     const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
-    const bootstrapLine = captured.split("\n").map(stripAnsi).find((l) => /^eyJ/.test(l)) ?? "";
-    expect(bootstrapLine).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    expect(captured).toMatch(/Bootstrap token saved to/);
+    const tokenLikeLine = captured.split("\n").map(stripAnsi).find(
+      (l) => /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(l),
+    ) ?? "";
+    expect(tokenLikeLine).toBe("");
 
     // 2. status shows the bootstrap tenant
-    const status1 = await runCli(["status", "--data-dir", dataDir], { fs });
+    const status1 = await runCli(["status", "--data-dir", dataDir], { fs, home: iso.home });
     expect(status1.exitCode).toBe(0);
     expect(status1.stdout).toMatch(/tenants:\s*1/);
 
     // 3. tenant create
     const createBeta = await runCli(
       ["tenant", "create", "--id", "beta", "--name", "Beta Co", "--data-dir", dataDir],
-      { fs },
+      { fs, home: iso.home },
     );
     expect(createBeta.exitCode).toBe(0);
-    const list1 = await runCli(["tenant", "list", "--data-dir", dataDir], { fs });
+    const list1 = await runCli(["tenant", "list", "--data-dir", dataDir], { fs, home: iso.home });
     expect(list1.stdout).toMatch(/acme/);
     expect(list1.stdout).toMatch(/beta/);
 
     // 4. token issue for acme
     const issued = await runCli(
       ["token", "issue", "--tenant", "acme", "--caller", "agent-1", "--scope", "*", "--data-dir", dataDir],
-      { fs },
+      { fs, home: iso.home },
     );
     expect(issued.exitCode).toBe(0);
     const token = issued.stdout.trim();
     expect(token).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
 
     // 5. capability list shows the registered capabilities
-    const cap = await runCli(["capability", "list", "--data-dir", dataDir], { fs });
+    const cap = await runCli(["capability", "list", "--data-dir", dataDir], { fs, home: iso.home });
     expect(cap.exitCode).toBe(0);
     expect(cap.stdout).toMatch(/gateway\.status/);
     expect(cap.stdout).toMatch(/tenant\.list/);
     expect(cap.stdout).toMatch(/capability\.list/);
 
     // 6. RESTART simulation — same fs, fresh createPlatform-equivalent (via status)
-    const status2 = await runCli(["status", "--data-dir", dataDir], { fs });
+    const status2 = await runCli(["status", "--data-dir", dataDir], { fs, home: iso.home });
     expect(status2.stdout).toMatch(/tenants:\s*2/);
   });
 
   it("JWT round-trip: token issued by CLI is verifiable against the on-disk secret", async () => {
     const fs = new InMemoryFs();
     const dataDir = "/data";
-    await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs });
+    const iso = isolatedHome();
+    await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs, home: iso.home });
     const issued = await runCli(
       ["token", "issue", "--tenant", "acme", "--caller", "agent-42", "--scope", "platform.tenant.read,platform.capability.read", "--data-dir", dataDir],
-      { fs },
+      { fs, home: iso.home },
     );
     const token = issued.stdout.trim();
     // Decode the secret (base64 stored on disk)
@@ -114,12 +133,13 @@ describe("integration: full lifecycle", () => {
   it("`init` is idempotent — running it twice on the same dataDir does not error", async () => {
     const fs = new InMemoryFs();
     const dataDir = "/data";
-    const r1 = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs });
+    const iso = isolatedHome();
+    const r1 = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs, home: iso.home });
     expect(r1.exitCode).toBe(0);
-    const r2 = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs });
+    const r2 = await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs, home: iso.home });
     expect(r2.exitCode).toBe(0);
     // tenant count is still 1 (not 2)
-    const status = await runCli(["status", "--data-dir", dataDir], { fs });
+    const status = await runCli(["status", "--data-dir", dataDir], { fs, home: iso.home });
     expect(status.stdout).toMatch(/tenants:\s*1/);
   });
 });
