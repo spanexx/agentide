@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-08  **Open:** 34  **Resolved:** 66  **Critical/High:** 0
+**Last updated:** 2026-08-08  **Open:** 35  **Resolved:** 66  **Critical/High:** 0
 
 ## Open
 
@@ -476,3 +476,10 @@ ot 0`.
   - Why matters: `start` is the first command a fresh operator runs. The failure reads as "the tool is broken" and forces a manual step `init` exists to remove.
   - Owner: `agentide` (CLI). To fix: reuse the `opts.fs.mkdir` seam in `runStart` (same pattern as `runInit` — recursive mkdir before the writability probe), or probe-after-create. Small change, mirrors `init`'s proven path.
   - Related: D-114 (data-dir discovery ergonomics — "data-dir discovery + secret bootstrap ergonomics" was left as roadmap in D-114; this is the concrete first symptom).
+
+- **D-116** (Medium, 2026-08-08, reporter: REST-adapter live test — gateway restart while @example SDK connected) — after the gateway restarts (stale gateway killed, new `agentide start --all-doors` booted), the connected @example app's SDK reconnects at the TCP level but never re-registers its business capabilities. Observable: socket is ESTABLISHED to 7350 (`ss`), `lifecycle: re-registering capabilities` never logged, `capability.list` via REST shows 0 business caps (only platform caps), business invokes fail until the SDK app is restarted.
+  - Doc claim: sdk-node PRD Scenario 5 + lifecycle contract — reconnect re-registers every previously-registered cap (`lifecycle.ts:7,68-72` — "On 'open' after a reconnect: re-register every previously-registered cap"; `index.ts:13` — "so that on reconnect, every cap is re-registered automatically").
+  - Code reality: `scheduleReconnect` (`client.ts:244-253`) re-calls `open()` which re-sends `sdk.auth` and re-emits "open" — but the example log froze at 09:24:25.962 (exact moment the new gateway bound 7350) with the SDK stuck mid-handshake; the lifecycle re-register (`lifecycle.ts:66-76`) never ran. Root cause not yet isolated: suspected handshake/registration message lost against the freshly-binding gateway (race), or backend-runtime's per-connection cap accumulator not re-armed after the appId socket replacement (`registry.ts` "replace prior connection for the same key" path).
+  - Why matters: an operator restarting the gateway for a config change silently orphans every connected app — business capabilities vanish from the catalog (discovery + invocation) until each app is restarted by hand. No error surfaces to the operator.
+  - Owner: sdk-node + backend-runtime (cross-pack audit). To fix: reproduce deterministically (kill gateway mid-connection, boot new one, watch cap registry), then fix reconnect re-registration (likely: re-register AFTER auth-ack, not on raw socket open; verify against backend-runtime's replace-connection semantics).
+  - Related: sdk-browser T5 Q1 (same `sdk.auth` first-message wire), D-115 (sibling operator-friction finding from the same session).
