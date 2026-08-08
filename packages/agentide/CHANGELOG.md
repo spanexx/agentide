@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/spanexx/agentide/compare/agentide-v0.7.0...agentide-v0.8.0) (2026-08-08)
+
+
+### Features
+
+* **agentide:** add CLI command tree and interactive shell groundwork ([916e05b](https://github.com/spanexx/agentide/commit/916e05bcef21eacebe1f3aaa4c6402b9e60431a3))
+
 ## [0.7.0](https://github.com/spanexx/agentide/compare/agentide-v0.6.0...agentide-v0.7.0) (2026-08-08)
 
 
