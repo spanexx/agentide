@@ -39,6 +39,12 @@ D-117 (status tenantCount: 0) is RESOLVED-by-restructure: the local `runStatus`/
 - **Files:** `cli-utils.ts` (NEW `tokenizeArgs`, CID:shell-014 — quote-stripping tokenizer: matched single/double quote pairs removed, whitespace inside quotes grouped, unterminated quote throws a friendly error; no escapes in v1); `shell.ts` (dispatch uses `tokenizeArgs` — unterminated quotes print `error: …` and stay in the shell; NEW CID:shell-013 process-level SIGINT no-op for the shell lifetime via `runShell`→`shellLoop` split, removed on exit).
 - **Tests:** NEW `cli-utils.test.ts` 8/8 (the `--scope '*'` bug, quoted JSON one-token, double quotes, mid-word pairs, unterminated throw); `shell.test.ts` +3 (quoted `cd 'my dir'` switches context + pwd, quoted-missing-dir error shows the UNQUOTED path, `watch` against an unreachable gateway errors and the shell survives → exit 0). D-120/D-121 written + resolved in `docs/drift.md`.
 
+## Surgical-change delivery note (2026-08-09) — shell output hardening D-122
+
+**What:** two output-rendering bugs from the same live demo: (1) shell dispatch output was written VERBATIM without the trailing newline one-shot mode guarantees (CID:cli-014) — `invoke client.list` (empty `[]`) and other `}`-ending JSON got visually clobbered by the prompt redraw on the same line, reading as "prints nothing"; (2) `clear` only emitted `\x1b[2J\x1b[H` (screen), leaving stale rows in captures/scrollback.
+- **Files:** `cli-utils.ts` NEW `ensureTrailingNewline` (CID:shell-015 — empty unchanged / already-\n unchanged / exactly one appended); `shell.ts` dispatch writes `ensureTrailingNewline(r.stdout/r.stderr)` (CID:shell-016), `clear` → `\x1b[2J\x1b[3J\x1b[H` (scrollback wipe, CID:shell-016).
+- **Tests:** `cli-utils.test.ts` +3 (ensureTrailingNewline: unchanged/append/empty); `shell.test.ts` clear expectation updated to the 3-sequence. Validation script section 9 extended with D-122 pins (published binary): `invoke client.list` inside the PTY shell must display `[]` on its OWN line; `clear` must emit the 3-sequence. D-122 written + resolved in `docs/drift.md`.
+
 ## Phase Plan
 
 6 phases, ordered so the shell (highest novelty) lands after the tree mechanics are proven. Phases 1-3 build the tree + dispatcher; phase 4 rewrites help/old-name surface; phase 5 adds the shell; phase 6 builds the post-impl sim. Each phase keeps the full suite green.

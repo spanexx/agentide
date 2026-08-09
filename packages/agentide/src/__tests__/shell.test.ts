@@ -95,9 +95,9 @@ describe("shell: builtins (PRD-TRD S1/S8)", () => {
     }
   });
 
-  it("clear emits the ANSI clear sequence", async () => {
+  it("clear emits the ANSI clear sequence (screen + scrollback)", async () => {
     const { output } = await driveShell("clear\nexit\n");
-    expect(output).toContain("\x1b[2J\x1b[H");
+    expect(output).toContain("\x1b[2J\x1b[3J\x1b[H");
   });
 
   it("cd switches the data-dir context (S8)", async () => {

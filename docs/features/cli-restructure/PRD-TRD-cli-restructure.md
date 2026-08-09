@@ -100,6 +100,8 @@ Group with no subcommand prints just that group's subcommand list + usage (e.g. 
 
 > **2026-08-09 (surgical fix D-120 + D-121):** two shell-hardening notes. **(1) Quotes:** arguments may be wrapped in single/double quotes — pairs are stripped and whitespace inside quotes groups into ONE argument (`--scope '*'` → scope `*`; `--args '{"a":1}'` → one JSON token). No escapes in v1; an unterminated quote prints a friendly error and stays in the shell. **(2) Ctrl-C is enforced at PROCESS level** for the whole shell lifetime (not just readline), so even while a long-running command (e.g. `watch`) is dispatching — after its own one-shot SIGINT handler has fired — a further Ctrl-C can never hit the process default and kill the shell.
 
+> **2026-08-09 (surgical fix D-122):** two output-rendering hardenings. **(1) Dispatch output is newline-terminated** like one-shot mode (CID:cli-014 parity): results such as `[]` or `}`-ended JSON previously lost their final line when the prompt redrew on the same row — visible as `invoke client.list` printing "nothing". **(2) `clear` now wipes the scrollback too** (`\x1b[2J\x1b[3J\x1b[H`) so captured/terminal rows don't linger.
+
 ## Simulation Contract
 
 The post-impl sim (`simulate.sh`) must demonstrate every scenario above. The pre-impl sims (`simulate-pre.sh` + `simulate-pre.html`, design-time, user-approved 2026-08-08) get archived after drift is settled.

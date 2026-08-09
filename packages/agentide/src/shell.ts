@@ -21,7 +21,7 @@ import type { CliOptions, CliResult } from "./cli-types.js";
 import { dispatchTokens } from "./dispatcher.js";
 import { GROUPS } from "./cli-tree.js";
 import { defaultDataDir } from "./data-dir.js";
-import { tokenizeArgs } from "./cli-utils.js";
+import { tokenizeArgs, ensureTrailingNewline } from "./cli-utils.js";
 
 export interface ShellIO {
   readonly input: NodeJS.ReadableStream;
@@ -239,7 +239,9 @@ async function processLine(
       write(shellHelp());
       return "continue";
     case "clear":
-      write("\x1b[2J\x1b[H");
+      // CID:shell-016 - clear also wipes the scrollback (\x1b[3J) so
+      // captures/terminals don't keep stale rows (surgical D-122, 2026-08-09).
+      write("\x1b[2J\x1b[3J\x1b[H");
       return "continue";
     case "pwd":
       write(`${process.cwd()}\n`);
@@ -264,8 +266,11 @@ async function processLine(
     }
     default: {
       const r = await dispatchTokens([cmd!, ...rest], opts, dataDir);
-      if (r.stdout !== "") write(r.stdout);
-      if (r.stderr !== "") write(r.stderr);
+      // CID:shell-016 - dispatch results are newline-terminated like one-shot
+      // (CID:cli-014); without this, outputs like `[]` or `}`-ended JSON get
+      // clobbered by the prompt redraw on the same line (D-122, 2026-08-09).
+      if (r.stdout !== "") write(ensureTrailingNewline(r.stdout));
+      if (r.stderr !== "") write(ensureTrailingNewline(r.stderr));
       return "continue";
     }
   }

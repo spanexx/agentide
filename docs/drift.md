@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 71  **Critical/High:** 0
+**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 72  **Critical/High:** 0
 
 ## Open
 
@@ -519,5 +519,12 @@ ot 0`.
   - Code reality: `shell.ts` processLine `const [cmd, ...rest] = stripped.split(/\s+/)` — quotes passed through into argv.
   - Why matters: every flag with a quoted value (scope, JSON args, paths with spaces) silently misbehaved; the scope case caused a deny-by-default cascade that looked like an auth bug.
   - Owner: agentide (shell). To fix: quote-aware tokenizer.
-  - Verified by: `cli-utils.ts` CID:shell-014 `tokenizeArgs` — strips matched single/double quote pairs, groups quoted whitespace into one argument, throws a friendly `unterminated quote` error (shell prints it and stays alive); no escapes in v1. NEW `cli-utils.test.ts` 8/8 (the exact `--scope '*'` case, quoted JSON one-token, double quotes, mid-word pairs, unterminated throw) + `shell.test.ts` "cd with a quoted path containing spaces" (context re-resolves via the quoted dir) + quoted-missing-dir error shows the UNQUOTED path. Full suite green at fix time. Commit: `983330f`
+  - Verified by: `cli-utils.ts` CID:shell-014 `tokenizeArgs` — strips matched single/double quote pairs, groups quoted whitespace into one argument, throws a friendly `unterminated quote` error (shell prints it and stays alive); no escapes in v1. NEW `cli-utils.test.ts` 8/8 (the exact `--scope '*'` case, quoted JSON one-token, double quotes, mid-word pairs, unterminated throw) + `shell.test.ts` "cd with a quoted path containing spaces" (context re-resolves via the good cd) + quoted-missing-dir error shows the UNQUOTED path. Full suite green at fix time. Commit: `983330f`
+
+- **D-122** (RESOLVED 2026-08-09 — Low, 2026-08-09, reporter: manual shell demo on 0.9.2 — `invoke client.list` appeared to print NOTHING; `clear` left stale rows) — two output-rendering issues in the interactive shell. (a) Dispatch results were written VERBATIM without the trailing newline one-shot mode guarantees (CID:cli-014); on a TTY the readline prompt redraw clobbered the last (line-less) row — `invoke client.list` (empty `[]`) looked like it printed nothing, and `}`-ended friendly JSON lost its closing line. (b) `clear` emitted only `\x1b[2J\x1b[H` (current screen) — stale rows remained in scrollback/captures.
+  - Doc claim: PRD-TRD-cli-restructure S3 — "TTY + invoke → pretty JSON" — implies the output is visible/line-terminated like one-shot.
+  - Code reality: `shell.ts` processLine `if (r.stdout !== "") write(r.stdout)` — no newline guarantee; `clear` wrote a 2-sequence only.
+  - Why matters: empty/JSON outputs in the TTY shell appeared missing — the primary operator surface felt broken, and `clear` didn't truly clear.
+  - Owner: agentide (shell). To fix: newline-terminate dispatch output + include scrollback wipe in clear.
+  - Verified by: `cli-utils.ts` CID:shell-015 `ensureTrailingNewline` (empty unchanged / already-\n unchanged / exactly one appended) wired into the shell's dispatch writes (CID:shell-016); `clear` → `\x1b[2J\x1b[3J\x1b[H`. Tests: `cli-utils.test.ts` +3 (no-newline/append, already-newline, empty); `shell.test.ts` clear expectation updated. Full suite green at fix time (1197 pass / 28 skip; 2 env-fails = live demo gateway on 7300/7200). Validate-release.sh section 9 extended with the D-122 pins. Commit: <pending>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tokenizeArgs } from "../cli-utils.js";
+import { tokenizeArgs, ensureTrailingNewline } from "../cli-utils.js";
 
 // CID:shell-014 - tokenizeArgs (surgical fix D-121, 2026-08-09): the shell
 // used a raw whitespace split, so quotes reached commands literally —
@@ -43,5 +43,21 @@ describe("tokenizeArgs (shell quote handling, D-121)", () => {
 
   it("unterminated quote throws a friendly error", () => {
     expect(() => tokenizeArgs("--args '{\"a\":1}")).toThrow(/unterminated quote/i);
+  });
+});
+
+describe("ensureTrailingNewline (shell dispatch, D-122)", () => {
+  it("already-newline-terminated text is unchanged", () => {
+    expect(ensureTrailingNewline("ok\n")).toBe("ok\n");
+  });
+
+  it("missing newline → exactly one appended", () => {
+    expect(ensureTrailingNewline("[]")).toBe("[ ]\n".replace(" ", ""));
+    expect(ensureTrailingNewline("[]")).toBe("[]\n");
+    expect(ensureTrailingNewline("{} ".trim())).toBe("{}\n");
+  });
+
+  it("empty output stays empty", () => {
+    expect(ensureTrailingNewline("")).toBe("");
   });
 });

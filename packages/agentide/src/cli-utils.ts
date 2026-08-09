@@ -15,6 +15,16 @@ import type { CliResult } from "./cli-types.js";
 // JSON parse). This tokenizer strips matched single/double quote pairs and
 // groups whitespace INSIDE quotes into one argument. No escapes in v1 — an
 // unterminated quote is a user error and throws (the shell prints it).
+// CID:shell-015 - ensureTrailingNewline (surgical 2026-08-09, D-122): one-shot
+// commands get a guaranteed trailing newline from runCli's wrapper
+// (CID:cli-014), but the shell writes dispatch results VERBATIM — an
+// output like `[]` or a `}`-ended JSON then gets clobbered by the prompt
+// redraw on the same line. The shell terminates every dispatch result with
+// exactly one trailing newline when missing (empty output stays empty).
+export function ensureTrailingNewline(text: string): string {
+  return text === "" || text.endsWith("\n") ? text : `${text}\n`;
+}
+
 export function tokenizeArgs(line: string): string[] {
   const args: string[] = [];
   let cur = "";
