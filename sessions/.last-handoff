@@ -1,51 +1,44 @@
-# Handoff — 2026-08-09: surgical-change COMPLETE — shell hardening D-120 + D-121 (983330f + b94d24a)
+# Handoff — 2026-08-09: MCP real-client fixes D-123 + D-124 (3d3745f) — Zed config next
 
 ## TL;DR
 
-Surgical-change (skill: `surgical-change`) DONE, COMMITTED, PUSHED. Two operator-discovered shell bugs fixed: (1) **D-120** a second Ctrl-C during `watch` killed the whole shell; (2) **D-121** the shell passed quote characters literally (`--scope '*'` → scope `['*']`; `--args '{json}'` → parse error). Both fixed with tests, docs amended, drift ledger closed (Open 35 / Resolved 71).
+MCP door tested with a REAL MCP client (official SDK, Zed-style) → TWO real bugs found + fixed + verified:
+- **D-123 (High):** the MCP adapter served only the FIRST connection per gateway process (shared SDK Server keeps protocol state; 2nd client/reconnect → silent -32603, swallowed by server.ts's empty catch). Fix: per-request `Server` + transport (`createSessionServer` factory + `startMcpHttpServer` builds both per `/mcp` request).
+- **D-124 (Medium):** required `_meta` on every tools request (PRD Scenario 6) — real clients only send it in initialize → all real clients got -32602. Gate dropped (user-approved), sessionId channel still honored.
+
+Both verified with the official SDK client: connect → tools/list (29 tools) → tools/call gateway.status + session.create → ALL OK, reconnect OK.
 
 ## Commits (agentide repo, main)
 
 | Hash | Message |
 |---|---|
-| `983330f` | `fix(agentide): shell quote tokenizer + process-level Ctrl-C guard (D-120, D-121)` — 7 files, +216/−3 |
-| `b94d24a` | `docs(drift): pin D-120/D-121 to commit 983330f` (hash rotated by amend — same trap as D-119) |
+| `3d3745f` | `fix(adapter-mcp): per-request server lifecycle + drop _meta gate (D-123, D-124)` — 8 files, +141/−86 |
+| `f12943f` | `docs(drift): pin D-123/D-124 to commit 3d3745f` |
 
-## What changed
+Docs: PRD-TRD-mcp-adapter Scenario 6 + API-contract row + architecture note amended; IMPL delivery note; drift D-123/D-124 resolved (Open 35 / Resolved 74).
 
-- **`cli-utils.ts`** — NEW `tokenizeArgs` (CID:shell-014): quote-aware tokenizer — strips matched single/double quote pairs, groups quoted whitespace into one argument, throws friendly `unterminated quote` error (shell prints + stays alive). No escapes in v1.
-- **`shell.ts`** — dispatch uses `tokenizeArgs`; NEW CID:shell-013: **process-level SIGINT no-op** for the whole shell lifetime (`runShell` → `shellLoop` split; `process.on("SIGINT", keepAlive)` registered/removed in `finally`). Root cause of D-120: readline's guard is rl-scoped; after `watch`'s `process.once("SIGINT")` fired + detached, a second Ctrl-C hit the process default → shell died.
-- **Tests** — NEW `cli-utils.test.ts` 8/8; `shell.test.ts` +3 (quoted `cd 'my dir'`, quoted-missing-dir error shows UNQUOTED path, watch-vs-dead-gateway errors and shell survives → exit 0).
-- **Docs** — PRD-TRD-cli-restructure S8 note (quotes + process-level Ctrl-C); IMPL delivery note; drift D-120 (High) + D-121 (Medium) written + resolved with commit refs.
+## State
 
-## Validation
+- Tree clean, pushed.
+- **A gateway is RUNNING** (local bundle, PID via `ss -ltnp | grep :7100`): `--data-dir /tmp/ag-mcp --all-doors --foreground`, token at `/tmp/ag-mcp.token` (tenant acme, scope *, mints via `agentide token issue --tenant acme --caller mcp-test --scope '*' --data-dir /tmp/ag-mcp`). Example app NOT running (business caps won't show in tools until the example app boots — only platform caps + whatever SDKs connect).
+- NOT released yet — the fix rides the next release (agentide patch / adapter-mcp patch). Published 0.9.3 STILL has D-123/D-124.
 
-- Targeted: 32/32 (cli-utils 8 + shell 24).
-- Full suite: **1194 pass / 28 skip / 2 fail** — the 2 fails are ENVIRONMENTAL, not the change: user's LIVE demo gateway occupies 7300 (consumer-ux test binds port 7300) + 7200 (dashboard-factory asserts 7200 unreachable). Documented trap. With the gateway stopped, suite = 1194/28/0.
-- Precommit chain ×2 green (only pre-existing `tok` warning in read-claims.test.ts).
+## Next steps
 
-## Repo state
+1. **User configures Zed** — the MCP config: `http://127.0.0.1:7100/mcp` + `Authorization: Bearer <token>` header (token from /tmp/ag-mcp.token; NOTE: the token expires in 1h — re-mint + update the config when it does).
+2. **User tests in Zed**: tools should appear (29 platform tools now; business caps after booting the example app). NOTE: session-bound platform caps like tenant.list need `{id: "acme"}` arg; business caps need sessions (the MCP door has no auto-mint yet — D-91-adjacent; sessionId via `_meta.dev.agentide/sessionId` only).
+3. **Release** when ready: `release-agentide` (fix commits → agentide 0.9.4 patch + adapter-mcp patch). Then post-release-validation (its section 9 could gain an MCP check).
+4. **Validation script**: consider adding an MCP check (tools/list via curl with _meta-less request now that D-124 dropped the gate — actually no _meta needed anymore: simpler checks).
 
-`main` clean except `sessions/.last-handoff` (this file, uncommitted — commit pattern `docs(sessions): …` when writing). History: `b94d24a` → `983330f` → `7a242d8 (agentide-v0.9.1)`.
+## Trap notes (this session)
 
-## Live demo (USER'S processes — DO NOT kill)
-
-User's gateway + example app running: gateway PID 3604379 (doors 7100/7300/7350/7200/7400, data = global store `5c99a657dd2b`), app on :3000 (`/tmp/server.log`). Shell session active on the operator's terminal.
-
-## Next actions / options
-
-1. **User re-verifies in the shell** (their running instance predates the fix — needs `agentide` reinstall/relaunch to pick up 983330f; the published 0.9.1 on npm still has both bugs): `--scope *`, `--args '{"json"}'`, `watch sessions --json` + 2× Ctrl-C → shell survives.
-2. **Release ride:** `fix(agentide)` = patch → next release bumps 0.9.1 → 0.9.2. Use `release-agentide` when ready. NOTE: 0.9.1 published still carries D-120/D-121 — post-release-validation will re-verify.
-3. Open backlog: D-118 (init tenant idempotency — follow-up pack), D-100/95/96/97/98/99 (adapter-core), browser-runtime suite skips without chromium.
-
-## Trap notes
-
-- Amending a pushed commit rotates the hash → drift refs go stale (happened twice today). Pin refs AFTER the final hash, or expect a `docs(drift): pin` follow-up commit.
-- `nv check-banned-types.sh` bans literal `: unknown` in source strings.
-- Terminal tool uses `sh` (no bash-isms: no `${PIPESTATUS[@]}`, no `[[ ]]`).
-- A running demo gateway (7300 + 7200) breaks consumer-ux + dashboard-factory tests — stop it before full-suite runs.
-- Shell quote semantics now: quotes group spaces + strip pairs; NO backslash escapes (v1).
+- **esbuild bundles the BUILT dist of workspace packages** — editing adapter-mcp `src/` is NOT enough; run `npx tsc -b` in the package FIRST, then `pnpm run bundle` in packages/agentide, then restart the gateway. This cost ~1h of debugging (stale dist + stale gateway process race).
+- Killing gateways: `pkill -f bin.bundled` did NOT match (argv differs); kill by PID from `ss -ltnp | grep -oE 'pid=[0-9]+'`.
+- The gateway's silent catch in `handleTransportRequest` (server.ts) swallows transport exceptions → -32603 with zero logs. If MCP misbehaves again, instrument THAT catch first.
+- Raw-curl MCP testing: `_meta` no longer required (D-124), but a proper client (initialize → notifications/initialized) is the real test.
+- Tokens expire in 1h — mint fresh before MCP tests.
+- adapter-mcp tests: `pnpm exec vitest run packages/adapter-mcp/src/__tests__/` from repo root.
 
 ## Skills for next session
 
-`release-agentide` + `ci-cd-agentide` (release 0.9.2), `post-release-validation` (re-verify D-120/121 on published binary), `situation-awareness` (boot), `caveman` + `log-prompt` (mandatory).
+`release-agentide` + `ci-cd-agentide` (release the fixes), `post-release-validation`, `situation-awareness`, `caveman` + `log-prompt`.
