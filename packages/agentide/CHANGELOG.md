@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/spanexx/agentide/compare/agentide-v0.8.0...agentide-v0.9.0) (2026-08-09)
+
+
+### Features
+
+* **agentide:** cli-restructure phases 2-6 — refusals, tree help, deprecation notes, interactive shell ([e3a32ee](https://github.com/spanexx/agentide/commit/e3a32eed4abfa449c8dcb3b8059b802f677874be))
+
 ## [0.8.0](https://github.com/spanexx/agentide/compare/agentide-v0.7.0...agentide-v0.8.0) (2026-08-08)
 
 
