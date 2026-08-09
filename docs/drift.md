@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 69  **Critical/High:** 0
+**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 71  **Critical/High:** 0
 
 ## Open
 
@@ -506,3 +506,18 @@ ot 0`.
   - Why matters: repos got littered with `.agentide/` state dirs; the new default keeps per-repo isolation (keyed by repo root) in an XDG-style shared store without polluting the workspace.
   - Owner: agentide (CLI + shell).
   - Verified by: `data-dir.test.ts` 8/8 (priority chain, key stability/isolation, repo-mode opt-in, saveConfig preserves `data_dir`, init banner + no `.agentide` in cwd); `shell.test.ts` temp-home rework (global store never touches the real home) + `expect(!existsSync(cwd/.agentide))`; full suite green (1185 pass / 28 skip / 0 fail at fix time); `simulate.sh` 21/21 PASS (env-pinned S8 semantics). PRD-TRD-cli-restructure S1/S8 + IMPL delivery note + agentide-cli-consumer config schema note all amended 2026-08-09. Commit: `f34a7b9`
+
+- **D-120** (RESOLVED 2026-08-09 — High, 2026-08-09, reporter: manual shell demo — a second Ctrl-C during `watch sessions --json` killed the whole interactive shell) — the shell's only SIGINT guard was readline-scoped (`rl.on("SIGINT", noop)`); while a dispatched long-running command (watch) was streaming, its own `process.once("SIGINT")` handler (consumer defaultSignal) fired on the first Ctrl-C and detached — a SECOND Ctrl-C then hit the Node process default and terminated the agentide process, dropping the operator to bash (observed: nvm banner printed by the parent shell after the child died).
+  - Doc claim: PRD-TRD-cli-restructure S8 — "Ctrl-C clears the current line; it does not kick the operator out of the shell."
+  - Code reality: `shell.ts` runShell attached `rl.on("SIGINT", () => {})` only; consumer.ts watch's `defaultSignal` uses `process.once("SIGINT")` and `detach()` on settle — after the first Ctrl-C no process-level listener remained.
+  - Why matters: the shell is the primary operator surface; a second Ctrl-C (very common) silently killed it mid-command.
+  - Owner: agentide (shell). To fix: shell-lifetime process-level SIGINT no-op.
+  - Verified by: `shell.ts` CID:shell-013 — `runShell` now registers a process-level `keepAlive` no-op SIGINT listener for the shell lifetime (split into `runShell`→`shellLoop`, removed in `finally`), so any number of Ctrl-C are swallowed while dispatched commands manage their own one-shot handlers. Pinned: `shell.test.ts` "watch with an unreachable gateway errors, shell continues, exit 0" (watch error path returns to the prompt). Full suite green at fix time (1194 pass / 28 skip; the 2 remaining fails are the live demo gateway occupying 7300/7200 — environmental, documented trap). Commit: `da75fbd`
+
+- **D-121** (RESOLVED 2026-08-09 — Medium, 2026-08-09, reporter: manual shell demo — quotes reached commands literally) — the shell tokenized lines with a raw whitespace split, so `--scope '*'` minted a token with scope `["'*'"]` (every live call then denied with GATEWAY_INSUFFICIENT_SCOPE incl. session.create auto-mint) and `--args '{"userId":"u1"}'` failed with `invalid --args JSON` — the quotes were part of the value.
+  - Doc claim: PRD-TRD-cli-restructure S8 — the shell dispatches "exactly as one-shot" (a bash user expects quote stripping).
+  - Code reality: `shell.ts` processLine `const [cmd, ...rest] = stripped.split(/\s+/)` — quotes passed through into argv.
+  - Why matters: every flag with a quoted value (scope, JSON args, paths with spaces) silently misbehaved; the scope case caused a deny-by-default cascade that looked like an auth bug.
+  - Owner: agentide (shell). To fix: quote-aware tokenizer.
+  - Verified by: `cli-utils.ts` CID:shell-014 `tokenizeArgs` — strips matched single/double quote pairs, groups quoted whitespace into one argument, throws a friendly `unterminated quote` error (shell prints it and stays alive); no escapes in v1. NEW `cli-utils.test.ts` 8/8 (the exact `--scope '*'` case, quoted JSON one-token, double quotes, mid-word pairs, unterminated throw) + `shell.test.ts` "cd with a quoted path containing spaces" (context re-resolves via the quoted dir) + quoted-missing-dir error shows the UNQUOTED path. Full suite green at fix time. Commit: `da75fbd`
+

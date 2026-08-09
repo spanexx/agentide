@@ -21,6 +21,7 @@ import type { CliOptions, CliResult } from "./cli-types.js";
 import { dispatchTokens } from "./dispatcher.js";
 import { GROUPS } from "./cli-tree.js";
 import { defaultDataDir } from "./data-dir.js";
+import { tokenizeArgs } from "./cli-utils.js";
 
 export interface ShellIO {
   readonly input: NodeJS.ReadableStream;
@@ -136,8 +137,32 @@ export async function runShell(
   // are relative to it, and dataDir re-resolves from it. For the real CLI
   // this is a no-op (process.cwd() already); tests pass a temp dir.
   process.chdir(cwd);
-  let dataDir = await resolveDataDir(cwd, env, opts.home);
   const write = (text: string): void => { output.write(text); };
+
+  // CID:shell-013 - process-level SIGINT no-op (D-120, surgical 2026-08-09).
+  // readline's own SIGINT listener is rl-scoped: while a dispatched command
+  // runs (e.g. watch), its once() SIGINT handler fires on the first Ctrl-C
+  // and detaches — a SECOND Ctrl-C would then hit the process default and
+  // kill the whole shell. A shell-lifetime process listener keeps the S8
+  // semantics (Ctrl-C clears the line, never exits) no matter the command.
+  const keepAlive = (): void => {};
+  process.on("SIGINT", keepAlive);
+  try {
+    return await shellLoop(cwd, opts, env, input, output, write);
+  } finally {
+    process.removeListener("SIGINT", keepAlive);
+  }
+}
+
+async function shellLoop(
+  cwd: string,
+  opts: CliOptions,
+  env: NodeJS.ProcessEnv,
+  input: NodeJS.ReadableStream,
+  output: NodeJS.WritableStream,
+  write: (t: string) => void,
+): Promise<CliResult> {
+  let dataDir = await resolveDataDir(cwd, env, opts.home);
 
   for (;;) {
     const history = await loadHistory(dataDir);
@@ -197,7 +222,14 @@ async function processLine(
     return "continue";
   }
   await appendHistory(dataDir, stripped);
-  const [cmd, ...rest] = stripped.split(/\s+/);
+  let argv: string[];
+  try {
+    argv = tokenizeArgs(stripped);
+  } catch (err) {
+    write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
+    return "continue";
+  }
+  const [cmd, ...rest] = argv;
   switch (cmd) {
     case "exit":
     case "quit":

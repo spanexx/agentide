@@ -293,6 +293,80 @@ describe("shell: Ctrl-C behavior (PRD-TRD S8)", () => {
   });
 });
 
+// --- D-121: quoted args (surgical fix 2026-08-09) ------------------------------
+
+describe("shell: quoted arguments (D-121)", () => {
+  it("cd with a quoted path containing spaces works (quote stripping)", async () => {
+    const home = tempHome();
+    const dir = tempDir();
+    const spaced = join(dir, "my dir");
+    mkdirSync(spaced, { recursive: true });
+    try {
+      // PassThrough keeps the stream open so the post-cd restart can read
+      // the pwd line (scripted Readable.from would end → restart exits).
+      const input = new PassThrough();
+      const chunks: string[] = [];
+      const output = new Writable({
+        write(chunk: string | Uint8Array, _enc, cb) {
+          chunks.push(typeof chunk === "string" ? chunk : chunk.toString());
+          cb();
+        },
+      });
+      const p = runShell(dir, { fs: makeFs(), home }, { input, output });
+      input.write(`cd '${spaced}'\n`);
+      setTimeout(() => {
+        input.write("pwd\nexit\n");
+      }, 50);
+      await p;
+      const out = chunks.join("");
+      const expectedStore = await storeDataDir(home, spaced);
+      expect(out).toContain(`context: ${expectedStore}`); // cd re-resolved the store
+      expect(out).toContain(spaced); // pwd printed the NEW cwd (with the space)
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("single quotes around a value reach dispatch WITHOUT the quotes", async () => {
+    const home = tempHome();
+    const dir = tempDir();
+    try {
+      // '--scope *' would previously become scope "'*'"; the shell must strip.
+      // The cd error path names the argument — with the fix it is the raw
+      // path, not the quoted literal (Node wraps paths in '…' in its own
+      // chdir error text, so assert on the path WITHOUT the quotes).
+      const { output, exitCode } = await driveShell(`cd '/definitely/missing/dir'\nexit\n`, { home }, dir);
+      expect(exitCode).toBe(0);
+      expect(output).toContain("chdir '" + dir + "' -> '/definitely/missing/dir'");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// --- D-120: long-running/erroring commands must not kill the shell ---------------
+
+describe("shell: command errors keep the shell alive (D-120)", () => {
+  it("watch with an unreachable gateway errors, shell continues, exit 0", async () => {
+    const home = tempHome();
+    const dir = tempDir();
+    try {
+      const { output, exitCode } = await driveShell(
+        "watch sessions --json --url ws://127.0.0.1:1\nexit\n",
+        { home },
+        dir,
+      );
+      expect(exitCode).toBe(0);
+      expect(output).toContain("error:"); // connect refused surfaced
+      // the shell stayed alive: a prompt follows the error AND the exit line
+      // was processed (exitCode 0, not a crash).
+      expect(output.match(/agentide \(/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // --- S2: bare agentide TTY/non-TTY dispatch (runCli wiring) ----------------------
 
 describe("shell: bare `agentide` wiring in runCli (PRD-TRD S1/S2)", () => {

@@ -32,6 +32,13 @@ Built exactly per the Phase Plan below, with four documented deviations:
 
 D-117 (status tenantCount: 0) is RESOLVED-by-restructure: the local `runStatus`/`defaultPidFile` paths were deleted; `status` is live-only (S6). D-118 (init double-registers the default tenant) was surfaced by the same change — open, low.
 
+## Surgical-change delivery note (2026-08-09) — shell hardening D-120 + D-121
+
+**What:** two operator-discovered shell bugs, found live during a manual demo (user session): (1) a second Ctrl-C while a long-running command (e.g. `watch sessions --json`) was dispatching killed the WHOLE shell (readline's SIGINT guard is rl-scoped; after `watch`'s own one-shot handler detached, the next Ctrl-C hit the process default); (2) quotes reached commands literally — `--scope '*'` minted scope `['*']` (every live call denied) and `--args '{"a":1}'` failed JSON parse.
+- **Why:** the shell is the primary operator surface; both failures broke it silently (scope-typo denial cascade + shell death).
+- **Files:** `cli-utils.ts` (NEW `tokenizeArgs`, CID:shell-014 — quote-stripping tokenizer: matched single/double quote pairs removed, whitespace inside quotes grouped, unterminated quote throws a friendly error; no escapes in v1); `shell.ts` (dispatch uses `tokenizeArgs` — unterminated quotes print `error: …` and stay in the shell; NEW CID:shell-013 process-level SIGINT no-op for the shell lifetime via `runShell`→`shellLoop` split, removed on exit).
+- **Tests:** NEW `cli-utils.test.ts` 8/8 (the `--scope '*'` bug, quoted JSON one-token, double quotes, mid-word pairs, unterminated throw); `shell.test.ts` +3 (quoted `cd 'my dir'` switches context + pwd, quoted-missing-dir error shows the UNQUOTED path, `watch` against an unreachable gateway errors and the shell survives → exit 0). D-120/D-121 written + resolved in `docs/drift.md`.
+
 ## Phase Plan
 
 6 phases, ordered so the shell (highest novelty) lands after the tree mechanics are proven. Phases 1-3 build the tree + dispatcher; phase 4 rewrites help/old-name surface; phase 5 adds the shell; phase 6 builds the post-impl sim. Each phase keeps the full suite green.

@@ -9,6 +9,42 @@ import { fileURLToPath } from "node:url";
 import { GROUPS } from "./cli-tree.js";
 import type { CliResult } from "./cli-types.js";
 
+// CID:shell-014 - tokenizeArgs (surgical fix D-121, 2026-08-09): the shell
+// previously split lines with /\s+/ so quote characters reached commands
+// literally (`--scope '*'` minted scope ["'*'"]; `--args '{"a":1}'` failed
+// JSON parse). This tokenizer strips matched single/double quote pairs and
+// groups whitespace INSIDE quotes into one argument. No escapes in v1 — an
+// unterminated quote is a user error and throws (the shell prints it).
+export function tokenizeArgs(line: string): string[] {
+  const args: string[] = [];
+  let cur = "";
+  let quote: string | null = null;
+  for (const ch of line) {
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      else cur += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (cur !== "") {
+        args.push(cur);
+        cur = "";
+      }
+      continue;
+    }
+    cur += ch;
+  }
+  if (quote !== null) {
+    throw new Error(`unterminated quote in shell argument (missing closing ${quote})`);
+  }
+  if (cur !== "") args.push(cur);
+  return args;
+}
+
 // CID:cli-version-001 - CLI_VERSION
 // Version reported by `agentide --version`. Source of truth = package.json.
 // Two paths resolve it:
