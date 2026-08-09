@@ -22,8 +22,8 @@
 import { createPlatform } from "./factory.js";
 import * as fsPromises from "node:fs/promises";
 import type { CliOptions, CliResult } from "./cli-types.js";
-import { getFlag } from "./cli.js";
-import { result } from "./cli.js";
+import { getFlag } from "./cli-utils.js";
+import { result } from "./cli-utils.js";
 
 /**
  * CID:start-001 - runStart
@@ -326,7 +326,7 @@ export async function runStop(
   _opts: CliOptions,
 ): Promise<CliResult> {
   const { DEFAULT_PID_FILE, readPidFile, removePidFile, stopByPid } = await import("./lifecycle.js");
-  const { getFlag } = await import("./cli.js");
+  const { getFlag } = await import("./cli-utils.js");
 
   const pidFile = getFlag(flags, "pid-file", DEFAULT_PID_FILE);
   const info = await readPidFile(pidFile);
@@ -357,7 +357,7 @@ export async function runDetachedStart(
   flags: Record<string, string | boolean | string[]>,
   opts: CliOptions,
 ): Promise<CliResult> {
-  const { getFlag, result } = await import("./cli.js");
+  const { getFlag, result } = await import("./cli-utils.js");
   const {
     DEFAULT_PID_FILE, DEFAULT_LOG_FILE, DETACH_CHILD_ENV,
     detachChild, writePidFile, readPidFile, isAlive,

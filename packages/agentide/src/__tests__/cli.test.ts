@@ -54,6 +54,22 @@ describe("CLI", () => {
     expect(r.exitCode).toBe(0);
   });
 
+  it("help lists the tree surface (IMPL Phase 3, PRD-TRD S3)", async () => {
+    const fs = new InMemoryFs();
+    const r = await runCli(["--help"], { fs, home: TEMP_HOME });
+    expect(r.exitCode).toBe(0);
+    // Every group + its subs appear in the Usage block, derived from the tree.
+    expect(r.stdout).toMatch(/agentide gateway\s+start\|stop\|status\|health\|metrics\|version/);
+    expect(r.stdout).toMatch(/agentide tenant\s+create\|list\|suspend\|delete/);
+    expect(r.stdout).toMatch(/agentide session\s+create\|resume\|destroy\|touch\|list/);
+    expect(r.stdout).toMatch(/agentide capability\s+list\|describe/);
+    expect(r.stdout).toMatch(/agentide plugin\s+list\|install\|uninstall\|enable\|disable\|reload/);
+    expect(r.stdout).toMatch(/agentide client\s+create\|list\|grant\|revoke\|rotate\|redeem/);
+    expect(r.stdout).toMatch(/agentide token\s+issue\|revoke/);
+    // Deprecated old names are listed once, on the migration line (PRD-TRD S4).
+    expect(r.stdout).toMatch(/Deprecated \(removed next release\): agentide start, agentide stop/);
+  });
+
   it("init creates default tenant + secret + saves token to config (not stdout)", async () => {
     const mem = new InMemoryFs();
     // init writes its confirmation directly to process.stdout. Capture it.

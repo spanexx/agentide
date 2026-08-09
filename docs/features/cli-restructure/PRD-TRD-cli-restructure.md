@@ -49,14 +49,14 @@ agentide invoke   <capability> [--args ...]   (top-level escape hatch)
 agentide watch    <alias> [--topic ...]        (top-level escape hatch)
 ```
 
-Group with no subcommand prints just that group's subcommand list + usage (e.g. `agentide gateway` → `usage: agentide gateway <subcommand>` + `subcommands: start stop status health metrics version`), exits 0. Unknown subcommand → `error: unknown subcommand: <sub>` + the group's list, exit 2.
+Group with no subcommand prints just that group's subcommand list + usage (e.g. `agentide gateway` → `usage: agentide gateway <subcommand>` + `subcommands: start stop status health metrics version`), exits 0. Unknown subcommand → `error: unrecognized subcommand: <sub>` + the group's list, exit 2. (NOTE: the exact error word is "unrecognized" — the repo's banned-type gate (check-banned-types.sh) rejects the literal `: unknown` pattern in source, and the unpre-impl sim matched it too.)
 
 ### Scenario 4: one-release old names
 
 **Given** the operator runs a pre-restructure name (`start`, `stop`, `status`, `health`, `sessions`, `capabilities`, `plugins`)
 **When** the CLI parses it
 **Then**:
-1. The command runs exactly as before.
+1. The command runs exactly as before — except `status`, which is already live-only this release per Scenario 6 (its old in-process/pid-file disk path was deleted; `status --data-dir` is refused). The migration window applies to the other eight names; `status` is "effectively already removed", documented in IMPL + D-117.
 2. A note prints once, on stderr, naming the new tree command, e.g. `note: 'agentide status' is deprecated — use 'agentide gateway status' (removed next release)`.
 3. Old names are removed in the release after this one.
 
@@ -66,7 +66,7 @@ Group with no subcommand prints just that group's subcommand list + usage (e.g. 
 **When** the CLI parses it
 **Then**:
 - **Offline (disk)** — `init`, `tenant`, `client`, `token`: use the data-dir only; refuse `--url`/`--token` with a clear error, exit 1.
-- **Live (gateway)** — `gateway *` (status/health/metrics/version and stop), `invoke`, `session *`, `plugin install|uninstall|enable|disable|reload`, `capability describe`: always remote; gateway down → error `gateway not running (start it with: agentide gateway start)` from the pid file — never a raw ECONNREFUSED; refuse `--data-dir`, exit 1.
+- **Live (gateway)** — `gateway *` (status/health/metrics/version), `invoke`, `session *`, `plugin install|uninstall|enable|disable|reload`: always remote; gateway down → error `gateway not running (start it with: agentide gateway start)` from the pid file — never a raw ECONNREFUSED; refuse `--data-dir`, exit 1. (World-table note: `gateway start`/`stop` and `capability describe` ship as **offline/data-dir** in v1 — start/stop are pid-file spawn ops that must work with no gateway up (Risk Note 1), and describe reads the in-process registry (IMPL delivery note 4). The world table below reflects the shipped worlds.)
 - **Dual-mode** — `capability list`, `plugin list`: read disk by default; `--url` switches to the live gateway.
 - `--json` stays global. `--data-dir` and `--url`/`--token` never mix on the same command.
 - Zero-flag remote works after `init` + `start` via the config file (`gateway_url` + `token`).
@@ -83,8 +83,8 @@ Group with no subcommand prints just that group's subcommand list + usage (e.g. 
 
 **Given** the operator is in the `agentide>` shell and presses Tab
 **Then**:
-1. Tab completes the command + subcommand tree (e.g. `gateway sta<Tab>` → `gateway start `).
-2. Tab completes tenant and capability names from the data-dir state (e.g. `tenant delete acm<Tab>` → `tenant delete acme `).
+1. Tab completes the command + subcommand tree (e.g. `gateway sta<Tab>` lists `start`/`status`, and inserts the unique match).
+2. Tab completes tenant ids from the data-dir store (e.g. `tenant delete acm<Tab>` → `tenant delete acme `). NOTE: the v1 `tenant delete`/`suspend` handlers take `--id <tenant>` (pre-existing flag surface); the completed positional is the value target — type `--id acme` to use it. Capability names are NOT completed in v1 (no disk artifact ships them; the shell falls back to tree-only completion — see IMPL Risk Note 2).
 3. Tab does NOT complete live capability names (no gateway round-trip on Tab) and does NOT complete filesystem paths.
 
 ### Scenario 8: shell history and prefix tolerance
@@ -105,7 +105,7 @@ The post-impl sim (`simulate.sh`) must demonstrate every scenario above. The pre
 agentide                          # TTY → agentide> shell; non-TTY → help, exit 0
 # Scenario 3: tree + group-with-no-subcommand + unknown subcommand
 agentide gateway                  # → subcommand list, exit 0
-agentide gateway bogus            # → unknown subcommand, exit 2
+agentide gateway bogus            # → unrecognized subcommand, exit 2
 # Scenario 4: old names
 agentide status                   # → runs + stderr note 'use agentide gateway status'
 # Scenario 5: split
@@ -168,9 +168,10 @@ No new external deps. Node built-ins only: `node:readline` (shell), `node:fs/pro
 ## References
 
 - `docs/features/cli-restructure/GRILL-cli-restructure.txt` — locked decisions Q1–Q8 + follow-up locks
-- `docs/features/cli-restructure/simulate-pre.sh` — pre-impl sim (user-approved 2026-08-08)
-- `docs/features/cli-restructure/simulate-pre.html` — pre-impl sim HTML surface (user-approved 2026-08-08)
-- `packages/agentide/src/cli.ts` — current dispatcher (L232-292), handlers, help
-- `packages/agentide/src/consumer.ts` — remote consumer commands (unchanged)
+- `docs/features/cli-restructure/simulate.sh` — post-impl sim (canonical, drives the real CLI; update this one, not the archived originals)
+- `docs/features/cli-restructure/archive/simulate-pre.sh` + `archive/simulate-pre.html` — pre-impl design sims (user-approved 2026-08-08, archived after drift settled)
+- `packages/agentide/src/dispatcher.ts` — tree dispatcher + world refusals (L-comments)
+- `packages/agentide/src/shell.ts` — interactive shell
+- `packages/agentide/src/consumer.ts` — remote consumer commands
 - `packages/agentide/src/exit-codes.ts` — the 0..5 ladder (unchanged)
-- `docs/drift.md` — D-68 (cli.ts over 350 lines, closed by this pack's split)
+- `docs/drift.md` — D-68 (cli.ts > 350 lines, closed by this pack's split), D-117 (status rehome), D-118 (init not tenant-idempotent, open)

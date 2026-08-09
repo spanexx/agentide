@@ -69,10 +69,10 @@ describe("cli-tree: world per PRD-TRD S5", () => {
     expect(GROUPS["session"]!.world).toBe("live");
   });
 
-  it("capability list is dual; describe is live", () => {
+  it("capability list is dual; describe is offline (in-process registry in v1, IMPL note 4)", () => {
     expect(GROUPS["capability"]!.world).toBe("dual");
     expect(worldOf("capability", "list")).toBe("dual");
-    expect(worldOf("capability", "describe")).toBe("live");
+    expect(worldOf("capability", "describe")).toBe("offline");
   });
 
   it("plugin list is dual; mutators are live", () => {
@@ -219,28 +219,112 @@ describe("cli-tree: dispatch — all groups (PRD-TRD S3)", () => {
     expect(r.stdout).toMatch(/gateway\.status/);
   });
 
-  it("old name `status` is live-only — exits non-zero without a reachable gateway (PRD S6)", async () => {
+  it("old name `status` is live-only — exits non-zero with a dead --url (PRD S6)", async () => {
     // NOTE: a real gateway may be running on 127.0.0.1:7300 from earlier
     // sessions, and the consumer resolves the real ~/.config — force a
-    // dead endpoint so the test is deterministic.
+    // dead endpoint so the test is deterministic. No --data-dir: live
+    // commands refuse it (IMPL Phase 2).
     const r = await runCli(
-      ["status", "--data-dir", "/data", "--url", "ws://127.0.0.1:1/ws", "--token", "t"],
+      ["status", "--url", "ws://127.0.0.1:1/ws", "--token", "t"],
       { fs: makeEmptyFs(), home },
     );
     expect(r.exitCode).not.toBe(0);
   });
 
-  it("`agentide gateway status` without a reachable gateway exits non-zero (live-only)", async () => {
-    const r = await runCli(
-      ["gateway", "status", "--data-dir", "/data", "--url", "ws://127.0.0.1:1/ws", "--token", "t"],
-      { fs: makeEmptyFs(), home },
-    );
-    expect(r.exitCode).not.toBe(0);
+  it("`agentide gateway status` without a running gateway → 'gateway not running' (PRD S6)", async () => {
+    // Phase 2: live command without --url checks the pid file first. The
+    // pidFile seam keeps this deterministic (real /tmp/agentide.pid may
+    // hold a leftover gateway).
+    const r = await runCli(["gateway", "status"], { fs: makeEmptyFs(), home, pidFile: join(home, "no.pid") });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/gateway not running \(start it with: agentide gateway start\)/);
   });
 
   it("`agentide sessions` (old name) without a reachable gateway exits non-zero (session list is live)", async () => {
     const r = await runCli(["sessions", "--url", "ws://127.0.0.1:1/ws", "--token", "t"], { fs: makeEmptyFs(), home });
     expect(r.exitCode).not.toBe(0);
+  });
+});
+
+describe("cli-tree: old-name deprecation notes (PRD-TRD S4, IMPL Phase 4)", () => {
+  const home = mkdtempSync(join(tmpdir(), "agentide-cli-tree-notes-"));
+  const cleanup = () => rmSync(home, { recursive: true, force: true });
+  it("old `status` runs + exactly one stderr note naming 'agentide gateway status'", async () => {
+    try {
+      const r = await runCli(["status"], { fs: makeEmptyFs(), home, pidFile: join(home, "no.pid") });
+      expect(r.exitCode).toBe(1); // gateway not running (pid seam)
+      expect(r.stderr).toContain("note: 'agentide status' is deprecated — use 'agentide gateway status' (removed next release)");
+      expect(r.stderr).toMatch(/gateway not running/);
+      expect(r.stderr.match(/deprecated/g)?.length).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("old `health` runs + note names 'agentide gateway health'", async () => {
+    try {
+      const r = await runCli(["health", "--url", "ws://127.0.0.1:1/ws", "--token", "t"], { fs: makeEmptyFs(), home });
+      expect(r.exitCode).not.toBe(0);
+      expect(r.stderr).toContain("note: 'agentide health' is deprecated — use 'agentide gateway health' (removed next release)");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("old `sessions` runs + note names 'agentide session list'", async () => {
+    try {
+      const r = await runCli(["sessions", "--url", "ws://127.0.0.1:1/ws", "--token", "t"], { fs: makeEmptyFs(), home });
+      expect(r.exitCode).not.toBe(0);
+      expect(r.stderr).toContain("note: 'agentide sessions' is deprecated — use 'agentide session list' (removed next release)");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("old `capabilities` runs on disk + note names 'agentide capability list'", async () => {
+    try {
+      const dataDir = join(home, "cap-data");
+      await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs: makeEmptyFs(), home });
+      const r = await runCli(["capabilities", "--data-dir", dataDir], { fs: makeEmptyFs(), home });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/gateway\.status/);
+      expect(r.stderr).toContain("note: 'agentide capabilities' is deprecated — use 'agentide capability list' (removed next release)");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("old `plugins` runs on disk + note names 'agentide plugin list'", async () => {
+    try {
+      const dataDir = join(home, "plug-data");
+      await runCli(["init", "--data-dir", dataDir, "--default-tenant", "acme"], { fs: makeEmptyFs(), home });
+      const r = await runCli(["plugins", "--data-dir", dataDir], { fs: makeEmptyFs(), home });
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toContain("note: 'agentide plugins' is deprecated — use 'agentide plugin list' (removed next release)");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("old `stop` runs (nothing to stop) + note names 'agentide gateway stop'", async () => {
+    try {
+      const r = await runCli(["stop", "--pid-file", join(home, "no.pid")], { fs: makeEmptyFs(), home });
+      expect(r.exitCode).toBe(0); // D-83 unified rc 0
+      expect(r.stderr).toContain("note: 'agentide stop' is deprecated — use 'agentide gateway stop' (removed next release)");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("new tree names get NO deprecation note", async () => {
+    try {
+      const r = await runCli(["gateway", "status"], { fs: makeEmptyFs(), home, pidFile: join(home, "no.pid") });
+      expect(r.stderr).not.toContain("deprecated");
+      const r2 = await runCli(["tenant", "list", "--url", "ws://x"], { fs: makeEmptyFs(), home });
+      expect(r2.stderr).not.toContain("deprecated");
+    } finally {
+      cleanup();
+    }
   });
 });
 

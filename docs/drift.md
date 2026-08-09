@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-08  **Open:** 36  **Resolved:** 67  **Critical/High:** 0
+**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 68  **Critical/High:** 0
 
 ## Open
 
@@ -106,7 +106,7 @@
   - To fix: doc — update PRD-TRD §Scenario 3 wording from "prepends the record" to "the new record appears in the Sessions panel within one second (via snapshot refetch on the matching event topic)". No code change.
   - Related: PRD-TRD Scenario 3; wire.js:101-106; PR #48.
 
-- **D-68** (Low, 2026-08-03, reporter: agentide start pack) — `packages/agentide/src/cli.ts` is 373 lines, over the AGENTS.md rule 9 cap of 350. Pre-existing: was ~410 before this pack; `runStart` extraction to `packages/agentide/src/start.ts` brought it down. Still 23 over because the file holds 6 subcommand handlers + HELP + arg parser + signal-setup helpers. To fix (next pack): extract `installGlobalErrorHandlers` (30 lines) + `runInit` (28 lines) to `error-handlers.ts` and `init.ts` — both small, mechanical moves. Doc note only, no behavior change.
+- **D-68** (Low, 2026-08-03, reporter: agentide start pack) — `packages/agentide/src/cli.ts` is 373 lines, over the AGENTS.md rule 9 cap of 350. Pre-existing: was ~410 before this pack; `runStart` extraction to `start.ts` brought it down. Still over because the file holds 6 subcommand handlers + HELP + arg parser + signal-setup helpers.
 - **D-69** (Medium, 2026-08-03, reporter: agentide npm-publish preparation) — agentide@0.0.1 ready to publish but the `pnpm publish` flow has friction: 11 separate publishes required (1 agentide + 1 agentide-cjs + 7 internal packages + 2 leaves); each prompts for a 2FA OTP. Order matters (deepest deps first): `errors`, `origin`, `capability-registry`, `session-manager`, `backend-runtime`, `plugin-manager`, `gateway-core`, `adapter-websocket`, `adapter-mcp`, `agentide`, `agentide-cjs`. Each package now has a `scripts/prepare-publish.sh` + `prepublishOnly` hook that flattens workspace refs to `^X.Y.Z` semver, since `npm publish` can't resolve `workspace:*`. To make this one-shot: a `scripts/publish-all.sh` script that iterates packages in dependency order, captures the OTP once (if npm supports it for the token auth path), and rolls back on first failure. Or: use `@npmcli/publish` programmatically with cached auth.
 
 - **D-47** (Medium, 2026-08-03, reporter: dashboard-core D1 grilling) — No log-reading capability exists; the Logs view has no snapshot source.
@@ -192,6 +192,8 @@
 ---
 
 ## Resolved
+
+- **D-68** (Resolved 2026-08-09, cli-restructure phases 2-6 — the split the pack planned) — `cli.ts` was 861 lines. Split into: `cli-utils.ts` (parse/help/version/result, 193), `commands.ts` (init/tenant/token/capability/plugin, 249), `client.ts` (176), `dispatcher.ts` (209), `shell.ts` (236), `cli.ts` (entry + shell wiring, 78). No import cycles (cli-utils is the leaf). Same runtime behavior — full suite green (modulo pre-existing release-yml fail + env-blocked playwright browser-runtime tests).
 
 - **D-117** (Resolved 2026-08-08, cli-restructure Phase 1 — the broken local status path died with the old name) — `status` reported `tenantCount: 0` after a fresh `createPlatform` even when `tenants.json` had entries (`tenant list` read them back correctly). Root cause was never isolated; the only operator-visible surface was the in-process `runStatus` path, and PRD-TRD S6 makes `status` live-only (`gateway status` reads the running gateway's store). `runStatus` + `defaultPidFile` were deleted from cli.ts in this phase — the buggy path no longer exists. What it was hiding is now visible: `init` double-registers the default tenant (D-118).
 

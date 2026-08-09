@@ -1,8 +1,8 @@
 # IMPL: cli-restructure
 
 **Slug:** cli-restructure
-**Status:** Phase 1 COMPLETE (Slices 1-4 green: tree + dispatcher + old-name routing; world checks deferred to Phase 2; review fix applied 2026-08-08 — group-form live dispatch)
-**Date:** 2026-08-08
+**Status:** ALL PHASES COMPLETE (1-6). P1 tree/dispatcher + review fix (group-form live dispatch, 0.8.0); P2 world refusals + "gateway not running"; P3 tree help; P4 deprecation notes; P5 interactive shell; P6 post-impl sim (20/20 PASS). CLI split into cli-tree/cli-utils/commands/client/dispatcher/shell — cli.ts < 350 lines (D-68 closed).
+**Date:** 2026-08-08/09
 
 ## Phase 1 delivery notes (2026-08-08)
 
@@ -13,6 +13,15 @@ Built exactly per the Phase Plan below, with four documented deviations:
 3. **`session create|resume|destroy|touch` and `plugin install|uninstall|enable|disable|reload` → "not implemented in v1" exit 1.** The tree declares the full PRD-TRD S3 surface, but v1 ships only the existing handlers (session list / plugin list). Dispatch errors clearly instead of pretending.
 4. **`capability describe` stays in-process in v1** (PRD-TRD S5 marks it live; wiring to the live gateway is a follow-up — NOTE[agent] in cli.ts).
 5. **Review fix (post-impl review 2026-08-08, report `agentide/.reports/20260808-184933-drift-cli-restructure.md`):** the Phase 1 plan's "consumer path via the mapped command" (L33) was never wired — `agentide gateway status|health|metrics|version`, `plugin list --url`, `session list` all failed with `unrecognized remote command: <group>` (exit 2) even against a live gateway; only the old one-word names worked. Fixed in `consumer.ts` (resolveAlias maps group form → legacy alias; `metrics`/`version` aliases added — `gateway.metrics`, `system.version`), `cli-tree.ts` (`gateway version` description corrected to `system.version`), and 6 new live-adapter tests in `cli.test.ts` pinning the group forms (Gap 2: the old dead-endpoint tests passed for the wrong reason — connect fails before alias resolution).
+
+## Phase 2-6 delivery notes (2026-08-09)
+
+- **P2 (world refusals):** `refuseForWorld` gates executable dispatch (offline refuses --url/--token; live refuses --data-dir + pid-file "gateway not running" unless explicit --url). `capability describe` re-worlded to **offline** (in-process registry in v1, per note 4) so the live refusal can't break it. Top-level `init` (offline) + `invoke`/`watch` (live) get the same checks inline. `pidFile` seam added to CliOptions (deterministic tests). New `cli-split.test.ts` (13 tests).
+- **P3 (help):** `buildHelp` derived from the GROUPS tree; deprecated old names listed once. Pinned help strings kept (remote section) for the migration window.
+- **P4 (deprecation notes):** dispatchTokens rewrites old names + prepends ONE stderr note (exact PRD S4 wording). The parse → old-name → dispatch core extracted as `dispatchTokens` — the P5 shell seam. 7 new tests.
+- **P5 (shell):** `shell.ts` — readline loop, `agentide (<dataDir>)> ` prompt, builtins exit/quit/help/history/pwd/cd/clear, prefix tolerance + "already in the shell" message, per-dir `shell-history` (consecutive dedupe, reload after cd), Tab completion (tree words + tenants from `tenants.json` — real store per Risk Note 2; caps have no disk artifact → tree-only), Ctrl-C clears line (no-op SIGINT listener, unit-pinned). stdin/stdout/env/cwd seams. 21 tests.
+- **P6 (post-impl sim):** `simulate.sh` — drives the real bundled CLI through S1-S8 with pass/fail echoes; **20/20 PASS**. Ctrl-C is a soft WARN in the sim (PTY byte delivery env-dependent; unit-pinned in shell.test.ts).
+- **Split (D-68):** cli.ts (861 ln) → `cli-utils.ts` (parse/help/version/result, 193), `commands.ts` (init/tenant/token/capability/plugin, 249), `client.ts` (176), `dispatcher.ts` (209), `shell.ts` (236), `cli.ts` (78). No import cycles.
 
 D-117 (status tenantCount: 0) is RESOLVED-by-restructure: the local `runStatus`/`defaultPidFile` paths were deleted; `status` is live-only (S6). D-118 (init double-registers the default tenant) was surfaced by the same change — open, low.
 
@@ -159,9 +168,9 @@ No new external deps. `node:readline` (built-in) for the shell; existing `node:f
 
 ## Status Updates
 
-- Phase 1: ✅ Complete (tree + dispatcher + old-name routing; review fix: group-form live dispatch)
-- Phase 2: ⏳ Pending
-- Phase 3: ⏳ Pending
-- Phase 4: ⏳ Pending
-- Phase 5: ⏳ Pending
-- Phase 6: ⏳ Pending
+- Phase 1: ✅ Complete (tree + dispatcher + old-name routing; review fix: group-form live dispatch) — shipped in agentide 0.8.0
+- Phase 2: ✅ Complete (world refusals + gateway-not-running, cli-split.test.ts)
+- Phase 3: ✅ Complete (tree-derived buildHelp)
+- Phase 4: ✅ Complete (one stderr deprecation note per old name)
+- Phase 5: ✅ Complete (interactive shell, shell.test.ts)
+- Phase 6: ✅ Complete (simulate.sh 20/20 PASS)

@@ -51,7 +51,12 @@ function stripDetachFlag(argv: readonly string[]): string[] {
 
 async function main(): Promise<void> {
   const argv = stripDetachFlag(process.argv.slice(2));
-  const result = await runCli(argv, { fs: defaultFs, home: homedir() });
+  const result = await runCli(argv, {
+    fs: defaultFs,
+    home: homedir(),
+    stdin: process.stdin,
+    stdout: process.stdout,
+  });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   process.exit(result.exitCode);

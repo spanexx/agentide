@@ -80,7 +80,11 @@ export const GROUPS: Record<string, GroupDef> = {
     world: "dual",
     subs: {
       list: { description: "List registered capabilities (disk default; --url for live)" },
-      describe: { description: "Describe a single capability (live)", world: "live" },
+      // IMPL delivery note 4: describe runs on the in-process registry in v1
+      // (data-dir). Wiring it to the live gateway is a follow-up; marking it
+      // live now would force a "gateway not running" refusal on a command
+      // that works offline.
+      describe: { description: "Describe a single capability (in-process registry in v1)", world: "offline" },
     },
   },
   plugin: {
