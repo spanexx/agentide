@@ -8,6 +8,8 @@
 import type { CliOptions, CliResult } from "./cli-types.js";
 import { parseArgs, getFlag, result, buildHelp, cliVersion } from "./cli-utils.js";
 import { dispatchTokens } from "./dispatcher.js";
+import { defaultDataDir } from "./data-dir.js";
+import { homedir } from "node:os";
 
 let globalHandlersInstalled = false;
 
@@ -72,7 +74,15 @@ async function runCliInner(argv: readonly string[], opts: CliOptions): Promise<C
     return result(buildHelp());
   }
 
-  const dataDir = getFlag(flags, "data-dir", opts.env?.["AGENTIDE_DATA_DIR"] ?? process.env["AGENTIDE_DATA_DIR"] ?? "./.agentide/data");
+  // CID:data-dir-008 - ONE resolver for the ambient data dir (surgical change
+  //   2026-08-09): flag > env > config (repo|global) > global per-repo store.
+  //   The old default ("./.agentide/data") is now opt-in via config data_dir="repo".
+  const dataDir = await defaultDataDir(process.cwd(), {
+    env: opts.env ?? process.env,
+    home: opts.home ?? homedir(),
+    argv,
+    configOverride: getFlag(flags, "config", ""),
+  });
 
   return await dispatchTokens(argv, opts, dataDir);
 }

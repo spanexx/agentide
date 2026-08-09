@@ -30,7 +30,7 @@ all behavior below is locked in `GRILL-agentide-cli-consumer.txt` (Q1–Q5) and 
 **Then** the first source that supplies a value wins:
 - flags: `--url <ws://host/ws>`, `--token <jwt|path:/...>`
 - env: `PLATFORM_GATEWAY_URL`, `PLATFORM_TOKEN`
-- config: `<OS-config-dir>/platform/config.toml` (override with `--config <path>`); v1 schema `{gateway_url, token}`; unknown keys IGNORED
+- config: `<OS-config-dir>/platform/config.toml` (override with `--config <path>`); v1 schema `{gateway_url, token, data_dir?}`; unknown keys IGNORED (per-note 2026-08-09: `data_dir = "global" | "repo"` added by the global data-dir surgical change — the in-process/shell resolver reads it, default `"global"` = shared per-repo store; the remote consumer keys are unchanged)
 - prompt: TTY only, no-echo token read; URL never prompted
 
 `path:/...` reads the file as the token from any source, once per run. missing URL+token with no TTY → exit 2.
@@ -225,6 +225,11 @@ enum ExitCode {
 interface ConfigFile {
   gateway_url?: string;
   token?: string;
+  // 2026-08-09 (global data-dir surgical change): "global" (default) = shared
+  // per-repo store ~/.local/share/agentide/<repo-key>/data; "repo" = legacy
+  // ./.agentide/data. Read by readDataDirSetting (in-process resolver), not
+  // by the consumer connection code.
+  data_dir?: "global" | "repo";
 }
 
 // WS client minimal surface (consumer-side)

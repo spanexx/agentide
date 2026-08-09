@@ -9,13 +9,29 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable, PassThrough } from "node:stream";
 import { runShell, makeCompleter, type ShellIO } from "../shell.js";
+import { repoKey } from "../data-dir.js";
 import { runCli } from "../index.js";
 import type { CliOptions } from "../cli-types.js";
 
 const ORIGINAL_CWD = process.cwd();
+const tempHomes: string[] = [];
+function tempHome(): string {
+  const h = mkdtempSync(join(tmpdir(), "agentide-shell-home-"));
+  tempHomes.push(h);
+  return h;
+}
 afterEach(() => {
   process.chdir(ORIGINAL_CWD);
+  for (const h of tempHomes.splice(0)) {
+    rmSync(h, { recursive: true, force: true });
+  }
 });
+
+// Global-store helper: the data dir for a cwd under a given temp home
+// (mirrors the ONE resolver in data-dir.ts — only the store path differs).
+async function storeDataDir(home: string, cwd: string): Promise<string> {
+  return join(home, ".local", "share", "agentide", await repoKey(cwd), "data");
+}
 
 // --- helpers ---------------------------------------------------------------
 
@@ -24,11 +40,13 @@ function tempDir(): string {
 }
 
 // Scripted stdin + captured stdout for one shell session.
+// Scripted stdin + captured stdout for one shell session. Every session gets
+// its OWN temp home (the global store must never touch the real machine home).
 async function driveShell(
   lines: string,
-  opts: Partial<CliOptions> = {},
+  opts: { fs?: CliOptions["fs"]; home?: string; pidFile?: string } = {},
   cwd?: string,
-): Promise<{ output: string; exitCode: number }> {
+): Promise<{ output: string; exitCode: number; home: string }> {
   const input = Readable.from([lines]);
   const chunks: string[] = [];
   const output = new Writable({
@@ -39,8 +57,9 @@ async function driveShell(
   });
   const io: ShellIO = { input, output };
   const fs = opts.fs ?? makeFs();
-  const r = await runShell(cwd ?? process.cwd(), { fs, ...opts }, io);
-  return { output: chunks.join(""), exitCode: r.exitCode };
+  const home = opts.home ?? tempHome();
+  const r = await runShell(cwd ?? process.cwd(), { fs, home, ...(opts.pidFile ? { pidFile: opts.pidFile } : {}) }, io);
+  return { output: chunks.join(""), exitCode: r.exitCode, home };
 }
 
 function makeFs(): CliOptions["fs"] {
@@ -81,13 +100,13 @@ describe("shell: builtins (PRD-TRD S1/S8)", () => {
     expect(output).toContain("\x1b[2J\x1b[H");
   });
 
-  it("cd switches the data-dir context and reloads history (S8)", async () => {
-    const dir = tempDir();
+  it("cd switches the data-dir context (S8)", async () => {
+    const dir = tempHome();
     const other = mkdtempSync(join(tmpdir(), "agentide-shell-other-"));
+    const home = tempHome();
     try {
       // PassThrough keeps the stream open so the post-cd restart can show
-      // its new prompt and read the exit line (scripted Readable.from would
-      // be exhausted and the restart exits immediately).
+      // its new prompt and read the exit line.
       const input = new PassThrough();
       const chunks: string[] = [];
       const output = new Writable({
@@ -96,7 +115,7 @@ describe("shell: builtins (PRD-TRD S1/S8)", () => {
           cb();
         },
       });
-      const p = runShell(dir, { fs: makeFs() }, { input, output });
+      const p = runShell(dir, { fs: makeFs(), home }, { input, output });
       input.write(`cd ${other}\n`);
       setTimeout(() => {
         input.write("exit\n");
@@ -104,9 +123,12 @@ describe("shell: builtins (PRD-TRD S1/S8)", () => {
       }, 50);
       await p;
       const out = chunks.join("");
-      expect(out).toContain(`context: ${join(other, ".agentide/data")}`);
+      const expected = await storeDataDir(home, other);
+      expect(out).toContain(`context: ${expected}`);
       // The restarted session prompts with the NEW context.
-      expect(out).toContain(`agentide (${join(other, ".agentide/data")})> `);
+      expect(out).toContain(`agentide (${expected})> `);
+      // The NEW dir NEVER gets a .agentide folder (global store).
+      expect(existsSync(join(other, ".agentide"))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       rmSync(other, { recursive: true, force: true });
@@ -115,12 +137,15 @@ describe("shell: builtins (PRD-TRD S1/S8)", () => {
 
   it("history builtin lists the loaded history file", async () => {
     const dir = tempDir();
+    const home = tempHome();
     try {
-      mkdirSync(join(dir, ".agentide/data"), { recursive: true });
-      writeFileSync(join(dir, ".agentide/data", "shell-history"), "gateway\nstatus\n");
-      const { output } = await driveShell("history\nexit\n", {}, dir);
+      const store = await storeDataDir(home, dir);
+      mkdirSync(store, { recursive: true });
+      writeFileSync(join(store, "shell-history"), "gateway\nstatus\n");
+      const { output } = await driveShell("history\nexit\n", { home }, dir);
       expect(output).toContain("gateway");
       expect(output).toContain("status");
+      expect(existsSync(join(dir, ".agentide"))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -165,15 +190,18 @@ describe("shell: dispatch + prefix tolerance (PRD-TRD S8)", () => {
 // --- S7: history file ---------------------------------------------------------
 
 describe("shell: history file (PRD-TRD S7/S8)", () => {
-  it("commands are appended to <dataDir>/shell-history (every line incl. exit, per sim)", async () => {
+  it("commands are appended to <store>/shell-history (every line incl. exit, per sim)", async () => {
     const dir = tempDir();
+    const home = tempHome();
     try {
-      const { output } = await driveShell("gateway\nhelp\nexit\n", {}, dir);
+      const { output } = await driveShell("gateway\nhelp\nexit\n", { home }, dir);
       expect(output).toContain("Subcommands:"); // gateway dispatched fine
-      const historyFile = join(dir, ".agentide/data", "shell-history");
+      const dataDir = await storeDataDir(home, dir);
+      const historyFile = join(dataDir, "shell-history");
       expect(existsSync(historyFile)).toBe(true);
       const lines = readFileSync(historyFile, "utf8").split("\n").filter(Boolean);
       expect(lines).toEqual(["gateway", "help", "exit"]);
+      expect(existsSync(join(dir, ".agentide"))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -181,9 +209,10 @@ describe("shell: history file (PRD-TRD S7/S8)", () => {
 
   it("consecutive duplicate commands are deduped (S8)", async () => {
     const dir = tempDir();
+    const home = tempHome();
     try {
-      await driveShell("gateway\ngateway\nhelp\nexit\n", {}, dir);
-      const lines = readFileSync(join(dir, ".agentide/data", "shell-history"), "utf8").split("\n").filter(Boolean);
+      await driveShell("gateway\ngateway\nhelp\nexit\n", { home }, dir);
+      const lines = readFileSync(join(await storeDataDir(home, dir), "shell-history"), "utf8").split("\n").filter(Boolean);
       expect(lines).toEqual(["gateway", "help", "exit"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -192,10 +221,11 @@ describe("shell: history file (PRD-TRD S7/S8)", () => {
 
   it("history persists across shell sessions (reload on start)", async () => {
     const dir = tempDir();
+    const home = tempHome();
     try {
-      await driveShell("gateway\nexit\n", {}, dir);
-      // Second session: history builtin sees the first session's command.
-      const { output } = await driveShell("history\nexit\n", {}, dir);
+      await driveShell("gateway\nexit\n", { home }, dir);
+      // Second session (same home): history builtin sees first session's command.
+      const { output } = await driveShell("history\nexit\n", { home }, dir);
       expect(output).toContain("gateway");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -254,7 +284,7 @@ describe("shell: Ctrl-C behavior (PRD-TRD S8)", () => {
         cb();
       },
     });
-    const r = await runShell(process.cwd(), { fs: makeFs() }, { input, output });
+    const r = await runShell(process.cwd(), { fs: makeFs(), home: tempHome() }, { input, output });
     expect(r.exitCode).toBe(0);
     const out = chunks.join("");
     // The shell survived the SIGINT and processed the exit line — the prompt
@@ -285,7 +315,7 @@ describe("shell: bare `agentide` wiring in runCli (PRD-TRD S1/S2)", () => {
         cb();
       },
     }) as NodeJS.WritableStream;
-    const r = await runCli([], { fs: makeFs(), stdin: input, stdout: output });
+    const r = await runCli([], { fs: makeFs(), home: tempHome(), stdin: input, stdout: output });
     expect(r.exitCode).toBe(0);
     expect(chunks.join("")).toContain("agentide (");
   });

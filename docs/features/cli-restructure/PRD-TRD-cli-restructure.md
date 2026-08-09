@@ -8,7 +8,9 @@
 
 The `agentide` CLI grew organically: a flat mix of operator commands (`init`, `start`, `stop`, `status`, `tenant`, `client`, `token`, `capability`, `plugin`) plus remote consumer aliases (`sessions`, `capabilities`, `plugins`, `health`, `invoke`, `watch`) — each with different flag conventions and no shared shape. Operator feedback (GRILL Q1/Q6): "the cli is not structured to be clear everything is layed out on the terminal, no sub commands that targets each command and its subcommand".
 
-Two other usability gaps: bare `agentide` dumps the whole help screen (useless for exploration), and operators re-type `--data-dir`/`--url` per command even when context (the `./.agentide/data` directory they're standing in) already pins it.
+Two other usability gaps: bare `agentide` dumps the whole help screen (useless for exploration), and operators re-type `--data-dir`/`--url` per command even when context already pins it.
+
+> **2026-08-09 (surgical change — global data-dir default):** "context" is no longer a per-directory `./.agentide/data` folder. Default ambient data dir = shared store `<home>/.local/share/agentide/<repo-key>/data` (repo-key = sha256 of the repo root, first 12 hex; outside a repo the cwd itself is the key) — per-repo isolation WITHOUT polluting the repo. Legacy `./.agentide/data` is opt-in via config `data_dir = "repo"` or an explicit `--data-dir` / `AGENTIDE_DATA_DIR` pin. Priority: flag > env > config > global default.
 
 This pack restructures the CLI into a command→subcommand tree, adds an interactive shell for bare invocation, and makes context ambient per-directory. CLI surface only — gateway/capability behavior untouched (GRILL non-goal).
 
@@ -20,7 +22,7 @@ This pack restructures the CLI into a command→subcommand tree, adds an interac
 **When** the CLI starts
 **Then**:
 1. The shell opens with prompt `agentide>`.
-2. The shell resolves context from `./.agentide/data` relative to cwd (existing data-dir convention).
+2. The shell resolves context from the ambient data dir — default the shared per-repo store `<home>/.local/share/agentide/<repo-key>/data`, or the legacy `./.agentide/data` relative to cwd when `data_dir = "repo"` is configured (or an explicit `--data-dir`/`AGENTIDE_DATA_DIR` pin wins over everything; see the 2026-08-09 note above).
 3. Shell builtins: `exit` / `quit` (leave), `help`, `history`, `pwd`, `cd <dir>` (switches the shell's data-dir context), `clear` (clears screen).
 4. `cd` reloads the context + history for the new directory.
 
@@ -92,7 +94,7 @@ Group with no subcommand prints just that group's subcommand list + usage (e.g. 
 **Given** the operator is in the `agentide>` shell
 **When** they use shell history or type a full binary prefix
 **Then**:
-1. Arrow up/down recall previous commands from the per-directory history (`shell-history` next to `./.agentide/data`), across shell sessions — loaded at shell start and reloaded after `cd`.
+1. Arrow up/down recall previous commands from the shared store's history (`shell-history` inside the resolved data dir — global store by default, see the 2026-08-09 note above), across shell sessions — loaded at shell start and reloaded after `cd` (only when no env/`--data-dir` pin forces the context; with a pin, `cd` keeps the pinned store — the repo-key switch on cd is unit-tested).
 2. `agentide gateway status` typed inside the shell works (prefix stripped); bare `agentide` inside the shell prints `(you are already in the agentide shell — type help)`.
 3. Ctrl-C clears the current line; it does not kick the operator out of the shell.
 

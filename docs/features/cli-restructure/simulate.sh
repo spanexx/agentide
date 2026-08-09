@@ -27,6 +27,12 @@ PIDFILE="$BASE/sim.pid"
 PORT_MCP=27100; PORT_SDK=27350; PORT_DASH=27200   # scratch ports, never collide
 PASS=0; FAIL=0
 
+# 2026-08-09 (surgical change — global data-dir default): the CLI now stores
+# state in ~/.local/share/agentide/<repo-key>/data. The sim intentionally uses
+# the legacy per-repo scratch layout, so pin the env explicitly (env beats the
+# config/default in the resolver chain) — this keeps the sim hermetic.
+export AGENTIDE_DATA_DIR="$DATA_A"
+
 ok()   { PASS=$((PASS+1)); echo "  ✅ PASS: $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "  ❌ FAIL: $1"; }
 
@@ -126,7 +132,10 @@ section "S7/S8 — interactive shell (via PTY)"
 # history/tenants resolve there (S7/S8).
 SHELL_OUT="$(cd "$BASE/proj-a" && printf 'agentide gateway\ncd %s\nagentide tenant list\nexit\n' "$BASE/proj-b" | script -qec "$CLI" /dev/null 2>&1)"
 echo "$SHELL_OUT" | grep -q "agentide gateway —" && ok "S8 prefix 'agentide gateway' works in shell" || bad "S8 prefix tolerance"
-echo "$SHELL_OUT" | grep -q "context: $DATA_B" && ok "S8 cd switches context" || bad "S8 cd context"
+# With AGENTIDE_DATA_DIR pinned, the env pin beats the resolver: cd keeps
+# the same context (the repo-key switch on cd is unit-tested in shell.test.ts).
+echo "$SHELL_OUT" | grep -q "context: $DATA_A" && ! echo "$SHELL_OUT" | grep -q "context: $DATA_B" \
+  && ok "S8 pinned-env context stays (cd key-switch unit-tested)" || bad "S8 cd context"
 # history file written per command (in the shell's start context = proj-a)
 [ -f "$DATA_A/shell-history" ] && grep -q "gateway" "$DATA_A/shell-history" \
   && ok "S7 history persisted to shell-history" || bad "S7 history file"

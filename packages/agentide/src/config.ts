@@ -58,6 +58,9 @@ function defaultConfigPath(home: string): string {
 interface RawConfigFile {
   gateway_url?: string;
   token?: string;
+  // CID:data-dir-001 - pattern of the ambient data-dir default:
+  //   "global" (default when absent) | "repo" (per-cwd .agentide/data).
+  data_dir?: string;
 }
 
 // minimal TOML-subset parser: `key = "value"` lines, `#` comments.
@@ -80,9 +83,36 @@ function parseConfigFile(text: string): RawConfigFile {
     if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
     if (key === "gateway_url") out.gateway_url = val;
     else if (key === "token") out.token = val;
+    else if (key === "data_dir") out.data_dir = val;
     // unknown keys ignored
   }
   return out;
+}
+
+// CID:data-dir-002 - data-dir mode from the config file (surgical change
+//   2026-08-09). Same file as gateway_url/token; saveConfig merges lines so
+//   this key survives token refreshes. "global" (or absent) → per-repo
+//   subfolder in the user's shared store; "repo" → the legacy per-directory
+//   ./.agentide/data. An explicit --data-dir / AGENTIDE_DATA_DIR always wins
+//   (resolution lives in data-dir.ts).
+export function readDataDirSetting(opts: {
+  home: string;
+  cwd?: string;
+  configOverride?: string;
+}): "global" | "repo" | undefined {
+  let path: string;
+  if (opts.configOverride !== undefined && opts.configOverride !== "") {
+    path = isAbsolute(opts.configOverride) ? opts.configOverride : resolve(opts.cwd ?? process.cwd(), opts.configOverride);
+  } else {
+    path = defaultConfigPath(opts.home);
+  }
+  try {
+    const text = readFileSync(path, "utf8");
+    const raw = parseConfigFile(text);
+    return raw.data_dir === "repo" ? "repo" : "global";
+  } catch {
+    return "global";
+  }
 }
 
 function checkPerms(path: string, warnings: string[]): void {

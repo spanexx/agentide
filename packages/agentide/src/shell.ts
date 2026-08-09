@@ -16,9 +16,11 @@
 import { createInterface } from "node:readline";
 import { readFile, appendFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import * as os from "node:os";
 import type { CliOptions, CliResult } from "./cli-types.js";
 import { dispatchTokens } from "./dispatcher.js";
 import { GROUPS } from "./cli-tree.js";
+import { defaultDataDir } from "./data-dir.js";
 
 export interface ShellIO {
   readonly input: NodeJS.ReadableStream;
@@ -29,11 +31,12 @@ const HISTORY_FILE = "shell-history";
 const BUILTINS = ["help", "exit", "quit", "history", "pwd", "cd", "clear"];
 const TOP_LEVEL = ["init", "invoke", "watch"];
 
-// CID:shell-002 - dataDir resolution mirrors the one-shot default
-//   (./.agentide/data) but re-resolves per cwd after `cd` (PRD-TRD S1/S8).
-function resolveDataDir(cwd: string, env: NodeJS.ProcessEnv): string {
-  const override = env["AGENTIDE_DATA_DIR"];
-  return override !== undefined && override !== "" ? resolve(cwd, override) : resolve(cwd, ".agentide/data");
+// CID:shell-002 - dataDir comes from the ONE resolver (data-dir.ts, surgical
+//   change 2026-08-09): flag > env > config (repo|global) > global per-repo
+//   store. Re-resolved after `cd` so switching repos switches the store; the
+//   legacy per-directory ./.agentide/data is the opt-in "repo" mode.
+async function resolveDataDir(cwd: string, env: NodeJS.ProcessEnv, home?: string): Promise<string> {
+  return await defaultDataDir(cwd, { env, home: home ?? os.homedir(), argv: [] });
 }
 
 // CID:shell-003 - history file: <dataDir>/shell-history, one command per
@@ -133,7 +136,7 @@ export async function runShell(
   // are relative to it, and dataDir re-resolves from it. For the real CLI
   // this is a no-op (process.cwd() already); tests pass a temp dir.
   process.chdir(cwd);
-  let dataDir = resolveDataDir(cwd, env);
+  let dataDir = await resolveDataDir(cwd, env, opts.home);
   const write = (text: string): void => { output.write(text); };
 
   for (;;) {
@@ -158,7 +161,7 @@ export async function runShell(
     // CID:shell-011 - async iteration: each line is FULLY processed before
     // the next is read (no close-vs-handler race on scripted input).
     for await (const rawLine of rl) {
-      const outcome = await processLine(rawLine, { opts, env, dataDir, write });
+      const outcome = await processLine(rawLine, { opts, env, dataDir, home: opts.home ?? os.homedir(), write });
       if (outcome === "exit") break;
       if (outcome === "restart") {
         restart = true;
@@ -172,7 +175,7 @@ export async function runShell(
     // Scripted input (tests, pipes) may already be exhausted — a restart
     // over an ended stream would hang the for-await, so exit instead.
     if ((input as { readableEnded?: boolean }).readableEnded === true) break;
-    dataDir = resolveDataDir(process.cwd(), env);
+    dataDir = await resolveDataDir(process.cwd(), env, opts.home);
   }
   return { exitCode: 0, stdout: "", stderr: "" };
 }
@@ -181,7 +184,7 @@ type LineOutcome = "continue" | "exit" | "restart";
 
 async function processLine(
   rawLine: string,
-  ctx: { opts: CliOptions; env: NodeJS.ProcessEnv; dataDir: string; write: (t: string) => void },
+  ctx: { opts: CliOptions; env: NodeJS.ProcessEnv; dataDir: string; home: string; write: (t: string) => void },
 ): Promise<LineOutcome> {
   const { opts, env, dataDir, write } = ctx;
   const line = rawLine.trim();
@@ -219,7 +222,8 @@ async function processLine(
       if (target === undefined) return "continue";
       try {
         process.chdir(resolve(process.cwd(), target));
-        write(`context: ${resolveDataDir(process.cwd(), env)}\n`);
+        write(`context: ${await resolveDataDir(process.cwd(), env, ctx.home)}
+`);
         return "restart";
       } catch (err) {
         write(`cd: ${err instanceof Error ? err.message : String(err)}\n`);
