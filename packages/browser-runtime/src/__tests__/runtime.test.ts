@@ -19,6 +19,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { chromium } from "playwright-core";
 import { createServer, type Server } from "node:http";
 import { mkdtempSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,6 +28,26 @@ import { createBrowserRuntime, createSession, attachLifecycle, type BrowserRunti
 import type { Session } from "../session.js";
 import type { BrowserDriver, JsonValue } from "../index.js";
 import type { CapabilitySnapshot } from "../types.js";
+
+// ---------------------------------------------------------------------------
+// binary-availability gate (skip, don't fail)
+// Every test below launches a REAL headless chromium via playwright-core. When
+// the browser binary isn't installed, the suite would fail at launch with
+// "Executable doesn't exist at ..." — 27 red tests that say nothing about the
+// code. Instead: detect the binary once, SKIP the whole suite, and surface one
+// explicitly-named skipped test carrying the install command.
+// Fix to re-run: pnpm exec playwright install chromium
+// ---------------------------------------------------------------------------
+const CHROMIUM_BINARY = chromium.executablePath();
+const BROWSER_RUNNABLE = existsSync(CHROMIUM_BINARY);
+
+if (!BROWSER_RUNNABLE) {
+  it.skip(
+    `browser-runtime suite SKIPPED: chromium binary not found at ${CHROMIUM_BINARY} — install with: pnpm exec playwright install chromium`,
+    () => {},
+  );
+}
+const describeRun = BROWSER_RUNNABLE ? describe : describe.skip;
 
 // ---------------------------------------------------------------------------
 // fixtures
@@ -172,7 +193,7 @@ async function waitFor(fn: () => boolean, timeoutMs = 3000): Promise<void> {
 // launch + tab lifecycle (F1/F2/F3)
 // ---------------------------------------------------------------------------
 
-describe("launch + tab lifecycle", () => {
+describeRun("launch + tab lifecycle", () => {
   it("launch creates tab 0; second launch -> ALREADY_LAUNCHED", async () => {
     const r = await inv("browser.launch", { mode: "headless" }, "t-launch");
     expect(r).toEqual({ launched: true, mode: "headless" });
@@ -240,7 +261,7 @@ describe("launch + tab lifecycle", () => {
 // navigate (F2/F7/T2)
 // ---------------------------------------------------------------------------
 
-describe("navigate", () => {
+describeRun("navigate", () => {
   it("returns url + settled caps snapshot", async () => {
     await inv("browser.launch", {}, "t-nav1");
     const r = (await inv("browser.navigate", { url: `${baseUrl}/caps` }, "t-nav1")) as {
@@ -293,7 +314,7 @@ describe("navigate", () => {
 // DOM-read settle (F11)
 // ---------------------------------------------------------------------------
 
-describe("DOM-read settle (F11)", () => {
+describeRun("DOM-read settle (F11)", () => {
   it("static page settles true (two identical reads)", async () => {
     await inv("browser.launch", {}, "t-settle1");
     const r = (await inv("browser.navigate", { url: `${baseUrl}/caps3` }, "t-settle1")) as {
@@ -319,7 +340,7 @@ describe("DOM-read settle (F11)", () => {
 // capability.list (Q5/F9)
 // ---------------------------------------------------------------------------
 
-describe("capability.list", () => {
+describeRun("capability.list", () => {
   it("returns per-tab snapshots; registry untouched", async () => {
     await inv("browser.launch", {}, "t-caps");
     await inv("browser.navigate", { url: `${baseUrl}/caps` }, "t-caps");
@@ -345,7 +366,7 @@ describe("capability.list", () => {
 // query + click (F8: 1-based instance, addresses)
 // ---------------------------------------------------------------------------
 
-describe("query + click (F8)", () => {
+describeRun("query + click (F8)", () => {
   it("query returns reusable addresses with data-* attrs", async () => {
     await inv("browser.launch", {}, "t-q");
     await inv("browser.navigate", { url: `${baseUrl}/cart` }, "t-q");
@@ -410,7 +431,7 @@ describe("query + click (F8)", () => {
 // wait (T6)
 // ---------------------------------------------------------------------------
 
-describe("wait (T6)", () => {
+describeRun("wait (T6)", () => {
   it("selector mode: appears in time -> waited", async () => {
     await inv("browser.launch", {}, "t-w1");
     await inv("browser.navigate", { url: `${baseUrl}/later` }, "t-w1");
@@ -441,7 +462,7 @@ describe("wait (T6)", () => {
 // screenshot (T3)
 // ---------------------------------------------------------------------------
 
-describe("screenshot (T3)", () => {
+describeRun("screenshot (T3)", () => {
   it("small page -> inline base64 under 256 KiB", async () => {
     await inv("browser.launch", {}, "t-shot1");
     await inv("browser.navigate", { url: `${baseUrl}/caps` }, "t-shot1");
@@ -495,7 +516,7 @@ describe("screenshot (T3)", () => {
 // crash (Q4)
 // ---------------------------------------------------------------------------
 
-describe("crash (Q4)", () => {
+describeRun("crash (Q4)", () => {
   it("killed browser -> CRASHED retryable; relaunch resets tab ids", async () => {
     await inv("browser.launch", {}, "t-crash");
     await inv("browser.tab.open", {}, "t-crash");
@@ -521,7 +542,7 @@ describe("crash (Q4)", () => {
 // lifecycle (D-42)
 // ---------------------------------------------------------------------------
 
-describe("lifecycle (D-42)", () => {
+describeRun("lifecycle (D-42)", () => {
   function fakeBus(): { bus: LifecycleBus; publish(event: string, payload?: object): void } {
     const subs = new Map<string, Array<(payload?: object) => void>>();
     const bus: LifecycleBus = {
