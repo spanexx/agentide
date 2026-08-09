@@ -106,15 +106,16 @@ describe("createMcpAdapter — PRD scenarios", () => {
     await stop();
   });
 
-  it("Scenario 6: missing _meta returns -32602 and never invokes a handler", async () => {
+  it("Scenario 6 (D-124): missing _meta is accepted — real MCP clients never send it on tools requests", async () => {
     const { adapter, stop } = await start();
     const token = makeToken(["*"]);
     const res = await rpc(adapter, JSON.stringify({
       jsonrpc: "2.0", id: 6, method: "tools/list", params: {},
     }), `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.json.error?.code).toBe(-32602);
-    expect(res.json.error?.message).toMatch(/Missing required _meta/);
+    expect(res.json.error).toBeUndefined();
+    const tools = res.json.result?.tools ?? [];
+    expect(tools.length).toBeGreaterThan(0);
     await stop();
   });
 

@@ -85,12 +85,18 @@ async function writeWebResponse(res: ServerResponse, web: Response): Promise<voi
 //   /mcp through the MCP transport; all other paths -> 404.
 // Uses: WebStandardStreamableHTTPServerTransport (stateless, JSON responses)
 // Used by: index.ts createMcpAdapter start()
+//
+// D-123 (2026-08-09): the SDK Server keeps protocol state across connections —
+//   one shared Server + one transport served only the FIRST connection, every
+//   later connection failed -32603 (silently). Fix: per-request transport AND
+//   per-request Server (config.createServer) — stateless sessions with zero
+//   carryover; the transport instance is per-request too.
 export async function startMcpHttpServer(
-  server: McpServer,
   config: {
     readonly host: string;
     readonly port: number;
     readonly oauth?: OAuthTokenHandler;
+    readonly createServer: () => McpServer;
     // BI[29] Phase 7: OIDC auth-code grant routes (GET /oauth/authorize + /oauth/callback).
     // Wired when the gateway is started with --enable-oidc. Handlers are
     // closures over the gateway's codes map / secret / clock (see factory.ts).
@@ -104,12 +110,6 @@ export async function startMcpHttpServer(
     };
   },
 ): Promise<McpHttpServerHandle> {
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-  });
-  await server.connect(transport);
-
   const httpServer = createServer((req, res) => {
     // CID:server-004 - POST /oauth/token route (BI[29] Phase 4)
     // Enabled when the gateway exposed its oauthTokenHandler. Body may be
@@ -141,7 +141,8 @@ export async function startMcpHttpServer(
     }
     const addr = httpServer.address();
     const bound = typeof addr === "object" && addr !== null ? addr.port : config.port;
-    void handleTransportRequest(req, res, transport, config.host, bound);
+    // D-123: fresh server + transport per request (see header note).
+    void handleTransportRequest(req, res, config, bound);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -160,7 +161,7 @@ export async function startMcpHttpServer(
       stopped = true;
       httpServer.closeAllConnections();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
-      await transport.close();
+      // D-123: transports are per-request now — nothing shared to close.
     },
   };
 }
@@ -229,16 +230,30 @@ async function writeOidcResponse(res: ServerResponse, result: Promise<OidcRespon
   }
 }
 
+// CID:server-006 - handleTransportRequest
+// Purpose: serve ONE /mcp request with a FRESH server + stateless transport
+//   (D-123 — the SDK Server is not reusable across connections). Auth: the
+//   bearer token is extracted into the per-request AsyncLocalStorage context
+//   so the tools handlers can read it without parsing headers themselves.
 async function handleTransportRequest(
   req: IncomingMessage,
   res: ServerResponse,
-  transport: WebStandardStreamableHTTPServerTransport,
-  host: string,
-  port: number,
+  config: {
+    readonly host: string;
+    readonly port: number;
+    readonly createServer: () => McpServer;
+  },
+  boundPort: number,
 ): Promise<void> {
   try {
-    const webReq = toWebRequest(req, host, port);
+    const webReq = toWebRequest(req, config.host, boundPort);
     const ctx: RequestCtx = { token: extractBearer(webReq.headers.get("authorization")) };
+    const server = config.createServer();
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    await server.connect(transport);
     const response = await requestCtxStore.run(ctx, () => transport.handleRequest(webReq));
     await writeWebResponse(res, response);
   } catch {

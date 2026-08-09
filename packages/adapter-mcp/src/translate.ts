@@ -36,9 +36,13 @@ export const META_CAPABILITIES_KEY = "io.modelcontextprotocol/clientCapabilities
 export const META_SESSION_ID_KEY = "dev.agentide/sessionId";
 
 // CID:translate-002 - validateMeta
-// Purpose: both required _meta keys must be present and non-null.
-// Uses: handlers before listTools/callTool
-// Used by: index.ts handlers, tests
+// Purpose: true when both _meta keys are present and non-null.
+// D-124 (2026-08-09): NO LONGER a hard gate — real MCP clients (Zed, the
+//   official SDK) send _meta only in initialize, never on tools requests, so
+//   the handlers accept missing _meta (see index.ts). Kept exported for
+//   callers/tests that still want to inspect the value.
+// Used by: tests
+// Retained by: translate.test.ts (pure-function pins)
 export function validateMeta(meta: Readonly<Record<string, YamlValue>> | undefined): boolean {
   if (meta === undefined) return false;
   const protocol = meta[META_PROTOCOL_KEY];

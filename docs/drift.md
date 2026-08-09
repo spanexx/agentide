@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 72  **Critical/High:** 0
+**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 74  **Critical/High:** 0
 
 ## Open
 
@@ -527,4 +527,18 @@ ot 0`.
   - Why matters: empty/JSON outputs in the TTY shell appeared missing — the primary operator surface felt broken, and `clear` didn't truly clear.
   - Owner: agentide (shell). To fix: newline-terminate dispatch output + include scrollback wipe in clear.
   - Verified by: `cli-utils.ts` CID:shell-015 `ensureTrailingNewline` (empty unchanged / already-\n unchanged / exactly one appended) wired into the shell's dispatch writes (CID:shell-016); `clear` → `\x1b[2J\x1b[3J\x1b[H`. Tests: `cli-utils.test.ts` +3 (no-newline/append, already-newline, empty); `shell.test.ts` clear expectation updated. Full suite green at fix time (1197 pass / 28 skip; 2 env-fails = live demo gateway on 7300/7200). Validate-release.sh section 9 extended with the D-122 pins. Commit: `fe26ca4`
+
+  - **D-123** (RESOLVED 2026-08-09 — High, 2026-08-09, reporter: live MCP test with a real client — the MCP door served only the FIRST connection per gateway process) — `createMcpAdapter` built ONE `McpServer` + one stateless `WebStandardStreamableHTTPServerTransport` at `start()`; the MCP SDK `Server` keeps PROTOCOL state (initialized) across connections, so the first client's initialize worked and every later connection (second client, reconnect) got `-32603` — the error was swallowed by `handleTransportRequest`'s empty catch (server.ts), making it invisible. Repro: fresh gateway → `initialize` OK → second `initialize` -32603 (also broke the official SDK client's connect).
+    - Doc claim: server.ts header — "stateless (sessionIdGenerator: undefined) — no session header dance, no init requirement, raw JSON-RPC POSTs work".
+    - Code reality: the shared `Server` object retained initialized-state; only one connection could ever complete the handshake.
+    - Why matters: the MCP door (the platform's primary agent surface) was unusable by any real client after the first connection; reconnects and multi-client setups (Zed + anything else) all broke.
+    - Owner: adapter-mcp. To fix: per-request Server + transport.
+    - Verified by: `createMcpAdapter` now passes a `createServer` factory (`createSessionServer`, CID:index-003) to `startMcpHttpServer`, which builds a fresh `WebStandardStreamableHTTPServerTransport` + connects a fresh server per `/mcp` request (CID:server-006); `stop()` no longer closes a shared transport. server.test.ts updated to the factory signature. Live proof: 3× `initialize` in a row all succeed; official SDK client connects, lists 29 tools, calls gateway.status + session.create, reconnects. adapter-mcp 42/42. Commit: <pending>
+
+  - **D-124** (RESOLVED 2026-08-09 — Medium, 2026-08-09, reporter: live MCP test — real clients rejected on every tools request) — the adapter required `_meta.io.modelcontextprotocol/protocolVersion` + `clientCapabilities` on EVERY tools/list and tools/call (PRD Scenario 6 lock) and rejected missing values with `-32602`. Real MCP clients (Zed, the official SDK client) send `_meta` only in the initialize handshake, never on tools requests — so every real client got `-32602 Missing required _meta...` on its first tools/list.
+    - Doc claim: PRD-TRD-mcp-adapter Scenario 6 — missing `_meta` → `-32602`.
+    - Code reality: `index.ts` handlers threw WireError(WIRE_INVALID_PARAMS, ...) when validateMeta failed.
+    - Why matters: the gate made the door unusable by actual MCP clients; only hand-crafted test requests (sim/unit) could pass.
+    - Owner: adapter-mcp. To fix: drop the gate (user-approved, option A).
+    - Verified by: handlers no longer require `_meta` (sessionId still honored when present); `validateMeta` kept as a pure function for tests with a D-124 note; Scenario 6 test rewritten to assert tools/list succeeds without `_meta`; PRD-TRD Scenario 6 + API-contract row + architecture note amended. Live proof: official SDK client connect → tools/list (29 tools) → tools/call gateway.status + session.create all OK. adapter-mcp 42/42. Commit: <pending>
 

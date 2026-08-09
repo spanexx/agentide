@@ -44,11 +44,13 @@ The cost of leaving this unsolved: the entire platform is process-local. Operato
 **When** the MCP client sends `{"method":"tools/call","params":{"name":"customer.delete","arguments":{"id":"c-042"}}}`
 **Then** the adapter returns `{"error":{"code":-32002,"message":"GATEWAY_INSUFFICIENT_SCOPE"}}` — no handler is invoked.
 
-### Scenario 6: MCP client omits required `_meta` fields
+### Scenario 6: MCP client omits `_meta` fields
 
 **Given** an MCP client sends `{"method":"tools/list","params":{}}` with no `_meta`
 **When** the adapter parses the request
-**Then** the adapter returns `{"error":{"code":-32602,"message":"Missing required _meta.io.modelcontextprotocol/protocolVersion or clientCapabilities"}}` per the MCP spec — handler is never invoked.
+**Then** the adapter processes it normally — `_meta` is OPTIONAL on tools requests.
+
+> **2026-08-09 (D-124, surgical fix):** the original lock required `_meta.io.modelcontextprotocol/protocolVersion` + `clientCapabilities` on EVERY tools request and rejected missing values with `-32602`. Real MCP clients (Zed, the official SDK) send `_meta` only in the initialize handshake, never on tools/list or tools/call — so the gate made the door unusable for actual clients (verified live with the official SDK client). The gate is dropped; `_meta.dev.agentide/sessionId` is still honored when a client sends it.
 
 ### Scenario 7: MCP client calls an unsupported method (`prompts/list`, `resources/list`, etc.)
 
@@ -144,7 +146,6 @@ JSON-RPC error codes returned to MCP clients (per `PRD-gateway-core.md:213` and 
 | `GATEWAY_HANDLER_TIMEOUT` | *(no JSON-RPC code — superseded)* | handler timeouts return an `isError: true` result, not a JSON-RPC error (see Success response shape; earlier `-32007` mapping deprecated) |
 | `GATEWAY_SESSION_REQUIRED` | `-32006` (fallback) | business capability called without an active session — session check precedes capability resolution |
 | any other unmapped kernel code (`TENANT_MISMATCH`, `INVALID_REQUEST`, …) | `-32006` (fallback) | `{code: -32006, message: "<KERNEL_CODE>: <kernel msg>"}` — kernel error identifiers are echoed in the wire message for unmapped codes |
-| missing protocolVersion in `_meta` | `-32602` | JSON-RPC invalid params |
 | unknown method (`prompts/*`, `resources/*`, etc.) | `-32601` | JSON-RPC method not found |
 | `GATEWAY_AUTH_FAILED` | `-32001` | mapped to capability-not-found (no enumeration of auth state) |
 
@@ -177,9 +178,8 @@ MCP client
    ▼
 MCP adapter (@platform/adapter-mcp)
    │  parse JSON-RPC envelope
-   │  validate _meta.io.modelcontextprotocol/protocolVersion + clientCapabilities
    │  extract token from Authorization header
-   │  extract sessionId from _meta.dev.agentide/sessionId
+   │  extract sessionId from _meta.dev.agentide/sessionId (optional, D-124)
    ▼
 gateway.handleInvocation({token, capability:{name:"customer.read"}, input, sessionId})
    │  authn → authz → dispatch

@@ -36,7 +36,13 @@ async function postJson(
 const handles: McpHttpServerHandle[] = [];
 
 async function start(): Promise<McpHttpServerHandle> {
-  const handle = await startMcpHttpServer(bareServer(), { host: "127.0.0.1", port: 0 });
+  const handle = await startMcpHttpServer({
+    host: "127.0.0.1",
+    port: 0,
+    // D-123: per-request server factory — the SDK Server is not reusable
+    // across connections (fresh protocol state per request).
+    createServer: bareServer,
+  });
   handles.push(handle);
   return handle;
 }

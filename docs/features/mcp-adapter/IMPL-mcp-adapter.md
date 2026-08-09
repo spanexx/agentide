@@ -8,6 +8,14 @@
 
 > Retro-fitted IMPL (2026-08-01) per drift review D-28. Phases assembled from the
 > CID comments + Code Maps in `packages/adapter-mcp/src/*.ts` and the BI[9] Phase 5
+
+## Delivery note (2026-08-09) — real-client fixes D-123 + D-124
+
+Two bugs found by testing the MCP door with a REAL MCP client (official SDK, the way Zed connects) — both invisible to the sim/unit tests:
+- **D-123 (multi-connection):** the SDK `Server` keeps protocol state across connections; one shared `Server` + stateless transport served only the FIRST connection, every later connection (or reconnect) got a silent `-32603`. Fix: per-request `Server` + transport (`createMcpAdapter` now passes a `createServer` factory; `startMcpHttpServer` builds both per `/mcp` request; `stop()` no longer closes a shared transport). Verified: 3× `initialize` in a row all succeed.
+- **D-124 (_meta gate):** the adapter required `_meta.io.modelcontextprotocol/protocolVersion` + `clientCapabilities` on every tools request (PRD Scenario 6) — real MCP clients send `_meta` only in initialize, so every real client got `-32602` on tools/list. Gate dropped (`validateMeta` kept as a pure function for tests); `_meta.dev.agentide/sessionId` still honored when present. Scenario 6 test rewritten to assert success without `_meta`; PRD-TRD Scenario 6 + API-contract row amended.
+
+Tests: adapter-mcp 42/42 (incl. rewritten Scenario 6 + server.test.ts with the new factory signature). Live verification with the official SDK client: connect → tools/list (29 tools) → gateway.status + session.create tools/call all OK, reconnect OK. Files: `packages/adapter-mcp/src/index.ts`, `server.ts`, `translate.ts` (comment), `__tests__/scenarios.test.ts`, `__tests__/server.test.ts`, PRD-TRD Scenario 6/API table/architecture note.
 > wiring in `packages/agentide/src/factory.ts`. All code references are to
 > in-tree paths; no behavior was changed during this retro-fit.
 
