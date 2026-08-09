@@ -1,43 +1,51 @@
-# Handoff — 2026-08-09: surgical-change COMPLETE — global data-dir default (f34a7b9 + e7938e6)
+# Handoff — 2026-08-09: surgical-change COMPLETE — shell hardening D-120 + D-121 (983330f + b94d24a)
 
 ## TL;DR
 
-Surgical change (`surgical-change` skill) DONE, COMMITTED, PUSHED to `main`. The agentide CLI no longer drops `./.agentide/data` into every repo: default ambient data dir = shared global store `<home>/.local/share/agentide/<repo-key>/data` (repo-key = sha256(repo-root|cwd)[0:12]). Opt-in `data_dir = "repo"` in the operator config restores legacy per-directory behavior. **User action remaining: manually delete old `./.agentide/data` dirs (no migration code by design).**
+Surgical-change (skill: `surgical-change`) DONE, COMMITTED, PUSHED. Two operator-discovered shell bugs fixed: (1) **D-120** a second Ctrl-C during `watch` killed the whole shell; (2) **D-121** the shell passed quote characters literally (`--scope '*'` → scope `['*']`; `--args '{json}'` → parse error). Both fixed with tests, docs amended, drift ledger closed (Open 35 / Resolved 71).
 
 ## Commits (agentide repo, main)
 
 | Hash | Message |
 |---|---|
-| `f34a7b9` | `fix(agentide): global data-dir default — shared per-repo store (config data_dir = global\|repo)` — 11 files, +371/−41: NEW `src/data-dir.ts` (CID:data-dir-003..006 resolver: flag > env > config > global default; `repoRoot`/`repoKey`), `config.ts` (RawConfigFile.data_dir CID:data-dir-001 + `readDataDirSetting` CID:data-dir-002 — `"global"` default when absent/file missing; `saveConfig` line-merge keeps the key), `cli.ts` + `shell.ts` resolve through it (hardcoded `./.agentide/data` fallback gone; `home` threaded into shell line-context), NEW `__tests__/data-dir.test.ts` (8 tests), `shell.test.ts` temp-home rework + `expect(!existsSync(cwd/.agentide))`, sim env pin + S8 assertion |
-| `e7938e6` | docs(drift): pin D-119 to commit f34a7b9 (hash rotated by an amend after writing the entry) |
+| `983330f` | `fix(agentide): shell quote tokenizer + process-level Ctrl-C guard (D-120, D-121)` — 7 files, +216/−3 |
+| `b94d24a` | `docs(drift): pin D-120/D-121 to commit 983330f` (hash rotated by amend — same trap as D-119) |
 
-Docs synced: `PRD-TRD-cli-restructure.md` (S1/S8 + Why-This-Exists amended with 2026-08-09 note), `IMPL-cli-restructure.md` (surgical-change delivery note), `agentide-cli-consumer` PRD-TRD (Scenario 1 config schema + `ConfigFile` interface now include `data_dir?`), drift log D-119 written + resolved (Open 35 / Resolved 69).
+## What changed
 
-## Validation (all green)
+- **`cli-utils.ts`** — NEW `tokenizeArgs` (CID:shell-014): quote-aware tokenizer — strips matched single/double quote pairs, groups quoted whitespace into one argument, throws friendly `unterminated quote` error (shell prints + stays alive). No escapes in v1.
+- **`shell.ts`** — dispatch uses `tokenizeArgs`; NEW CID:shell-013: **process-level SIGINT no-op** for the whole shell lifetime (`runShell` → `shellLoop` split; `process.on("SIGINT", keepAlive)` registered/removed in `finally`). Root cause of D-120: readline's guard is rl-scoped; after `watch`'s `process.once("SIGINT")` fired + detached, a second Ctrl-C hit the process default → shell died.
+- **Tests** — NEW `cli-utils.test.ts` 8/8; `shell.test.ts` +3 (quoted `cd 'my dir'`, quoted-missing-dir error shows UNQUOTED path, watch-vs-dead-gateway errors and shell survives → exit 0).
+- **Docs** — PRD-TRD-cli-restructure S8 note (quotes + process-level Ctrl-C); IMPL delivery note; drift D-120 (High) + D-121 (Medium) written + resolved with commit refs.
 
-- `simulate.sh` 21/21 ALL PASS (S8 now asserts pinned-env context — cd repo-key switch is unit-pinned in shell.test.ts)
-- Precommit chain (banned-types + typecheck + lint + build) ×3, final: only pre-existing warning (`read-claims.test.ts:41` `tok` unused — not ours)
-- Full vitest suite: **1185 pass / 28 skip / 0 fail** (browser-runtime 28 skipped — no chromium binary, expected per `ced54a3`)
-- One lint warning FIXED during this session: `shell.ts:189` destructured-unused `home` (removed from destructure, kept in ctx type)
+## Validation
+
+- Targeted: 32/32 (cli-utils 8 + shell 24).
+- Full suite: **1194 pass / 28 skip / 2 fail** — the 2 fails are ENVIRONMENTAL, not the change: user's LIVE demo gateway occupies 7300 (consumer-ux test binds port 7300) + 7200 (dashboard-factory asserts 7200 unreachable). Documented trap. With the gateway stopped, suite = 1194/28/0.
+- Precommit chain ×2 green (only pre-existing `tok` warning in read-claims.test.ts).
 
 ## Repo state
 
-`main` clean EXCEPT `sessions/.last-handoff` (this file, uncommitted). Most-recent history: `e7938e6` → `f34a7b9` → `886b9dc` (release sync).
+`main` clean except `sessions/.last-handoff` (this file, uncommitted — commit pattern `docs(sessions): …` when writing). History: `b94d24a` → `983330f` → `7a242d8 (agentide-v0.9.1)`.
+
+## Live demo (USER'S processes — DO NOT kill)
+
+User's gateway + example app running: gateway PID 3604379 (doors 7100/7300/7350/7200/7400, data = global store `5c99a657dd2b`), app on :3000 (`/tmp/server.log`). Shell session active on the operator's terminal.
 
 ## Next actions / options
 
-1. **USER:** delete stale `./.agentide/data` dirs across old workspaces by hand (design lock: no migration code). After that, `agentide init` in a repo regenerates state in the global store.
-2. **Release ride:** `fix(agentide)` is a patch → next release bumps agentide patch (0.9.0 → 0.9.1?). Use `release-agentide` / `ci-cd-agentide` skills when ready.
-3. Open backlog candidates: D-118 (init tenant idempotency — follow-up pack), D-100/95/96/97/98/99 (adapter-core), D-101/D-2 (browser-runtime chromium-dependent suite skip). Nothing urgent (Critical/High = 0).
+1. **User re-verifies in the shell** (their running instance predates the fix — needs `agentide` reinstall/relaunch to pick up 983330f; the published 0.9.1 on npm still has both bugs): `--scope *`, `--args '{"json"}'`, `watch sessions --json` + 2× Ctrl-C → shell survives.
+2. **Release ride:** `fix(agentide)` = patch → next release bumps 0.9.1 → 0.9.2. Use `release-agentide` when ready. NOTE: 0.9.1 published still carries D-120/D-121 — post-release-validation will re-verify.
+3. Open backlog: D-118 (init tenant idempotency — follow-up pack), D-100/95/96/97/98/99 (adapter-core), browser-runtime suite skips without chromium.
 
 ## Trap notes
 
-- Stale gateway on 127.0.0.1:7300 breaks consumer-ux tests (EADDRINUSE). Before a suite run: `ss -tln | grep 7300`; stop leftover via `agentide gateway stop` (pattern from post-release-validation).
-- The post-release-validation `validate-release.sh` writes the real `~/.config/platform/config.toml`; after a validation run the config may point at a dead gateway — `agentide init --data-dir <scratch>` (or edit) before relying on zero-flag remote in scripts. `config.toml` can now also carry `data_dir = "global" | "repo"`.
-- Terminal tool uses `sh` (no bash-isms in one-liners: no `${PIPESTATUS[@]}`, no `[[ ]]`).
+- Amending a pushed commit rotates the hash → drift refs go stale (happened twice today). Pin refs AFTER the final hash, or expect a `docs(drift): pin` follow-up commit.
 - `nv check-banned-types.sh` bans literal `: unknown` in source strings.
-- Workspace root ALSO holds a stale `sessions/` copy (`/home/spanexx/Shared/Learn/Agent-Bridge-SDK/sessions/`) alongside the canonical repo-tracked `agentide/sessions/` — legacy double-write; leave both, main.sh may still read the old one.
+- Terminal tool uses `sh` (no bash-isms: no `${PIPESTATUS[@]}`, no `[[ ]]`).
+- A running demo gateway (7300 + 7200) breaks consumer-ux + dashboard-factory tests — stop it before full-suite runs.
+- Shell quote semantics now: quotes group spaces + strip pairs; NO backslash escapes (v1).
 
 ## Skills for next session
 
-`release-agentide` + `ci-cd-agentide` (release), `post-release-validation` (smoke after publish), `drift` (read before any doc edit), `situation-awareness` (boot), `caveman` + `log-prompt` (mandatory per AGENTS.md).
+`release-agentide` + `ci-cd-agentide` (release 0.9.2), `post-release-validation` (re-verify D-120/121 on published binary), `situation-awareness` (boot), `caveman` + `log-prompt` (mandatory).
