@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/spanexx/agentide/compare/agentide-v0.9.1...agentide-v0.9.2) (2026-08-09)
+
+
+### Bug Fixes
+
+* **agentide:** shell quote tokenizer + process-level Ctrl-C guard (D-120, D-121) ([983330f](https://github.com/spanexx/agentide/commit/983330fb6940e9c35d511a38ab83c56132568e3b))
+
 ## [0.9.1](https://github.com/spanexx/agentide/compare/agentide-v0.9.0...agentide-v0.9.1) (2026-08-09)
 
 
