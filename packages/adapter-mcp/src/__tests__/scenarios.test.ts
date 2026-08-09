@@ -61,6 +61,46 @@ describe("createMcpAdapter — PRD scenarios", () => {
     await stop();
   });
 
+  it("D-126: tools/call on a session-required business cap WITHOUT a session auto-mints, dispatches, and destroys", async () => {
+    const { adapter, fakeSdk, sm, stop } = await start();
+    // Operator-token case (scope "*" — the CLI config token): auto-mint can
+    // call session.create. Business-only tokens CANNOT mint (D-91) — those
+    // keep surfacing GATEWAY_SESSION_REQUIRED, which is correct deny-by-default.
+    const token = makeToken(["*"]);
+    const body = JSON.stringify({
+      jsonrpc: "2.0", id: 10, method: "tools/call",
+      params: { name: "customer.read", arguments: { id: "c-042" } }, // NO session in _meta
+    });
+    const res = await rpc(adapter, body, `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.json.error).toBeUndefined();
+    expect(res.json.result?.structuredContent).toEqual({ id: "c-042", name: "Ada Lovelace" });
+    // The kernel dispatched exactly once — with a REAL auto-minted session id.
+    expect(fakeSdk.dispatched).toHaveLength(1);
+    const sid = fakeSdk.dispatched[0]?.sessionId;
+    expect(typeof sid).toBe("string");
+    expect(sid?.length).toBeGreaterThan(0);
+    // Best-effort destroy: no ACTIVE session remains for that id.
+    const record = sm.list().find((s) => s.id === sid);
+    expect(record?.status).not.toBe("active");
+    await stop();
+  });
+
+  it("D-126: sessionless caps (gateway.status) are NOT auto-minted — direct call unchanged", async () => {
+    const { adapter, fakeSdk, stop } = await start();
+    const token = makeToken(["*"]);
+    const body = JSON.stringify({
+      jsonrpc: "2.0", id: 11, method: "tools/call",
+      params: { name: "gateway.status", arguments: {} },
+    });
+    const res = await rpc(adapter, body, `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.json.error).toBeUndefined();
+    // No business dispatch happened; the direct sessionless path succeeded.
+    expect(fakeSdk.dispatched).toHaveLength(0);
+    await stop();
+  });
+
   it("Scenario 3: tools/call platform cap (session.create) flows through kernel", async () => {
     const { adapter, stop } = await start();
     const token = makeToken(["*"]);

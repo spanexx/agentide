@@ -29,6 +29,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Gateway, YamlValue } from "@spanexx/gateway-core";
 import { callTool, getRequestCtx, listTools, META_SESSION_ID_KEY } from "./translate.js";
+import { withAutoMintSession } from "@spanexx/adapter-core";
 import { startMcpHttpServer, type McpHttpServerHandle } from "./server.js";
 import type { McpAdapter, McpAdapterConfig } from "./types.js";
 
@@ -135,12 +136,41 @@ export function createSessionServer(gateway: Gateway): McpServer {
       args: (params.arguments ?? {}) as YamlValue,
       sessionId,
     });
-    if (!outcome.ok) {
+    // D-126 (2026-08-09): session-required capabilities (business caps) are
+    // auto-minted when the client didn't supply a session — the session-
+    // manager GRILL locks per-request short sessions, transparent to the
+    // client (the CLI does the same via D-79). Retry ONCE with a minted
+    // session; the minted session is destroyed best-effort afterwards.
+    let autoMinted = false;
+    let effectiveOutcome = outcome;
+    if (
+      !outcome.ok &&
+      sessionId === undefined &&
+      typeof outcome.error.code === "number" &&
+      outcome.error.code === -32006 &&
+      String(outcome.error.message).includes("GATEWAY_SESSION_REQUIRED")
+    ) {
+      try {
+        effectiveOutcome = await withAutoMintSession(
+          gateway,
+          token,
+          (minted) => callTool(gateway, { token, name: params.name, args: (params.arguments ?? {}) as YamlValue, sessionId: minted }),
+          { adapterType: "mcp" },
+        );
+        autoMinted = true;
+      } catch (err) {
+        // Mint failure: surface the ORIGINAL session-required error (the
+        // client asked for the cap; minting is our convenience, not theirs).
+        effectiveOutcome = outcome;
+      }
+    }
+    const result = autoMinted ? effectiveOutcome : outcome;
+    if (!result.ok) {
       // Preserve the wire code (e.g. -32001 GATEWAY_AUTH_FAILED, -32002
       // INSUFFICIENT_SCOPE) produced by gatewayErrorToJsonRpc.
-      throw new WireError(outcome.error.code, outcome.error.message);
+      throw new WireError(result.error.code, result.error.message);
     }
-    const { content, structuredContent, isError } = outcome.result;
+    const { content, structuredContent, isError } = result.result;
     return { content: [...content], structuredContent, isError } as CallToolResult;
   });
   return server;

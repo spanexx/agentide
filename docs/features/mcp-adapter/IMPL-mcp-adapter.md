@@ -17,6 +17,14 @@ Two bugs found by testing the MCP door with a REAL MCP client (official SDK, the
 
 Tests: adapter-mcp 42/42 (incl. rewritten Scenario 6 + server.test.ts with the new factory signature). Live verification with the official SDK client: connect → tools/list (29 tools) → gateway.status + session.create tools/call all OK, reconnect OK. Files: `packages/adapter-mcp/src/index.ts`, `server.ts`, `translate.ts` (comment), `__tests__/scenarios.test.ts`, `__tests__/server.test.ts`, PRD-TRD Scenario 6/API table/architecture note.
 
+## Delivery note (2026-08-09) — D-126 MCP session auto-mint
+
+Found by calling business capabilities through the in-chat MCP tools: every `tools/call` on a business cap failed `GATEWAY_SESSION_REQUIRED` — the session-manager GRILL locks per-request short sessions (Active → Destroyed) owned by the adapter layer, transparent to the client (the CLI does this via D-79 `withAutoSession`); the MCP door didn't.
+- **Fix:** NEW `packages/adapter-core/src/session-mint.ts` `withAutoMintSession` (CID:adapter-core-009, A1 seam — doors import only adapter-core) mirroring the CLI's D-79 helper; adapter-mcp tools/call retries once with a minted session when the kernel says `GATEWAY_SESSION_REQUIRED` and no session was supplied, then best-effort destroys. Business-only tokens (no `session.create` scope) keep deny-by-default (D-91).
+- **Tests:** scenarios.test.ts +2 (auto-mint happy path with `*` token: dispatch carries a real minted session id + no active session remains; sessionless caps untouched). adapter-mcp 15/15, adapter-mcp + adapter-core 96/96.
+- **Docs:** PRD-TRD Scenario 2 note. D-126 written + resolved in `docs/drift.md`.
+- **Note (not surgical):** `tools/list_changed` push on capability registration (D-127) requires registry events + a stateful transport — new surface, feature-pipeline candidate; clients refresh on reconnect (user observed: business caps appear after Zed restart).
+
 ## Delivery note (2026-08-09) — D-125 structuredContent array wrap
 
 Found by USING the MCP tools directly from the Zed agent surface (in-chat tool calls — `session_list` failed with `-32602 Invalid tools/call result: expected record, received array`). The adapter passed the raw kernel output into `CallToolResult.structuredContent`; the MCP SDK's schema demands a RECORD, so every array-returning capability (session.list, tenant.list, capability.list, client.list, …) broke at the SDK validation layer.

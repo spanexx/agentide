@@ -58,3 +58,10 @@ export type { AdapterPipeline, AdapterPipelineOptions, PipelineInvocation } from
 // tier-aware capability.list. Ships unwired — no discovery frames in v1.
 export { createCapabilityLookup } from "./capabilities/lookup.js";
 export type { CapabilityCard, CapabilityDescriptor, CapabilityLookup, CapabilityLookupOptions, LookupOutcome } from "./capabilities/lookup.js";
+
+// Session auto-mint (D-126, 2026-08-09): one canonical mint→run→destroy
+// helper for door adapters, mirroring the CLI's D-79 withAutoSession so all
+// doors follow the session-manager GRILL contract (per-request short
+// sessions, transparent to the client).
+export { withAutoMintSession } from "./session-mint.js";
+export type { AutoMintOptions } from "./session-mint.js";

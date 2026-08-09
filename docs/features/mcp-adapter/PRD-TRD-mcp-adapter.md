@@ -27,6 +27,7 @@ The cost of leaving this unsolved: the entire platform is process-local. Operato
 **Then** the adapter returns `{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"<serialized>"}],"structuredContent":<output>}}`. Round-trip latency: same as direct `handleInvocation` (no overhead beyond JSON-RPC envelope).
 
 > **2026-08-09 (D-125, surgical fix):** `structuredContent` must be a RECORD (the MCP SDK's CallToolResult schema rejects arrays with -32602). Array/null outputs are wrapped as `{items: <output>}`; the text content always carries the raw JSON.
+> **2026-08-09 (D-126, surgical fix):** when a session-required capability is called WITHOUT a session (no `_meta.dev.agentide/sessionId`), the adapter auto-mints a session (owner = caller, adapterType = "mcp"), retries once with it, then best-effort destroys it — per the session-manager GRILL (per-request short sessions, transparent to the client; mirrors the CLI's D-79). Business-only tokens (no `session.create` scope) still get `GATEWAY_SESSION_REQUIRED` (deny-by-default, D-91).
 
 ### Scenario 3: an MCP client invokes a platform capability
 

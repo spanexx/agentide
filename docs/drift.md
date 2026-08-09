@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 75  **Critical/High:** 0
+**Last updated:** 2026-08-09  **Open:** 36  **Resolved:** 76  **Critical/High:** 0
 
 ## Open
 
@@ -548,4 +548,18 @@ ot 0`.
       - Why matters: half the platform caps (all list-style tools) were unusable from any MCP client including Zed's agent surface.
       - Owner: adapter-mcp. To fix: wrap non-record outputs.
       - Verified by: `translate.ts` callTool now wraps array/null outputs as `{items: <output>}` (records unchanged; text content always raw JSON); `translate.test.ts` +2 (array wrap, null wrap) — 44/44 adapter-mcp. Live proof: `session_list` via in-chat MCP tool now returns data instead of -32602. PRD-TRD Scenario 2 note + API-contract row + architecture diagram amended; IMPL delivery note. Commit: `3ad838d`
+
+      - **D-126** (RESOLVED 2026-08-09 — High, 2026-08-09, reporter: MCP tools called in-chat — business caps unusable) — every `tools/call` on a session-required capability failed `GATEWAY_SESSION_REQUIRED`: the MCP door honored `_meta.dev.agentide/sessionId` only when the client supplied it (real clients never do), while the session-manager GRILL locks per-request short sessions owned by the adapter layer, transparent to the client — the CLI already implements this (D-79 `withAutoSession`); the MCP adapter didn't.
+        - Doc claim: session-manager GRILL Q2/Q4 — "the agent never calls suspend/resume directly — it's transparent"; "per-request sessions (simple reads) are short Active → Destroyed".
+        - Code reality: adapter-mcp `callTool` passed `sessionId: undefined` straight through; kernel denied business caps without a session.
+        - Why matters: the platform's primary agent surface (MCP) could not execute any business capability from real clients.
+        - Owner: adapter-mcp + adapter-core. To fix: apply the locked session contract to the door.
+        - Verified by: NEW `adapter-core/src/session-mint.ts` `withAutoMintSession` (CID:adapter-core-009 — mint → run → best-effort destroy, mirrors CLI D-79); adapter-mcp tools/call retries once with a minted session on `GATEWAY_SESSION_REQUIRED` when no session was supplied; business-only tokens keep deny-by-default (D-91). Tests: scenarios +2, adapter suites 96/96. PRD-TRD Scenario 2 note + IMPL delivery note. Commit: <pending>
+
+      - **D-127** (Open — Medium, 2026-08-09, reporter: user observed business caps missing until Zed restart — Low priority until client refresh improves) — the MCP adapter never pushes `notifications/tools/list_changed`, so clients that cache `tools/list` (Zed fetches once per connection) don't see capabilities registered after connect (the example app's 11 business caps appeared only after restarting Zed).
+        - Doc claim: MCP spec — servers SHOULD notify clients when the tool list changes.
+        - Code reality: the adapter uses a STATELESS transport (D-123 fix) which has no `sendNotification` channel (verified: SDK `webStandardStreamableHttp.js` has none), and capability-registry publishes no registration events.
+        - Why matters: tool discovery lags until reconnect; agents miss newly-registered capabilities.
+        - Owner: adapter-mcp + capability-registry. To fix: needs (a) capability registration events (new event surface) + (b) a stateful transport or fanout for notifications — NEW SURFACE, feature-pipeline candidate. Surgical part done: documented in PRD-TRD/IMPL (clients refresh on reconnect).
+        - Related: D-123 (stateless transport decision that constrains the fix).
 
