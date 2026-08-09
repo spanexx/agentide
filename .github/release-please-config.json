@@ -21,6 +21,9 @@
     "packages/capability-registry": {
       "package-name": "@spanexx/capability-registry"
     },
+    "packages/dashboard-core": {
+      "package-name": "@spanexx/dashboard-core"
+    },
     "packages/errors": {
       "package-name": "@spanexx/errors"
     },
