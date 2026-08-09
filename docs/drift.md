@@ -547,5 +547,5 @@ ot 0`.
       - Code reality: `translate.ts` callTool `structuredContent: captured.output` — arrays passed raw.
       - Why matters: half the platform caps (all list-style tools) were unusable from any MCP client including Zed's agent surface.
       - Owner: adapter-mcp. To fix: wrap non-record outputs.
-      - Verified by: `translate.ts` callTool now wraps array/null outputs as `{items: <output>}` (records unchanged; text content always raw JSON); `translate.test.ts` +2 (array wrap, null wrap) — 44/44 adapter-mcp. Live proof: `session_list` via in-chat MCP tool now returns data instead of -32602. PRD-TRD Scenario 2 note + API-contract row + architecture diagram amended; IMPL delivery note. Commit: <pending>
+      - Verified by: `translate.ts` callTool now wraps array/null outputs as `{items: <output>}` (records unchanged; text content always raw JSON); `translate.test.ts` +2 (array wrap, null wrap) — 44/44 adapter-mcp. Live proof: `session_list` via in-chat MCP tool now returns data instead of -32602. PRD-TRD Scenario 2 note + API-contract row + architecture diagram amended; IMPL delivery note. Commit: `3ad838d`
 
