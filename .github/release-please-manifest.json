@@ -3,7 +3,7 @@
   "packages/adapter-mcp": "0.7.1",
   "packages/adapter-rest": "0.2.1",
   "packages/adapter-websocket": "0.7.1",
-  "packages/agentide": "0.9.0",
+  "packages/agentide": "0.9.1",
   "packages/backend-runtime": "0.6.1",
   "packages/capability-registry": "0.6.1",
   "packages/dashboard-core": "0.1.0",
