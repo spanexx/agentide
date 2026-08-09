@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/spanexx/agentide/compare/agentide-v0.9.0...agentide-v0.9.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **agentide:** global data-dir default — shared per-repo store (config data_dir = global|repo) ([f34a7b9](https://github.com/spanexx/agentide/commit/f34a7b978e7395cd8365ebabc487934354d95d80))
+
 ## [0.9.0](https://github.com/spanexx/agentide/compare/agentide-v0.8.0...agentide-v0.9.0) (2026-08-09)
 
 
