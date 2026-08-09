@@ -1,44 +1,43 @@
-# Handoff — 2026-08-07 close: adapter-core SHIPPED + released + validated; session wrap
+# Handoff — 2026-08-09: surgical-change COMPLETE — global data-dir default (f34a7b9 + e7938e6)
 
-## Effort status
+## TL;DR
 
-**Wayfinder map `adapter-core`** — milestone reached. `docs/wayfinder/adapter-core/map.md`
-(commit `bde889e`, pushed). Map is **dormant**, remaining frontier:
+Surgical change (`surgical-change` skill) DONE, COMMITTED, PUSHED to `main`. The agentide CLI no longer drops `./.agentide/data` into every repo: default ambient data dir = shared global store `<home>/.local/share/agentide/<repo-key>/data` (repo-key = sha256(repo-root|cwd)[0:12]). Opt-in `data_dir = "repo"` in the operator config restores legacy per-directory behavior. **User action remaining: manually delete old `./.agentide/data` dirs (no migration code by design).**
 
-- **A8 — MCP migration** (`tickets/A8-mcp-migration.md`, open) — move adapter-mcp server
-  pipeline onto adapter-core (cleanest migration; translate.ts already pure; A6 lookup +
-  A5 error map + A4 seam ready; lazy auth becomes the first true lazy consumer — D-95).
-- **A9 — REST proof adapter** (`tickets/A9-rest-proof-adapter.md`, open) — backlog row 10;
-  `delivery: feature-pipeline` when claimed. Consumes the shipped `createAdapterPipeline`.
+## Commits (agentide repo, main)
 
-Closed + delivered: A1 boundary, A2 auth, A3 session, A4 response seam, A5 error envelope,
-A6 capability lookup (all locked), A7 WS migration **DELIVERED & SHIPPED**, A10/A11 research.
+| Hash | Message |
+|---|---|
+| `f34a7b9` | `fix(agentide): global data-dir default — shared per-repo store (config data_dir = global\|repo)` — 11 files, +371/−41: NEW `src/data-dir.ts` (CID:data-dir-003..006 resolver: flag > env > config > global default; `repoRoot`/`repoKey`), `config.ts` (RawConfigFile.data_dir CID:data-dir-001 + `readDataDirSetting` CID:data-dir-002 — `"global"` default when absent/file missing; `saveConfig` line-merge keeps the key), `cli.ts` + `shell.ts` resolve through it (hardcoded `./.agentide/data` fallback gone; `home` threaded into shell line-context), NEW `__tests__/data-dir.test.ts` (8 tests), `shell.test.ts` temp-home rework + `expect(!existsSync(cwd/.agentide))`, sim env pin + S8 assertion |
+| `e7938e6` | docs(drift): pin D-119 to commit f34a7b9 (hash rotated by an amend after writing the entry) |
 
-## What shipped this session-cycle
+Docs synced: `PRD-TRD-cli-restructure.md` (S1/S8 + Why-This-Exists amended with 2026-08-09 note), `IMPL-cli-restructure.md` (surgical-change delivery note), `agentide-cli-consumer` PRD-TRD (Scenario 1 config schema + `ConfigFile` interface now include `data_dir?`), drift log D-119 written + resolved (Open 35 / Resolved 69).
 
-- `@spanexx/adapter-core` **0.2.1** published (NEW — shared pipeline); `adapter-websocket`
-  0.7.0→0.7.1 migrated; 8 internals +0.1 (engines/require feats). PR #58 merged, tags
-  created, repo synced (`a64cc18`). Post-release validation: **22 pass / 0 fail / 2 warn**
-  (report `/tmp/agentide-validation-0.4.0.md`).
-- Review fixes: simulate.sh ANSI-strip; PRD-TRD/IMPL to shipped 3-key API; drift
-  D-95..D-99 logged (`docs/drift.md`, Open now 26); release-please + workflow wired for
-  16th package; **CI blocker fixed** — `adapter-websocket/tsconfig.json` was missing the
-  `../adapter-core` project reference (`1639f67`; CI had been red since the migration).
-- Glossary reword still pending for D-94 ("only door" line in `docs/CONTEXT.md`) — do it
-  when A8 lands.
+## Validation (all green)
+
+- `simulate.sh` 21/21 ALL PASS (S8 now asserts pinned-env context — cd repo-key switch is unit-pinned in shell.test.ts)
+- Precommit chain (banned-types + typecheck + lint + build) ×3, final: only pre-existing warning (`read-claims.test.ts:41` `tok` unused — not ours)
+- Full vitest suite: **1185 pass / 28 skip / 0 fail** (browser-runtime 28 skipped — no chromium binary, expected per `ced54a3`)
+- One lint warning FIXED during this session: `shell.ts:189` destructured-unused `home` (removed from destructure, kept in ctx type)
 
 ## Repo state
 
-`agentide` main @ `bde889e`, pushed, clean. Example app (`example/`) uncommitted: console
-tracing + .env refresh + registry SDK refs + one-line `Registered 11 caps` restore —
-user's call to keep/commit. Skill files (`.agents/skills/`) outside git.
+`main` clean EXCEPT `sessions/.last-handoff` (this file, uncommitted). Most-recent history: `e7938e6` → `f34a7b9` → `886b9dc` (release sync).
 
-## Next-session entry points
+## Next actions / options
 
-1. Claim **A8 (MCP migration)** — grill per ticket format; then delivery (feature-pipeline
-   pack on `docs/features/adapter-mcp/`).
-2. Or **A9 (REST proof)** — spec → feature-pipeline (backlog row 10).
-3. Or the **`Goals.md` primary-goal rewrite** the user has in flight (untouched with us).
+1. **USER:** delete stale `./.agentide/data` dirs across old workspaces by hand (design lock: no migration code). After that, `agentide init` in a repo regenerates state in the global store.
+2. **Release ride:** `fix(agentide)` is a patch → next release bumps agentide patch (0.9.0 → 0.9.1?). Use `release-agentide` / `ci-cd-agentide` skills when ready.
+3. Open backlog candidates: D-118 (init tenant idempotency — follow-up pack), D-100/95/96/97/98/99 (adapter-core), D-101/D-2 (browser-runtime chromium-dependent suite skip). Nothing urgent (Critical/High = 0).
 
-Skills: `situation-awareness`, `grill-with-docs` + `wayfinder`, `drift`,
-`post-release-validation` (validated ok), `release-agentide` (next release), `git-flow`.
+## Trap notes
+
+- Stale gateway on 127.0.0.1:7300 breaks consumer-ux tests (EADDRINUSE). Before a suite run: `ss -tln | grep 7300`; stop leftover via `agentide gateway stop` (pattern from post-release-validation).
+- The post-release-validation `validate-release.sh` writes the real `~/.config/platform/config.toml`; after a validation run the config may point at a dead gateway — `agentide init --data-dir <scratch>` (or edit) before relying on zero-flag remote in scripts. `config.toml` can now also carry `data_dir = "global" | "repo"`.
+- Terminal tool uses `sh` (no bash-isms in one-liners: no `${PIPESTATUS[@]}`, no `[[ ]]`).
+- `nv check-banned-types.sh` bans literal `: unknown` in source strings.
+- Workspace root ALSO holds a stale `sessions/` copy (`/home/spanexx/Shared/Learn/Agent-Bridge-SDK/sessions/`) alongside the canonical repo-tracked `agentide/sessions/` — legacy double-write; leave both, main.sh may still read the old one.
+
+## Skills for next session
+
+`release-agentide` + `ci-cd-agentide` (release), `post-release-validation` (smoke after publish), `drift` (read before any doc edit), `situation-awareness` (boot), `caveman` + `log-prompt` (mandatory per AGENTS.md).
