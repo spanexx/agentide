@@ -554,7 +554,7 @@ ot 0`.
         - Code reality: adapter-mcp `callTool` passed `sessionId: undefined` straight through; kernel denied business caps without a session.
         - Why matters: the platform's primary agent surface (MCP) could not execute any business capability from real clients.
         - Owner: adapter-mcp + adapter-core. To fix: apply the locked session contract to the door.
-        - Verified by: NEW `adapter-core/src/session-mint.ts` `withAutoMintSession` (CID:adapter-core-009 — mint → run → best-effort destroy, mirrors CLI D-79); adapter-mcp tools/call retries once with a minted session on `GATEWAY_SESSION_REQUIRED` when no session was supplied; business-only tokens keep deny-by-default (D-91). Tests: scenarios +2, adapter suites 96/96. PRD-TRD Scenario 2 note + IMPL delivery note. Commit: <pending>
+        - Verified by: NEW `adapter-core/src/session-mint.ts` `withAutoMintSession` (CID:adapter-core-009 — mint → run → best-effort destroy, mirrors CLI D-79); adapter-mcp tools/call retries once with a minted session on `GATEWAY_SESSION_REQUIRED` when no session was supplied; business-only tokens keep deny-by-default (D-91). Tests: scenarios +2, adapter suites 96/96. PRD-TRD Scenario 2 note + IMPL delivery note. Commit: `978545f`
 
       - **D-127** (Open — Medium, 2026-08-09, reporter: user observed business caps missing until Zed restart — Low priority until client refresh improves) — the MCP adapter never pushes `notifications/tools/list_changed`, so clients that cache `tools/list` (Zed fetches once per connection) don't see capabilities registered after connect (the example app's 11 business caps appeared only after restarting Zed).
         - Doc claim: MCP spec — servers SHOULD notify clients when the tool list changes.
