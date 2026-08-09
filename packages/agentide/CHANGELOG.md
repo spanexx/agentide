@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/spanexx/agentide/compare/agentide-v0.9.2...agentide-v0.9.3) (2026-08-09)
+
+
+### Bug Fixes
+
+* **agentide:** shell dispatch newline-termination + clear scrollback wipe (D-122) ([fe26ca4](https://github.com/spanexx/agentide/commit/fe26ca4216e54b5ea95ab90c0ab6dcc2bb420ec4))
+
 ## [0.9.2](https://github.com/spanexx/agentide/compare/agentide-v0.9.1...agentide-v0.9.2) (2026-08-09)
 
 
