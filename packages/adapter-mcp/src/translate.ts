@@ -295,7 +295,15 @@ export async function callTool(
     ok: true,
     result: {
       content: [{ type: "text", text: JSON.stringify(captured.output) }],
-      structuredContent: captured.output,
+      // D-125 (2026-08-09): the MCP SDK's CallToolResult schema demands a
+      // RECORD for structuredContent — array outputs (session.list,
+      // tenant.list, capability.list, ...) were rejected with -32602
+      // "expected record, received array". Wrap arrays in a record; the
+      // text content above still carries the raw JSON either way.
+      structuredContent:
+        Array.isArray(captured.output) || captured.output === null
+          ? { items: captured.output }
+          : captured.output,
     },
   };
 }

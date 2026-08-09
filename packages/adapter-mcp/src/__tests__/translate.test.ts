@@ -252,6 +252,25 @@ describe("callTool", () => {
     expect(call?.sessionId).toBe("s1");
   });
 
+  it("wraps ARRAY outputs in structuredContent (D-125 — session.list etc.)", async () => {
+    const gw = mockGateway({ "session.list": { output: [{ id: "s1", status: "active" }] } });
+    const outcome = await callTool(gw, { token: READ_TOKEN, name: "session.list", args: {}, sessionId: undefined });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // The MCP SDK's CallToolResult schema demands a RECORD for structuredContent;
+    // a raw array is rejected with -32602 "expected record, received array".
+    expect(outcome.result.structuredContent).toEqual({ items: [{ id: "s1", status: "active" }] });
+    expect(outcome.result.content).toEqual([{ type: "text", text: '[{"id":"s1","status":"active"}]' }]);
+  });
+
+  it("wraps NULL outputs in structuredContent (D-125)", async () => {
+    const gw = mockGateway({ "capability.list": { output: null } });
+    const outcome = await callTool(gw, { token: READ_TOKEN, name: "capability.list", args: {}, sessionId: undefined });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.structuredContent).toEqual({ items: null });
+  });
+
   it("passes no sessionId when the request carries none", async () => {
     const gw = mockGateway({ "customer.read": { output: {} } });
     await callTool(gw, { token: READ_TOKEN, name: "customer.read", args: {}, sessionId: undefined });

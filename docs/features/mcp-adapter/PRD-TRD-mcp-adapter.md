@@ -26,6 +26,8 @@ The cost of leaving this unsolved: the entire platform is process-local. Operato
 **When** the adapter calls `gateway.handleInvocation({token, capability:{name:"customer.read"}, input:{id:"c-042"}, sessionId:"sess-001"})`
 **Then** the adapter returns `{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"<serialized>"}],"structuredContent":<output>}}`. Round-trip latency: same as direct `handleInvocation` (no overhead beyond JSON-RPC envelope).
 
+> **2026-08-09 (D-125, surgical fix):** `structuredContent` must be a RECORD (the MCP SDK's CallToolResult schema rejects arrays with -32602). Array/null outputs are wrapped as `{items: <output>}`; the text content always carries the raw JSON.
+
 ### Scenario 3: an MCP client invokes a platform capability
 
 **Given** Scenario 1 just completed; an MCP client with `platform.session.write` scope sends `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"session.create","arguments":{},"_meta":{...}}}`
@@ -151,7 +153,7 @@ JSON-RPC error codes returned to MCP clients (per `PRD-gateway-core.md:213` and 
 
 Success response shape:
 - `tools/list`: `{tools: [{name, description, inputSchema, annotations: {tier}}]}`
-- `tools/call`: `{content: [{type: "text", text: "<serialized>"}], structuredContent: <output>}` — handler timeouts set `isError: true` instead of returning a JSON-RPC error (per MCP spec, tool-level errors live in the result).
+- `tools/call`: `{content: [{type: "text", text: "<serialized>"}], structuredContent: <output>}` — handler timeouts set `isError: true` instead of returning a JSON-RPC error (per MCP spec, tool-level errors live in the result). NOTE (D-125, 2026-08-09): `structuredContent` is the raw output for records; arrays/null are wrapped as `{items: <output>}` because the MCP SDK's result schema requires a record.
 
 ### Dependencies
 
@@ -192,7 +194,7 @@ dispatch by owner prefix:
                                                                           → handler runs
    ▼
 adapter wraps {output} into MCP CallToolResult:
-   │  {content: [{type:"text", text: serialize(output)}], structuredContent: output}
+   │  {content: [{type:"text", text: serialize(output)}], structuredContent: record(output)}  # D-125: arrays/null → {items: …}
    ▼
 MCP client
 ```

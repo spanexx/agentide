@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 74  **Critical/High:** 0
+**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 75  **Critical/High:** 0
 
 ## Open
 
@@ -541,4 +541,11 @@ ot 0`.
     - Why matters: the gate made the door unusable by actual MCP clients; only hand-crafted test requests (sim/unit) could pass.
     - Owner: adapter-mcp. To fix: drop the gate (user-approved, option A).
     - Verified by: handlers no longer require `_meta` (sessionId still honored when present); `validateMeta` kept as a pure function for tests with a D-124 note; Scenario 6 test rewritten to assert tools/list succeeds without `_meta`; PRD-TRD Scenario 6 + API-contract row + architecture note amended. Live proof: official SDK client connect → tools/list (29 tools) → tools/call gateway.status + session.create all OK. adapter-mcp 42/42. Commit: `3d3745f`
+
+    - **D-125** (RESOLVED 2026-08-09 — Medium, 2026-08-09, reporter: MCP tools used directly from the Zed agent surface — `session_list` failed) — array-returning capabilities broke the MCP result: the adapter passed the raw kernel output into `CallToolResult.structuredContent`, and the MCP SDK's schema demands a RECORD — every array output (`session.list`, `tenant.list`, `capability.list`, `client.list`, …) was rejected with `-32602 Invalid tools/call result: expected record, received array`.
+      - Doc claim: PRD-TRD-mcp-adapter Scenario 2 / API contracts — `structuredContent: <output>` (any output).
+      - Code reality: `translate.ts` callTool `structuredContent: captured.output` — arrays passed raw.
+      - Why matters: half the platform caps (all list-style tools) were unusable from any MCP client including Zed's agent surface.
+      - Owner: adapter-mcp. To fix: wrap non-record outputs.
+      - Verified by: `translate.ts` callTool now wraps array/null outputs as `{items: <output>}` (records unchanged; text content always raw JSON); `translate.test.ts` +2 (array wrap, null wrap) — 44/44 adapter-mcp. Live proof: `session_list` via in-chat MCP tool now returns data instead of -32602. PRD-TRD Scenario 2 note + API-contract row + architecture diagram amended; IMPL delivery note. Commit: <pending>
 

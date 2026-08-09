@@ -16,6 +16,14 @@ Two bugs found by testing the MCP door with a REAL MCP client (official SDK, the
 - **D-124 (_meta gate):** the adapter required `_meta.io.modelcontextprotocol/protocolVersion` + `clientCapabilities` on every tools request (PRD Scenario 6) — real MCP clients send `_meta` only in initialize, so every real client got `-32602` on tools/list. Gate dropped (`validateMeta` kept as a pure function for tests); `_meta.dev.agentide/sessionId` still honored when present. Scenario 6 test rewritten to assert success without `_meta`; PRD-TRD Scenario 6 + API-contract row amended.
 
 Tests: adapter-mcp 42/42 (incl. rewritten Scenario 6 + server.test.ts with the new factory signature). Live verification with the official SDK client: connect → tools/list (29 tools) → gateway.status + session.create tools/call all OK, reconnect OK. Files: `packages/adapter-mcp/src/index.ts`, `server.ts`, `translate.ts` (comment), `__tests__/scenarios.test.ts`, `__tests__/server.test.ts`, PRD-TRD Scenario 6/API table/architecture note.
+
+## Delivery note (2026-08-09) — D-125 structuredContent array wrap
+
+Found by USING the MCP tools directly from the Zed agent surface (in-chat tool calls — `session_list` failed with `-32602 Invalid tools/call result: expected record, received array`). The adapter passed the raw kernel output into `CallToolResult.structuredContent`; the MCP SDK's schema demands a RECORD, so every array-returning capability (session.list, tenant.list, capability.list, client.list, …) broke at the SDK validation layer.
+- **Fix:** `translate.ts` callTool wraps array/null outputs as `{items: <output>}`; records pass through; text content always carries the raw JSON.
+- **Tests:** `translate.test.ts` +2 (array wrap, null wrap) — 20/20 in that file, 44/44 adapter-mcp total.
+- **Docs:** PRD-TRD Scenario 2 note + API-contract row + architecture diagram amended. D-125 written + resolved in `docs/drift.md`.
+
 > wiring in `packages/agentide/src/factory.ts`. All code references are to
 > in-tree paths; no behavior was changed during this retro-fit.
 
