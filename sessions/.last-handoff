@@ -1,42 +1,56 @@
-# Handoff — 2026-08-09/10: MCP door fixed (D-123..127) + audit-log truncation FIXED (D-128, Critical); release pending
+# Handoff — 2026-08-10: NEW-AGENT TEST — verify MCP door + audit trace (D-128) via the IN-CHAT tool surface
 
-## TL;DR
+## Your job (fresh agent, fresh conversation)
 
-The agentide MCP door is now feature-complete AND fully traceable:
-- **D-123..126** (surgical): multi-connection, _meta gate, array results, session auto-mint — all shipped earlier
-- **D-127** (feature-pipeline): `catalogVersion` fingerprint on tools/list — SHIPPED (docs/features/mcp-tools-refresh/, GRILL locked, sim 9/9)
-- **D-128 (Critical, new)**: the gateway's audit log could only ever hold ONE row — the CLI's FileSystem implementations (`bin.ts` defaultFs + `start.ts` inline fs) used truncating `fsPromises.writeFile`, violating the locked append contract (gateway-core types.ts:141-145). Fixed by exporting + reusing gateway-core's contract-correct `nodeFileSystem()` in both CLI sites. **Live proof: one product.list MCP call now writes 4 audit rows** (session.create ok → product.list denied (first attempt) → product.list ok (auto-mint retry) → session.destroy ok) — the full lifecycle is traceable.
+Test the agentide MCP door and the D-128 audit fix **using the in-chat MCP tools** — NOT curl, NOT scripts. This conversation could not because its tool schema lacked the MCP tools (D-127 client-provisioning: tools are provisioned at conversation creation; restarts don't re-inject them into an EXISTING chat). **You must be in a NEW conversation** so `product_list` / `session_list` etc. are in your callable set.
 
-All committed + pushed on `main`. Gateway currently RUNNING with the fixed bundle + example app. **Remaining: release (0.9.4 rides D-123..128).**
+## What is running RIGHT NOW (verify with `ss -tln`)
 
-## Commits
+- Gateway (local bundle, ALL fixes D-123..128): ports **7100 (MCP) + 7350 (SDK) + 7300/7200/7400**
+- Example app: **:3000**, 11 business caps registered
+- Token: `/tmp/ag-mcp.token` (1h TTL — if expired: `agentide token issue --tenant acme --caller zed --scope '*' --data-dir /tmp/ag-mcp | tail -1 > /tmp/ag-mcp.token`)
+- Data dir: `/tmp/ag-mcp` — **audit log at `/tmp/ag-mcp/audit.log`**
 
-`3d3745f` (D-123/124) · `3ad838d` (D-125) · `978545f` (D-126) · `a23226b` + `abe60c7` (D-127 feature) · `cc49119` + `0debf92` (D-128) · `cffef73` (handoff)
+If the gateway is down: `setsid node /home/spanexx/Shared/Learn/Agent-Bridge-SDK/agentide/packages/agentide/dist/bin.bundled.cjs gateway start --data-dir /tmp/ag-mcp --all-doors --foreground > /tmp/gw-fg.log 2>&1 < /dev/null &` (boot from the agentide repo dir). App: `cd /home/spanexx/Shared/Learn/Agent-Bridge-SDK/example && node dist/main.js` (boot from ITS dir — .env is cwd-relative).
 
-## Verified
+## The TEST (4 steps)
 
-- Adapter suites 50/50; full suite 1208 pass / 28 skip / 0 fail (1 known env flake: consumer-ux binds 7300, collides with running gateway)
-- mcp-tools-refresh sim 9/9 live (fingerprint stable/register/unregister/per-caller)
-- Audit: 4-row lifecycle trace proven live (D-128)
-- In-chat MCP tools WORK in this conversation (session_list, product_list, cart_add, cart_view, product_get, order_list all called directly) — the D-127 client-refresh note: business tools appeared after a Zed restart; per-turn refresh is the documented-but-external Zed-side follow-up
+1. **Wipe the audit baseline** (terminal is fine for this):
+   `rm -f /tmp/ag-mcp/audit.log` → `wc -l /tmp/ag-mcp/audit.log` → 0 (or missing file)
 
-## Next steps
+2. **Call the business tool IN-CHAT** (the whole point — no curl):
+   - `product_list` → expect 28 real items (HAM-9 Hammer, SKU-001 Widget…), NO session params needed (D-126 auto-mint)
+   - `cart_add` → expect totalCents (write path)
 
-1. **Release**: `release-agentide` → agentide 0.9.4 (patch: fix commits) + adapter-mcp + adapter-core patches. Then `post-release-validation` (add MCP checks to validate-release.sh section 9: tools/list returns catalogVersion; business call via auto-mint works without session; audit.log accumulates rows).
-2. Optional: Zed-side refresh contract implementation (GRILL Q9 external follow-up).
-3. User note: session audit rows for auto-minted sessions now exist (D-128) — the earlier "0 session.create rows" finding is resolved.
+3. **Check the audit log** (terminal):
+   `wc -l /tmp/ag-mcp/audit.log` → expect **8 rows** for the 2 calls:
+   ```
+   session.create  ok     (auto-mint)
+   product.list    denied (first attempt, no session)
+   product.list    ok     (retry with session)
+   session.destroy ok     (cleanup)
+   ← same 4 for cart_add
+   ```
+   Full command: `grep -oE '"name":"[a-z.]*"|"status":"[a-z]*"' /tmp/ag-mcp/audit.log | paste - - | sort | uniq -c`
 
-## Trap notes (this session's scars — repeat offenders)
+4. **PASS criteria**: tools callable in-chat, business data returned, audit log accumulates the full lifecycle (create → denied → ok → destroy) per call, in order. That = D-123..128 verified end-to-end through the REAL surface.
 
-- **esbuild bundles BUILT dist, not src**: edit src → `npx tsc -b` in the package → `pnpm run bundle` in packages/agentide → restart gateway. Stale dist cost hours.
-- Kill gateways/apps by PID from `ss -ltnp` (pkill -f 'bin.bundled' doesn't match); app processes can linger after EADDRINUSE crashes — check :3000 before sims.
-- App reads `.env` relative to ITS cwd — boot from example dir.
-- Tokens expire 1h — /tmp/ag-mcp.token AND the app's .env token (bounce app after re-mint).
-- `agentide` on PATH = PUBLISHED 0.9.3 (no fixes). Local bundle = `node agentide/packages/agentide/dist/bin.bundled.cjs`.
-- `git push` may ask for credentials: `gh auth setup-git` + `GIT_ASKPASS=echo git push`.
-- Audit contract: FileSystem.writeFile appends WITHOUT mode, WRITES with mode (secrets 0600) — never regress to plain writeFile.
-- Full suite: 1 known env flake (consumer-ux 7300) when the gateway is up.
+## Why this matters
+
+- D-128 (Critical, commit `cc49119`): the audit log previously held ≤1 row (CLI fs truncated instead of appending). The fix (reuse `nodeFileSystem()`) is committed + pushed but only verified over the WIRE so far (8 rows for 2 curls). The in-chat call + audit check is the missing end-to-end proof.
+- User principle: **everything must be logged and traceable.**
+
+## If a step fails
+
+- Tool not in schema → you're in the WRONG conversation (must be NEW). Do NOT fall back to curl — report it.
+- Audit rows missing/1 row → the fix regressed or the gateway runs a STALE bundle (rebuild chain: edit src → `npx tsc -b` in the package → `pnpm run bundle` in packages/agentide → restart gateway by PID from `ss -ltnp`).
+- `GATEWAY_AUTH_FAILED` → token expired → re-mint (above).
+
+## User-only follow-ups
+
+- After PASS: the release (0.9.4 rides D-123..128) — ask the user if they want `release-agentide`.
+- The D-127 client-refresh (tools appearing without restarts) is the known external follow-up — do NOT try to fix it here.
 
 ## Skills
 
-All project skills now GLOBAL (~/.agents/skills/): caveman, drift, opensrc, feature-pipeline, grill-with-docs, surgical-change (updated: triage starts from docs/features/). Release skills: release-agentide, ci-cd-agentide, post-release-validation.
+`answer-question` (chunked answers), `plain-english-first`, `drift` (read before doc edits), `surgical-change` (if a real regression surfaces), `caveman`/`log-prompt` mandatory. Sessions dir: `agentide/sessions/`.
