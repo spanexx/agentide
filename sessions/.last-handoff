@@ -1,55 +1,42 @@
-# Handoff — 2026-08-09: MCP door fixed end-to-end (D-123..126) + mcp-tools-refresh SHIPPED (D-127); Zed verification + release pending
+# Handoff — 2026-08-09/10: MCP door fixed (D-123..127) + audit-log truncation FIXED (D-128, Critical); release pending
 
 ## TL;DR
 
-The agentide MCP door (port 7100) went from "broken for real clients" to "feature-complete" this session. Four surgical fixes (D-123..126) + one full feature-pipeline delivery (D-127/mcp-tools-refresh). All committed + pushed on `main`. **Remaining: (1) user verifies in Zed, (2) release.** Example app + gateway are NOT running at handoff time.
+The agentide MCP door is now feature-complete AND fully traceable:
+- **D-123..126** (surgical): multi-connection, _meta gate, array results, session auto-mint — all shipped earlier
+- **D-127** (feature-pipeline): `catalogVersion` fingerprint on tools/list — SHIPPED (docs/features/mcp-tools-refresh/, GRILL locked, sim 9/9)
+- **D-128 (Critical, new)**: the gateway's audit log could only ever hold ONE row — the CLI's FileSystem implementations (`bin.ts` defaultFs + `start.ts` inline fs) used truncating `fsPromises.writeFile`, violating the locked append contract (gateway-core types.ts:141-145). Fixed by exporting + reusing gateway-core's contract-correct `nodeFileSystem()` in both CLI sites. **Live proof: one product.list MCP call now writes 4 audit rows** (session.create ok → product.list denied (first attempt) → product.list ok (auto-mint retry) → session.destroy ok) — the full lifecycle is traceable.
 
-## What shipped (in order)
+All committed + pushed on `main`. Gateway currently RUNNING with the fixed bundle + example app. **Remaining: release (0.9.4 rides D-123..128).**
 
-| Commit | What |
-|---|---|
-| `3d3745f` | D-123 (multi-connection: per-request Server+transport replaces the shared SDK Server that died after the 1st client) + D-124 (_meta gate dropped — real clients only send _meta in initialize) |
-| `3ad838d` | D-125 (array outputs wrapped `{items: …}` — session.list etc. broke the SDK's record-schema) |
-| `978545f` | D-126 (session auto-mint for business caps — `withAutoMintSession` in adapter-core, mirrors CLI D-79; business tools now work from MCP with NO session) |
-| `a23226b` | **feat: mcp-tools-refresh (D-127)** — `tools/list` result now carries `catalogVersion` (sha256 over the caller's sorted scope-filtered cards, 12 hex, computed on demand — stateless) |
-| `abe60c7` | drift pin |
+## Commits
 
-Full pipeline docs: `docs/features/mcp-tools-refresh/` (GRILL locked 12 entries, PRD-TRD, IMPL, `simulate.sh` canonical — 9/9 PASS). D-127 → Resolved. Drift: Open 35 / Resolved 77.
-
-Also this session: skills moved to GLOBAL (`~/.agents/skills/`): caveman, drift, opensrc (feature-pipeline was already global). Surgical-change skill updated: triage now STARTS from `docs/features/<slug>/` (docs are the design).
+`3d3745f` (D-123/124) · `3ad838d` (D-125) · `978545f` (D-126) · `a23226b` + `abe60c7` (D-127 feature) · `cc49119` + `0debf92` (D-128) · `cffef73` (handoff)
 
 ## Verified
 
-- Adapter suites 50/50; full suite 1207 pass / 28 skip / 0 fail (1 known env flake on consumer-ux when ports busy)
-- `simulate.sh` 9/9 live: fingerprint `5267286dd8c3` stable → `ff8ccea307a9` on app register (29→40 tools) → back to `5267286dd8c3` on unregister → narrow-token independence
-- Earlier: official MCP SDK client connected + called `product.list`/`cart.add` through the door
-- **NOT verified: actual Zed client consuming `catalogVersion`** (can't drive Zed from here; in-chat MCP tools weren't in the agent schema this session — the D-127-shaped provisioning issue)
+- Adapter suites 50/50; full suite 1208 pass / 28 skip / 0 fail (1 known env flake: consumer-ux binds 7300, collides with running gateway)
+- mcp-tools-refresh sim 9/9 live (fingerprint stable/register/unregister/per-caller)
+- Audit: 4-row lifecycle trace proven live (D-128)
+- In-chat MCP tools WORK in this conversation (session_list, product_list, cart_add, cart_view, product_get, order_list all called directly) — the D-127 client-refresh note: business tools appeared after a Zed restart; per-turn refresh is the documented-but-external Zed-side follow-up
 
-## Next steps (in order, for the next session)
+## Next steps
 
-1. **User check in Zed** (needs gateway + example app up):
-   ```bash
-   # gateway (local bundle = has all fixes; published 0.9.3 does NOT)
-   rm -rf /tmp/ag-mcp && agentide init --data-dir /tmp/ag-mcp --default-tenant acme
-   setsid node agentide/packages/agentide/dist/bin.bundled.cjs gateway start --data-dir /tmp/ag-mcp --all-doors --foreground &
-   agentide token issue --tenant acme --caller zed --scope '*' --data-dir /tmp/ag-mcp | tail -1 > /tmp/ag-mcp.token
-   # example app (11 business caps) — from its OWN dir (env reads .env relative to cwd!)
-   cd example && printf 'PLATFORM_GATEWAY_URL=ws://127.0.0.1:7350\nPLATFORM_APP_ID=nestjs-ecommerce\nPLATFORM_TOKEN=<fresh token>\n' > .env && (setsid node dist/main.js > /tmp/server.log 2>&1 &)
-   ```
-   Zed: NEW agent conversation → `product.list` should exist + work (D-126 auto-mint) → returns items.
-2. **Release** (all of D-123..127 ride it): `release-agentide` — expect agentide 0.9.4 patch + adapter-mcp + adapter-core patches. Then `post-release-validation` (add an MCP check to validate-release.sh section 9 — tools/list now needs NO _meta and returns catalogVersion; business call via auto-mint).
-3. Optional backlog: Zed-side client refresh contract implementation (GRILL Q9 — external); the in-chat tool-provisioning refresh (why the agent schema didn't get new tools mid-session — likely Zed-side, worth one ticket).
+1. **Release**: `release-agentide` → agentide 0.9.4 (patch: fix commits) + adapter-mcp + adapter-core patches. Then `post-release-validation` (add MCP checks to validate-release.sh section 9: tools/list returns catalogVersion; business call via auto-mint works without session; audit.log accumulates rows).
+2. Optional: Zed-side refresh contract implementation (GRILL Q9 external follow-up).
+3. User note: session audit rows for auto-minted sessions now exist (D-128) — the earlier "0 session.create rows" finding is resolved.
 
-## Trap notes (this session's scars)
+## Trap notes (this session's scars — repeat offenders)
 
-- **esbuild bundles BUILT dist, not src**: edit adapter-mcp src → `npx tsc -b` in that package → `pnpm run bundle` in packages/agentide → restart gateway. Stale dist cost ~1h twice.
-- Kill gateways/apps by PID from `ss -ltnp` (pkill -f 'bin.bundled' doesn't match); app processes can linger zombie-ish after EADDRINUSE crashes — sim now fail-fasts on :3000 busy.
-- App reads `.env` relative to ITS cwd — boot from the example dir.
-- Tokens expire 1h; app .env token too (bounce app after re-mint).
-- `agentide` on PATH = global PUBLISHED binary (0.9.3, no fixes). The local bundle = `node agentide/packages/agentide/dist/bin.bundled.cjs`.
-- `git push` may ask for credentials: `gh auth setup-git` + `GIT_ASKPASS=echo git push` (multi-account keyring quirk).
-- Adapters stay STATELESS (CONTEXT.md lock) — any future push/notify feature must grill around it (mcp-tools-refresh chose the version-stamp route).
+- **esbuild bundles BUILT dist, not src**: edit src → `npx tsc -b` in the package → `pnpm run bundle` in packages/agentide → restart gateway. Stale dist cost hours.
+- Kill gateways/apps by PID from `ss -ltnp` (pkill -f 'bin.bundled' doesn't match); app processes can linger after EADDRINUSE crashes — check :3000 before sims.
+- App reads `.env` relative to ITS cwd — boot from example dir.
+- Tokens expire 1h — /tmp/ag-mcp.token AND the app's .env token (bounce app after re-mint).
+- `agentide` on PATH = PUBLISHED 0.9.3 (no fixes). Local bundle = `node agentide/packages/agentide/dist/bin.bundled.cjs`.
+- `git push` may ask for credentials: `gh auth setup-git` + `GIT_ASKPASS=echo git push`.
+- Audit contract: FileSystem.writeFile appends WITHOUT mode, WRITES with mode (secrets 0600) — never regress to plain writeFile.
+- Full suite: 1 known env flake (consumer-ux 7300) when the gateway is up.
 
-## Skills for next session
+## Skills
 
-`release-agentide` + `ci-cd-agentide` + `post-release-validation` (release), `situation-awareness` (boot), `caveman`/`log-prompt`/`drift`/`feature-pipeline`/`grill-with-docs` are now GLOBAL — no repo binding.
+All project skills now GLOBAL (~/.agents/skills/): caveman, drift, opensrc, feature-pipeline, grill-with-docs, surgical-change (updated: triage starts from docs/features/). Release skills: release-agentide, ci-cd-agentide, post-release-validation.
