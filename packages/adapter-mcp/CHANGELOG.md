@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/spanexx/agentide/compare/adapter-mcp-v0.7.1...adapter-mcp-v0.8.0) (2026-08-10)
+
+
+### Features
+
+* **adapter-mcp:** catalog version fingerprint on tools/list (D-127) ([a23226b](https://github.com/spanexx/agentide/commit/a23226b3cf1983bf83a1255918d6a11b78d6a23b))
+
+
+### Bug Fixes
+
+* **adapter-mcp:** per-request server lifecycle + drop _meta gate (D-123, D-124) ([3d3745f](https://github.com/spanexx/agentide/commit/3d3745f3293302650e149237d6a8a36e5d452b14))
+* **adapter-mcp:** session auto-mint for business caps (D-126) ([978545f](https://github.com/spanexx/agentide/commit/978545fb3a229ca8d3dc36376e96d70ab1b44202))
+* **adapter-mcp:** wrap array/null outputs in structuredContent (D-125) ([3ad838d](https://github.com/spanexx/agentide/commit/3ad838d24120f19b849d524bfb7cbe88a3a5d76b))
+
 ## [0.7.1](https://github.com/spanexx/agentide/compare/adapter-mcp-v0.7.0...adapter-mcp-v0.7.1) (2026-08-08)
 
 

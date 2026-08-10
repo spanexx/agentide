@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/spanexx/agentide/compare/adapter-core-v0.3.1...adapter-core-v0.3.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* **adapter-mcp:** session auto-mint for business caps (D-126) ([978545f](https://github.com/spanexx/agentide/commit/978545fb3a229ca8d3dc36376e96d70ab1b44202))
+
 ## [0.3.1](https://github.com/spanexx/agentide/compare/adapter-core-v0.3.0...adapter-core-v0.3.1) (2026-08-08)
 
 
