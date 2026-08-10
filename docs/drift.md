@@ -562,6 +562,6 @@ ot 0`.
         - Why matters: tool discovery lags until reconnect; agents miss newly-registered capabilities.
         - Owner: adapter-mcp + capability-registry.
         - Resolution (stateless Option A, GRILL locked 2026-08-09): `docs/features/mcp-tools-refresh/` — `tools/list` now returns a per-caller content fingerprint (`catalogVersion`, sha256 over the sorted scope-filtered cards, 12 hex, computed on demand — no state, no events) and the client refresh contract is documented (re-fetch on reconnect / tool-not-found / version mismatch / per-turn). Push remains out (adapter stateless lock).
-        - Verified by: `translate.test.ts` 24/24 (fingerprint stability, change-on-catalog-change, field sensitivity, order independence), scenarios.test.ts 25/25 (Scenario 1 stamp + stability), `simulate.sh` 9/9 live (V1 stable → V2 on app register (29→40 tools) → V3 back to V1 on unregister → narrow-token independence from invisible registrations). Commit: `REPLACE_ME`
+        - Verified by: `translate.test.ts` 24/24 (fingerprint stability, change-on-catalog-change, field sensitivity, order independence), scenarios.test.ts 25/25 (Scenario 1 stamp + stability), `simulate.sh` 9/9 live (V1 stable → V2 on app register (29→40 tools) → V3 back to V1 on unregister → narrow-token independence from invisible registrations). Commit: `a23226b`
         - Related: D-123 (stateless transport decision that constrains the fix).
 
