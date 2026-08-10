@@ -562,4 +562,8 @@ ot 0`.
         - Why matters: tool discovery lags until reconnect; agents miss newly-registered capabilities.
         - Owner: adapter-mcp + capability-registry. To fix: needs (a) capability registration events (new event surface) + (b) a stateful transport or fanout for notifications — NEW SURFACE, feature-pipeline candidate. Surgical part done: documented in PRD-TRD/IMPL (clients refresh on reconnect).
         - Related: D-123 (stateless transport decision that constrains the fix).
+        - Resolution path (2026-08-09): GRILL locked + PRD-TRD drafted in
+          `docs/features/mcp-tools-refresh/` — stateless catalog-version fingerprint
+          (Option A, GRILL #1) + documented client refresh contract. D-127 closes
+          when the PRD-TRD ships.
 

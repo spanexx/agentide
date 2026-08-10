@@ -1,0 +1,221 @@
+MCP Catalog Refresh - Grill Notes
+
+Status: Locked
+Date: 2026-08-09
+Source: drift D-127 (docs/drift.md), mcp-adapter PRD-TRD + IMPL (docs/features/mcp-adapter/), CONTEXT.md glossary + Decisions Log, session-manager GRILL (docs/features/session-manager/GRILL-session-manager.txt)
+
+What this feature is about
+
+- MCP clients (Zed) cache the tool catalog from tools/list at connect; when the
+  catalog changes afterward (e.g. the example app registers 11 business caps),
+  clients don't see the new tools until they reconnect/restart.
+- This feature makes the catalog self-describing (a version fingerprint on
+  tools/list) and defines the client-side refresh contract (re-fetch on
+  version change) so new tools appear WITHOUT manual reconnect.
+- It does NOT add server-push notifications (tools/list_changed); the door
+  stays stateless per the locked adapter design.
+- Scope: server = version fingerprint on tools/list result. Client = the
+  re-fetch contract (this repo documents it; Zed-side behavior is driven by a
+  client integration the operator configures).
+
+Questions and answers locked so far
+
+1. (User asked) "what is the stateless way to achieve it?"
+Answer:
+- Option A: keep the door stateless; stamp every tools/list result with a
+  catalog version fingerprint; the client re-fetches tools/list when it sees
+  an unseen version. No server-side connection tracking, no push.
+- Alternative (rejected by user): stateful door that tracks connections and
+  pushes notifications/tools/list_changed (MCP-standard push).
+
+Why:
+- CONTEXT.md glossary locks Adapters as "pure protocol translators — no
+  business logic, no state"; a push design requires per-connection state +
+  a new event surface (capability-registry has none — verified: store.ts is a
+  plain map, no publish; SDK stateless transport has no sendNotification —
+  verified webStandardStreamableHttp.js).
+- Stateless keeps the D-123 fix (per-request Server+transport) and crash
+  safety.
+
+2. What exactly does the client do when it sees the catalog version change?
+Answer:
+- Lazy re-fetch on version change. Triggers: (a) reconnect/new connection
+  (baseline, already today), (b) tools/call returns -32001 "capability not
+  found" for a name the client has cached (stale-catalog recovery: re-fetch
+  once, retry), (c) any tools/list response whose catalogVersion differs from
+  the cached one (the response IS the update — no second round-trip), (d)
+  optional per new agent turn (cheap one-request freshness check, no polling).
+
+Why:
+- Bounded cost: no timers, no polling, no per-call re-fetch. Self-healing:
+  "not found" becomes a one-time recovery. The turn-boundary check is what
+  removes the manual-restart pain.
+- Rules out: periodic polling (lag+waste), push (stateful), per-call
+  re-fetch (chatty).
+
+3. What should the catalog version be — monotonically increasing number or a
+content-based fingerprint?
+Answer:
+- Content-based fingerprint: sha256 over the sorted tool cards (name +
+  version + descriptions/schemas as included in tools/list), first 8-12 hex
+  chars.
+
+Why:
+- True-change detection: identical re-registration (app reconnect, same
+  manifest) leaves the hash unchanged → no false "changed" signal. A counter
+  would bump on every registration → re-fetch spam.
+- Restart-safe: a fingerprint has no ordering; a counter resets to 0 on
+  gateway restart → client cached higher numbers would miscompare.
+- Stateless + cheap: computed per request from data tools/list already reads.
+
+4. Where should the catalog version appear?
+Answer:
+- Inside the tools/list result shape: {tools: [...], catalogVersion:
+  "a3f9c2d1"}. No stamp on tools/call or other methods; no separate
+  version method.
+
+Why:
+- The response that carries the version IS the update: re-fetching
+  tools/list yields both the new version and the new list in one round-trip.
+- Minimal surface: no schema change to tools/call, no new MCP method.
+- Rules out: stamp on every response (hot-path bytes, no benefit), a
+  separate tools/version method (extra surface + race with the list).
+
+5. What should the fingerprint cover — the full catalog as the client sees it,
+or the underlying capability registry?
+Answer:
+- Per-caller fingerprint over the exact tool cards tools/list returns for
+  that caller (scope-filtered per BI[7]).
+
+Why:
+- No false signals across callers: a narrow token's catalog changes only
+  when THEIR visible list changes; hashing the whole registry would bump
+  every caller on any platform-cap registration.
+- Equality semantics: same version = byte-equivalent catalog for that
+  caller.
+- Cheap: hash passes over the array listTools already builds.
+- Rules out: whole-registry hash, name-only hash, ignoring scope filter.
+
+6. What is the client-side contract — exactly when should the client re-fetch
+tools/list? (see #2 — triggers locked; this entry records the acceptance)
+Answer:
+- Same as #2: reconnect, tool-not-found recovery, version mismatch, optional
+  per-turn check. The client treats catalogVersion as opaque: compare for
+  equality only, never order.
+
+Why:
+- Opaque equality keeps clients decoupled from how the server computes the
+  fingerprint (can change hash algorithm without client changes).
+
+7. Where does the catalog-change signal come from server-side?
+Answer:
+- No signal. Compute the fingerprint on demand per tools/list request, from
+  the same scope-filtered card array the response carries. No registry
+  events, no persisted version, no diffing on write.
+
+Why:
+- capability-registry has no registration events (verified: store.ts plain
+  map) — inventing one is new surface; compute-on-demand avoids it.
+- Automatically correct: hash derived from the same data at the same moment;
+  can never go stale. Restart-safe, stateless, consistent with the
+  "adapters = no state" lock.
+- Rules out: registry event subscription, persisted counter, write-time
+  diffing.
+
+Non-goals
+
+- No notifications/tools/list_changed push (stateful door) — rejected in #1.
+- No changes to tools/call wire shape, error codes, or session handling.
+- No capability-registry event surface.
+- No changes to the WS door or CLI consumer (MCP door + client contract only).
+- No client-side auto-reconnect logic ships in this repo's server code; the
+  client contract is documented here, and the client integration (Zed) is
+  configured by the operator.
+
+Sources
+
+- CONTEXT.md glossary Adapter row (stateless adapter lock)
+- CONTEXT.md Decisions Log W1 REOPEN 2026-08-03 (MCP = the canonical pull
+  door for LLM agents)
+- mcp-adapter PRD-TRD Scenario 1 (tools/list returns the current catalog,
+  scope-filtered, BI[7])
+- mcp-adapter IMPL Phase 3 (stateless transport decision, BI[9] GRILL Q1)
+- drift D-127 (open — the gap this feature closes)
+- drift D-123 (per-request stateless Server+transport — constraint honored)
+- capability-registry src/store.ts (no publish/emit — verified)
+- SDK webStandardStreamableHttp.js (no sendNotification — verified)
+
+8. What happens when a capability is UNREGISTERED (a tool disappears from
+the catalog)?
+Answer:
+- Same mechanism, no special case. The fingerprint changes → clients see a
+  new catalogVersion → re-fetch → the tool disappears from their list.
+  A tool-not-found call (-32001) triggers the stale-catalog recovery (see #2
+  trigger b).
+
+Why:
+- Unregister is just another catalog change; the fingerprint + re-fetch
+  contract covers both directions.
+- Deny-by-default preserved: a removed tool fails with not-found, never a
+  stale success.
+- Rules out: a separate removal notice (redundant), tombstones in the
+  catalog (pollutes the client list).
+
+9. The per-turn re-fetch (trigger d) — in scope for this feature, or
+  documented-only?
+Answer:
+- Server stamp + documented client contract ship in this feature; the client
+  implementation (Zed performing the per-turn re-fetch) is an external,
+  operator-enabled follow-up.
+
+Why:
+- The server side is what this repo owns and can ship; the client lives in
+  external products.
+- The contract must be canonicalized in the PRD-TRD so any client has a
+  spec to implement against.
+- Rules out: pretending to ship Zed behavior from this repo; skipping the
+  contract doc.
+
+10. Backward compatibility — clients that ignore catalogVersion?
+Answer:
+- Nothing breaks; the field is additive. Old clients keep today's behavior
+  (tools appear on reconnect); new clients get live refresh.
+
+Why:
+- Additive field = zero breakage; JSON consumers ignore unknown fields;
+  existing contracts/tests unaffected.
+- Matches how MCP evolves (extra result fields are allowed and passed
+  through by SDKs).
+- Rules out: required field (breaks old clients), breaking schema change.
+
+11. Does this change MCP adapter auth or session handling?
+Answer:
+- No. catalogVersion is computed after auth + scope-filtering; same token,
+  same scope rules, same auto-mint (D-126), same error table. The
+  fingerprint derives from the per-caller catalog (Q5).
+
+Why:
+- Keeps the feature surgical: one additive computation in the tools/list
+  path.
+- No interaction with D-126 or the error table (authz stays at call time,
+  BI[7]).
+- Rules out: coupling the version to auth state, touching session lifecycle.
+
+12. Does this feature need a CONTEXT.md update (new canonical term)?
+Answer:
+- Yes — add one glossary entry: "Catalog Version" — the per-caller
+  fingerprint on the MCP tool catalog, used by clients to detect tool-list
+  changes without a server push.
+
+Why:
+- New cross-referenced term (drift D-127, PRD, client docs) qualifies as
+  canonical per the CONTEXT.md glossary pattern.
+- One definition prevents PRD-vs-client-doc drift.
+- Rules out: leaving it only here-defined; undefined jargon.
+
+No remaining open questions
+
+- All 12 decisions locked; scope stable.
+- Handoff: phase 1 (PRD-TRD) via feature-pipeline.
+- Deliverables on lock: server fingerprint on tools/list (mcp-adapter), the
+  client re-fetch contract (PRD-TRD), CONTEXT.md glossary entry.
