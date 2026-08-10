@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 77  **Critical/High:** 0
+**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 78  **Critical/High:** 0
 
 ## Open
 
@@ -564,4 +564,11 @@ ot 0`.
         - Resolution (stateless Option A, GRILL locked 2026-08-09): `docs/features/mcp-tools-refresh/` — `tools/list` now returns a per-caller content fingerprint (`catalogVersion`, sha256 over the sorted scope-filtered cards, 12 hex, computed on demand — no state, no events) and the client refresh contract is documented (re-fetch on reconnect / tool-not-found / version mismatch / per-turn). Push remains out (adapter stateless lock).
         - Verified by: `translate.test.ts` 24/24 (fingerprint stability, change-on-catalog-change, field sensitivity, order independence), scenarios.test.ts 25/25 (Scenario 1 stamp + stability), `simulate.sh` 9/9 live (V1 stable → V2 on app register (29→40 tools) → V3 back to V1 on unregister → narrow-token independence from invisible registrations). Commit: `a23226b`
         - Related: D-123 (stateless transport decision that constrains the fix).
+
+      - **D-128** (RESOLVED 2026-08-09 — Critical, 2026-08-09, reporter: user principle "everything has to be logged and traceable" — live audit-log check) — the gateway's audit log could never hold more than one row: every `AuditWriter.append` OVERWROTE the whole file. The CLI's two FileSystem implementations — `bin.ts` `defaultFs` and `start.ts` `runStart`'s inline fs — implemented `writeFile` as `fsPromises.writeFile` (TRUNCATES), violating the locked FileSystem contract (`gateway-core/src/types.ts:141-145`: "writeFile is APPEND (mirrors fs.appendFile) so append-only log files don't lose history"). gateway-core's own `nodeFileSystem()` implements it correctly (append when no mode; write when mode set) — the CLI just never used it, so every gateway boot via `agentide gateway start` ran with a destroyed audit trail.
+        - Doc claim: CONTEXT.md Audit Log row — "append-only structured log … one JSON object per capability invocation"; types.ts FileSystem contract.
+        - Code reality: bin.ts:30 + start.ts:44 `fsPromises.writeFile(path, content, {encoding, mode})` — truncates; live proof: audit.log held exactly 1 row regardless of call count.
+        - Why matters: zero traceability — sessions, denials, business calls all invisible to operators; a forensic dead end (exact opposite of the audit design).
+        - Owner: agentide (CLI fs) + gateway-core (contract). To fix: reuse `nodeFileSystem`.
+        - Verified by: `nodeFileSystem` exported from gateway-core (factory.ts) and reused by bin.ts defaultFs + start.ts (spread + mkdir overlay, D-78/D-115 preserved). Tests: audit.test.ts +2 (nodeFileSystem appends without mode, writes with mode) — 7/7. Live proof: fresh audit.log, one `product.list` MCP call → 4 rows: `session.create ok` → `product.list denied` (first attempt, no session) → `product.list ok` (auto-mint retry) → `session.destroy ok` — the full lifecycle traceable in order. Full suite 1208 pass / 28 skip / 0 fail (1 known env flake: consumer-ux 7300-port test collides with the running gateway). Commit: `REPLACE_ME`
 

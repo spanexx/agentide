@@ -689,7 +689,10 @@ function systemClock(): Clock {
   };
 }
 
-function nodeFileSystem(): FileSystem {
+// D-128: nodeFileSystem is exported so the CLI (bin.ts defaultFs, start.ts
+// runStart fs) reuses THE one contract-correct implementation instead of
+// duplicating a truncating writeFile (which silently destroyed the audit log).
+export function nodeFileSystem(): FileSystem {
   // Per Gap 4: writeFile without mode is APPEND (audit log never loses history).
   // Per Gap 3: writeFile with mode is REAL write (used for the gateway-secret file, mode 0600).
   return {

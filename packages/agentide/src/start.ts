@@ -21,6 +21,7 @@
 
 import { createPlatform } from "./factory.js";
 import * as fsPromises from "node:fs/promises";
+import { nodeFileSystem } from "@spanexx/gateway-core";
 import type { CliOptions, CliResult } from "./cli-types.js";
 import { getFlag } from "./cli-utils.js";
 import { result } from "./cli-utils.js";
@@ -37,14 +38,11 @@ export async function runStart(
   opts: CliOptions,
 ): Promise<CliResult> {
   // Resolve a FileSystem. The CLI entrypoint (bin.js) calls runCli with {} (no fs);
-  // fall back to real node:fs/promises so production calls work without the caller
-  // needing to wire one up. createGateway does the same fallback for its own fs usage.
+  // fall back to gateway-core's nodeFileSystem — the ONE contract-correct
+  // implementation (writeFile appends without mode; D-128 — the previous inline
+  // fs truncated the audit log to one row). mkdir added for the D-115 probe.
   const fs: NonNullable<CliOptions["fs"]> = opts.fs ?? {
-    readFile: (path) => fsPromises.readFile(path, "utf8"),
-    writeFile: (path, data, mode) => fsPromises.writeFile(path, data, { encoding: "utf8", mode }),
-    exists: async (path) => {
-      try { await fsPromises.access(path); return true; } catch { return false; }
-    },
+    ...nodeFileSystem(),
     mkdir: (path, options) => fsPromises.mkdir(path, options),
   };
   // CID:start-002 - default bind/ports unless overridden

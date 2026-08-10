@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { AuditWriter } from "../audit.js";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { rm } from "node:fs/promises";
+import { AuditWriter, nodeFileSystem } from "../index.js";
 import type { AuditRecord, FileSystem } from "../index.js";
 
 class InMemoryFs implements FileSystem {
@@ -107,5 +110,31 @@ describe("AuditWriter", () => {
     expect(fs.files.has("/data/new-audit.log")).toBe(false);
     await writer.append(record());
     expect(fs.files.has("/data/new-audit.log")).toBe(true);
+  });
+
+  it("nodeFileSystem writeFile APPENDS without mode (D-128 — CLI fs must not truncate)", async () => {
+    const fs = nodeFileSystem();
+    const path = join(tmpdir(), `audit-d128-${process.pid}.log`);
+    try {
+      await fs.writeFile(path, "line1\n");
+      await fs.writeFile(path, "line2\n");
+      const written = await fs.readFile(path);
+      expect(written.split("\n").filter((l) => l.length > 0)).toHaveLength(2);
+    } finally {
+      await rm(path, { force: true });
+    }
+  });
+
+  it("nodeFileSystem writeFile WRITES (not appends) when mode is set (secrets)", async () => {
+    const fs = nodeFileSystem();
+    const path = join(tmpdir(), `secret-d128-${process.pid}.log`);
+    try {
+      await fs.writeFile(path, "secret-a", 0o600);
+      await fs.writeFile(path, "secret-b", 0o600);
+      const written = await fs.readFile(path);
+      expect(written).toBe("secret-b"); // replaced, not appended
+    } finally {
+      await rm(path, { force: true });
+    }
   });
 });

@@ -18,22 +18,18 @@ import { runCli } from "./cli.js";
 import { DETACH_CHILD_FLAG } from "./lifecycle.js";
 import * as fsPromises from "node:fs/promises";
 import { homedir } from "node:os";
+import { nodeFileSystem } from "@spanexx/gateway-core";
 import type { FileSystem } from "@spanexx/gateway-core";
 
 /**
- * Default FileSystem adapter for the bundled CLI. createGateway has its own
- * internal fallback for in-process commands; this is passed for cli.ts's
- * pre-gateway checks (e.g. checking tenants.json existence in runStart).
+ * Default FileSystem adapter for the bundled CLI. Reuses gateway-core's
+ * nodeFileSystem — the ONE contract-correct implementation (writeFile appends
+ * without mode, writes with mode). D-128: the previous inline writeFile used
+ * fs.promises.writeFile (TRUNCATES), silently destroying the audit log.
  */
 const defaultFs: FileSystem = {
-  readFile: (path) => fsPromises.readFile(path, "utf8"),
-  writeFile: (path, content, mode) => fsPromises.writeFile(path, content, { encoding: "utf8", mode }),
-  exists: async (path) => {
-    try { await fsPromises.access(path); return true; } catch { return false; }
-  },
-  // CID:bin-002 - D-78: the bundled CLI's fs supports recursive mkdir so
-  // `agentide init --data-dir <fresh>` bootstraps the dir (mirrors the
-  // gateway-core nodeFileSystem helper).
+  ...nodeFileSystem(),
+  // CID:bin-002 - D-78: recursive mkdir for `agentide init --data-dir <fresh>`.
   mkdir: async (path, options): Promise<void> => { await fsPromises.mkdir(path, { recursive: options?.recursive ?? true }); },
 };
 
