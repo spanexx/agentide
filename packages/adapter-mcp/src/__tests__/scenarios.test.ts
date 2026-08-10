@@ -31,6 +31,12 @@ describe("createMcpAdapter — PRD scenarios", () => {
     expect(res.status).toBe(200);
     expect(res.json.error).toBeUndefined();
     const tools = res.json.result?.tools ?? [];
+    const version = res.json.result?.catalogVersion;
+    // D-127: the result carries a stable fingerprint for the caller's catalog.
+    expect(version).toMatch(/^[0-9a-f]{12}$/);
+    // D-127: identical repeat call → identical version (no catalog change).
+    const res2 = await rpc(adapter, JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: META } }), `Bearer ${token}`);
+    expect(res2.json.result?.catalogVersion).toBe(version);
     // Bootstrap scope sees both business caps (customer.read + customer.delete) and platform caps.
     const names = tools.map((t) => t.name);
     expect(names).toContain("customer.read");

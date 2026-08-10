@@ -20,6 +20,7 @@
  * Quick lookup: rg -n "CID:translate-" packages/adapter-mcp/src/translate.ts
  */
 
+import { createHash } from "node:crypto";
 import type { Gateway, YamlValue } from "@spanexx/gateway-core";
 import { ERROR_CODES } from "@spanexx/errors";
 import { createAdapterPipeline, createCapabilityLookup, readClaims, type ResponseChannelSink } from "@spanexx/adapter-core";
@@ -71,7 +72,7 @@ export interface McpTool {
 }
 
 export type ListToolsOutcome =
-  | { readonly ok: true; readonly tools: readonly McpTool[] }
+  | { readonly ok: true; readonly tools: readonly McpTool[]; readonly catalogVersion: string }
   | { readonly ok: false; readonly error: JsonRpcError };
 
 // CID:translate-005 - listTools
@@ -131,7 +132,30 @@ export async function listTools(gateway: Gateway, token: string): Promise<ListTo
       annotations: { tier: card.tier },
     });
   }
-  return { ok: true, tools };
+  // D-127: catalogVersion = sha256 over the caller's SORTED tool cards,
+  // first 12 hex. Per-caller by construction (the cards are already
+  // scope-filtered); order-independent (sorted); changes iff the visible
+  // catalog changes. Clients compare for equality only.
+  return { ok: true, tools, catalogVersion: catalogFingerprint(tools) };
+}
+
+// CID:translate-009 - catalogFingerprint (D-127, mcp-tools-refresh)
+// Purpose: stable, per-caller fingerprint of the tool catalog served by
+//   tools/list. Pure function of the cards — no state, no events, no
+//   registry wiring; compute-on-demand per GRILL #7.
+export function catalogFingerprint(tools: readonly McpTool[]): string {
+  const canonical = [...tools]
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((t) =>
+      JSON.stringify({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+        tier: t.annotations.tier,
+      }),
+    )
+    .join("\n");
+  return createHash("sha256").update(canonical).digest("hex").slice(0, 12);
 }
 
 function extractCards(output: readonly YamlValue[]): readonly { name: string; description: string; tier: string | null }[] {

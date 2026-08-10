@@ -31,9 +31,10 @@ server state.
 **Given** an MCP client calls `tools/list` with any valid bearer token
 **When** the adapter builds the (scope-filtered) tool catalog
 **Then** the result is `{tools: [...], catalogVersion: "<fingerprint>"}` where
-fingerprint = sha256 over the sorted tool cards (name, version, description,
-inputSchema, tier as returned), first 12 hex chars. Two calls with the same
-scope and unchanged registry return the SAME fingerprint.
+fingerprint = sha256 over the sorted tool cards (name, description,
+inputSchema, tier — the fields the cards actually carry), first 12 hex
+chars. Two calls with the same scope and unchanged registry return the SAME
+fingerprint.
 
 ### Scenario 2: catalog version is per-caller
 

@@ -1,5 +1,5 @@
 # Drift Log
-**Last updated:** 2026-08-09  **Open:** 36  **Resolved:** 76  **Critical/High:** 0
+**Last updated:** 2026-08-09  **Open:** 35  **Resolved:** 77  **Critical/High:** 0
 
 ## Open
 
@@ -556,14 +556,12 @@ ot 0`.
         - Owner: adapter-mcp + adapter-core. To fix: apply the locked session contract to the door.
         - Verified by: NEW `adapter-core/src/session-mint.ts` `withAutoMintSession` (CID:adapter-core-009 — mint → run → best-effort destroy, mirrors CLI D-79); adapter-mcp tools/call retries once with a minted session on `GATEWAY_SESSION_REQUIRED` when no session was supplied; business-only tokens keep deny-by-default (D-91). Tests: scenarios +2, adapter suites 96/96. PRD-TRD Scenario 2 note + IMPL delivery note. Commit: `978545f`
 
-      - **D-127** (Open — Medium, 2026-08-09, reporter: user observed business caps missing until Zed restart — Low priority until client refresh improves) — the MCP adapter never pushes `notifications/tools/list_changed`, so clients that cache `tools/list` (Zed fetches once per connection) don't see capabilities registered after connect (the example app's 11 business caps appeared only after restarting Zed).
+      - **D-127** (RESOLVED 2026-08-09 — Medium, 2026-08-09, reporter: user observed business caps missing until Zed restart — Low priority until client refresh improves) — the MCP adapter never pushed `notifications/tools/list_changed`, so clients caching `tools/list` (Zed fetches once per connection) don't see capabilities registered after connect (observe: the example app's 11 business caps appeared only after restarting Zed).
         - Doc claim: MCP spec — servers SHOULD notify clients when the tool list changes.
         - Code reality: the adapter uses a STATELESS transport (D-123 fix) which has no `sendNotification` channel (verified: SDK `webStandardStreamableHttp.js` has none), and capability-registry publishes no registration events.
         - Why matters: tool discovery lags until reconnect; agents miss newly-registered capabilities.
-        - Owner: adapter-mcp + capability-registry. To fix: needs (a) capability registration events (new event surface) + (b) a stateful transport or fanout for notifications — NEW SURFACE, feature-pipeline candidate. Surgical part done: documented in PRD-TRD/IMPL (clients refresh on reconnect).
+        - Owner: adapter-mcp + capability-registry.
+        - Resolution (stateless Option A, GRILL locked 2026-08-09): `docs/features/mcp-tools-refresh/` — `tools/list` now returns a per-caller content fingerprint (`catalogVersion`, sha256 over the sorted scope-filtered cards, 12 hex, computed on demand — no state, no events) and the client refresh contract is documented (re-fetch on reconnect / tool-not-found / version mismatch / per-turn). Push remains out (adapter stateless lock).
+        - Verified by: `translate.test.ts` 24/24 (fingerprint stability, change-on-catalog-change, field sensitivity, order independence), scenarios.test.ts 25/25 (Scenario 1 stamp + stability), `simulate.sh` 9/9 live (V1 stable → V2 on app register (29→40 tools) → V3 back to V1 on unregister → narrow-token independence from invisible registrations). Commit: `REPLACE_ME`
         - Related: D-123 (stateless transport decision that constrains the fix).
-        - Resolution path (2026-08-09): GRILL locked + PRD-TRD drafted in
-          `docs/features/mcp-tools-refresh/` — stateless catalog-version fingerprint
-          (Option A, GRILL #1) + documented client refresh contract. D-127 closes
-          when the PRD-TRD ships.
 

@@ -116,7 +116,9 @@ export function createSessionServer(gateway: Gateway): McpServer {
     if (!outcome.ok) {
       throw new WireError(outcome.error.code, outcome.error.message);
     }
-    return { tools: outcome.tools };
+    // D-127 (mcp-tools-refresh): the result carries the catalog fingerprint so
+    // clients can detect tool-list changes and re-fetch (see PRD-TRD).
+    return { tools: outcome.tools, catalogVersion: outcome.catalogVersion };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {

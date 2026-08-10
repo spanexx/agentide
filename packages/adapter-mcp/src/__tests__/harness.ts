@@ -146,6 +146,7 @@ export interface JsonRpcResponse {
   readonly id?: number | string | null;
   readonly result?: {
     tools?: Array<{ name: string; description: string; inputSchema: object; annotations: { tier: string | null } }>;
+    catalogVersion?: string; // D-127 (mcp-tools-refresh)
     content?: Array<{ type: string; text: string }>;
     structuredContent?: unknown;
     isError?: boolean;

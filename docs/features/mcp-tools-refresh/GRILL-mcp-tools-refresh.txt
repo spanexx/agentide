@@ -57,8 +57,9 @@ Why:
 content-based fingerprint?
 Answer:
 - Content-based fingerprint: sha256 over the sorted tool cards (name +
-  version + descriptions/schemas as included in tools/list), first 8-12 hex
-  chars.
+  description + inputSchema + tier — the fields the cards actually carry),
+  first 8-12 hex chars. Cards have no version field; the hashed set is the
+  card as returned.
 
 Why:
 - True-change detection: identical re-registration (app reconnect, same

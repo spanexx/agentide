@@ -234,6 +234,66 @@ describe("listTools", () => {
     if (outcome.ok) return;
     expect(outcome.error).toEqual({ code: -32001, message: "capability 'capability.list' not found" });
   });
+
+  it("returns a stable catalogVersion across identical calls (D-127)", async () => {
+    const gw = mockGateway({
+      "capability.list": { output: [cardRead] },
+      "capability.describe": { output: describeRead },
+    });
+    const token = `h.${Buffer.from(JSON.stringify({ sub: { tenantId: "t1", callerId: "c1" }, scope: ["customer.read"] }), "utf8").toString("base64url")}.s`;
+    const a = await listTools(gw, token);
+    const b = await listTools(gw, token);
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.catalogVersion).toMatch(/^[0-9a-f]{12}$/);
+    expect(a.catalogVersion).toBe(b.catalogVersion);
+  });
+
+  it("catalogVersion changes when the catalog changes (D-127)", async () => {
+    const gwA = mockGateway({
+      "capability.list": { output: [cardRead] },
+      "capability.describe": { output: describeRead },
+    });
+    const gwB = mockGateway({
+      "capability.list": { output: [cardRead, cardDelete] },
+      "capability.describe": { output: describeRead },
+    });
+    const token = "x";
+    const a = await listTools(gwA, token);
+    const b = await listTools(gwB, token);
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.catalogVersion).not.toBe(b.catalogVersion);
+  });
+
+  it("catalogVersion is sensitive to card fields (description/schema) (D-127)", async () => {
+    // The card description comes from the capability.list output (the describe
+    // descriptor's description is not used for the card) — change the CARD.
+    const cardV2 = { ...cardRead, description: "Read customers (v2 wording)" };
+    const gwA = mockGateway({ "capability.list": { output: [cardRead] }, "capability.describe": { output: describeRead } });
+    const gwB = mockGateway({ "capability.list": { output: [cardV2] }, "capability.describe": { output: describeRead } });
+    const a = await listTools(gwA, "x");
+    const b = await listTools(gwB, "x");
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.catalogVersion).not.toBe(b.catalogVersion);
+  });
+
+  it("catalogVersion is order-independent (same cards, different insertion order) (D-127)", async () => {
+    const gwA = mockGateway({
+      "capability.list": { output: [cardRead, cardDelete] },
+      "capability.describe": { output: describeRead },
+    });
+    const gwB = mockGateway({
+      "capability.list": { output: [cardDelete, cardRead] },
+      "capability.describe": { output: describeRead },
+    });
+    const a = await listTools(gwA, "x");
+    const b = await listTools(gwB, "x");
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.catalogVersion).toBe(b.catalogVersion);
+  });
 });
 
 describe("callTool", () => {
