@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/spanexx/agentide/compare/gateway-core-v0.7.1...gateway-core-v0.7.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* **agentide:** CLI fs must append — reuse nodeFileSystem (D-128 audit log truncation) ([cc49119](https://github.com/spanexx/agentide/commit/cc49119dbb509f76e01617cf24c8d2b4fc753761))
+
 ## [0.7.1](https://github.com/spanexx/agentide/compare/gateway-core-v0.7.0...gateway-core-v0.7.1) (2026-08-08)
 
 

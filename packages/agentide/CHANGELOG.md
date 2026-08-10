@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/spanexx/agentide/compare/agentide-v0.9.3...agentide-v0.9.4) (2026-08-10)
+
+
+### Bug Fixes
+
+* **agentide:** CLI fs must append — reuse nodeFileSystem (D-128 audit log truncation) ([cc49119](https://github.com/spanexx/agentide/commit/cc49119dbb509f76e01617cf24c8d2b4fc753761))
+
 ## [0.9.3](https://github.com/spanexx/agentide/compare/agentide-v0.9.2...agentide-v0.9.3) (2026-08-09)
 
 

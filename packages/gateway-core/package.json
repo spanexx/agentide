@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/gateway-core",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": false,
   "description": "The kernel. Single function handleInvocation(req) → response. Auth → rate limit → session → authz (tier-hierarchy) → version resolve → dispatch (by owner prefix).",
   "type": "module",

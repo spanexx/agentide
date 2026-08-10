@@ -1,6 +1,6 @@
 {
   "name": "@spanexx/adapter-core",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": false,
   "description": "Shared server-side invocation pipeline for door adapters — readClaims, auth policy, error converter, RecordRegistry, response channel, capability lookup. Doors import ONLY this package for shared logic (A1 own-bytes rule).",
   "type": "module",
